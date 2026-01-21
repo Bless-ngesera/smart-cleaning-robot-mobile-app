@@ -20,7 +20,7 @@ export default function SignupScreen() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
-    const { darkMode } = useContext(ThemeContext);
+    const { colors } = useContext(ThemeContext);
 
     const validateEmail = (value: string): boolean => /\S+@\S+\.\S+/.test(value);
 
@@ -42,6 +42,8 @@ export default function SignupScreen() {
         try {
             await new Promise((resolve) => setTimeout(resolve, 1500));
             await AsyncStorage.setItem("userToken", "mock-token");
+            await AsyncStorage.setItem("userName", name);
+            await AsyncStorage.setItem("userEmail", email);
             router.replace("/(tabs)/01_DashboardScreen"); // ✅ fixed route
         } catch {
             Alert.alert("Signup Failed", "Something went wrong. Please try again.");
@@ -53,33 +55,44 @@ export default function SignupScreen() {
     if (loading) return <Loader message="Creating account..." />;
 
     return (
-        <SafeAreaView className="flex-1">
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
             <KeyboardAvoidingView
                 behavior={Platform.OS === "ios" ? "padding" : undefined}
-                className={`flex-1 ${darkMode ? "bg-gray-900" : "bg-gray-50"}`}
+                style={{ flex: 1 }}
             >
                 <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
                     <Header title="Sign Up" subtitle="Create your robot account" />
 
-                    <View className="flex-1 items-center justify-center px-6">
+                    <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 }}>
                         <View
-                            className={`w-full rounded-2xl p-6 shadow-md border gap-4 ${
-                                darkMode
-                                    ? "bg-gray-800 border-gray-700"
-                                    : "bg-white border-gray-200"
-                            }`}
+                            style={{
+                                width: "100%",
+                                borderRadius: 16,
+                                padding: 20,
+                                backgroundColor: colors.card,
+                                borderColor: colors.border,
+                                borderWidth: 1,
+                                shadowColor: "#000",
+                                shadowOpacity: 0.1,
+                                shadowRadius: 4,
+                                gap: 16,
+                            }}
                         >
                             <TextInput
                                 placeholder="Name"
                                 autoCapitalize="words"
                                 value={name}
                                 onChangeText={setName}
-                                placeholderTextColor={darkMode ? "#9CA3AF" : "#6B7280"}
-                                className={`border rounded-xl p-3 ${
-                                    darkMode
-                                        ? "border-gray-600 bg-gray-700 text-white"
-                                        : "border-gray-300 bg-gray-50 text-black"
-                                }`}
+                                placeholderTextColor={colors.subtitle}
+                                style={{
+                                    borderWidth: 1,
+                                    borderColor: colors.border,
+                                    borderRadius: 12,
+                                    padding: 12,
+                                    backgroundColor: colors.background,
+                                    color: colors.text,
+                                    marginBottom: 12,
+                                }}
                             />
                             <TextInput
                                 placeholder="Email"
@@ -87,12 +100,16 @@ export default function SignupScreen() {
                                 autoCapitalize="none"
                                 value={email}
                                 onChangeText={setEmail}
-                                placeholderTextColor={darkMode ? "#9CA3AF" : "#6B7280"}
-                                className={`border rounded-xl p-3 ${
-                                    darkMode
-                                        ? "border-gray-600 bg-gray-700 text-white"
-                                        : "border-gray-300 bg-gray-50 text-black"
-                                }`}
+                                placeholderTextColor={colors.subtitle}
+                                style={{
+                                    borderWidth: 1,
+                                    borderColor: colors.border,
+                                    borderRadius: 12,
+                                    padding: 12,
+                                    backgroundColor: colors.background,
+                                    color: colors.text,
+                                    marginBottom: 12,
+                                }}
                             />
                             <TextInput
                                 placeholder="Password"
@@ -100,15 +117,19 @@ export default function SignupScreen() {
                                 autoCapitalize="none"
                                 value={password}
                                 onChangeText={setPassword}
-                                placeholderTextColor={darkMode ? "#9CA3AF" : "#6B7280"}
-                                className={`border rounded-xl p-3 ${
-                                    darkMode
-                                        ? "border-gray-600 bg-gray-700 text-white"
-                                        : "border-gray-300 bg-gray-50 text-black"
-                                }`}
+                                placeholderTextColor={colors.subtitle}
+                                style={{
+                                    borderWidth: 1,
+                                    borderColor: colors.border,
+                                    borderRadius: 12,
+                                    padding: 12,
+                                    backgroundColor: colors.background,
+                                    color: colors.text,
+                                    marginBottom: 12,
+                                }}
                             />
 
-                            <View className="gap-3 mt-4">
+                            <View style={{ gap: 12, marginTop: 16 }}>
                                 <Button
                                     title="Sign Up"
                                     icon="person-add-outline"

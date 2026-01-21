@@ -18,7 +18,7 @@ type RobotStatus = {
 export default function DashboardScreen() {
     const [status, setStatus] = useState<RobotStatus | null>(null);
     const [loading, setLoading] = useState(false);
-    const { darkMode } = useContext(ThemeContext);
+    const { colors } = useContext(ThemeContext);
 
     const fetchStatus = useCallback(async () => {
         setLoading(true);
@@ -42,16 +42,16 @@ export default function DashboardScreen() {
 
     return (
         <ScrollView
-            className={`flex-1 ${darkMode ? "bg-gray-900" : "bg-gray-50"}`}
+            style={{ flex: 1, backgroundColor: colors.background }}
             refreshControl={
                 <RefreshControl refreshing={loading} onRefresh={fetchStatus} />
             }
         >
             <Header title="Dashboard" />
 
-            <View className="p-6">
+            <View style={{ padding: 24 }}>
                 {/* Robot Status Tiles */}
-                <View className="flex-row gap-4 mb-6">
+                <View style={{ flexDirection: "row", gap: 16, marginBottom: 24 }}>
                     <StatTile
                         label="Battery"
                         value={status ? `${status.batteryLevel}%` : "--"}
@@ -64,17 +64,26 @@ export default function DashboardScreen() {
 
                 {/* Last Cleaned Info */}
                 <View
-                    className={`rounded-xl p-4 shadow-sm border mb-6 ${
-                        darkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-100"
-                    }`}
+                    style={{
+                        borderRadius: 12,
+                        padding: 16,
+                        backgroundColor: colors.card,
+                        borderColor: colors.border,
+                        borderWidth: 1,
+                        marginBottom: 24,
+                        shadowColor: "#000",
+                        shadowOpacity: 0.05,
+                        shadowRadius: 2,
+                    }}
                 >
-                    <Text className={darkMode ? "text-gray-300" : "text-gray-600"}>
-                        Last cleaned
-                    </Text>
+                    <Text style={{ color: colors.subtitle }}>Last cleaned</Text>
                     <Text
-                        className={`text-lg font-semibold mt-1 ${
-                            darkMode ? "text-white" : "text-black"
-                        }`}
+                        style={{
+                            fontSize: 18,
+                            fontWeight: "600",
+                            marginTop: 4,
+                            color: colors.text,
+                        }}
                     >
                         {status ? new Date(status.lastCleaned).toLocaleString() : "—"}
                     </Text>
@@ -82,10 +91,21 @@ export default function DashboardScreen() {
 
                 {/* Error Section */}
                 {status?.errors?.length ? (
-                    <View className="bg-red-50 rounded-xl p-4 border border-red-200 mb-6">
-                        <Text className="text-red-700 font-semibold mb-2">Errors</Text>
+                    <View
+                        style={{
+                            backgroundColor: "#fef2f2",
+                            borderRadius: 12,
+                            padding: 16,
+                            borderColor: "#fecaca",
+                            borderWidth: 1,
+                            marginBottom: 24,
+                        }}
+                    >
+                        <Text style={{ color: "#b91c1c", fontWeight: "600", marginBottom: 8 }}>
+                            Errors
+                        </Text>
                         {status.errors.map((e, i) => (
-                            <Text key={i} className="text-red-600">
+                            <Text key={i} style={{ color: "#dc2626" }}>
                                 • {e}
                             </Text>
                         ))}
@@ -93,10 +113,21 @@ export default function DashboardScreen() {
                 ) : null}
 
                 {/* Navigation Buttons */}
-                <View className="flex-row gap-3">
-                    <Button title="Controls" onPress={() => router.push("/(tabs)/ControlScreen")} />
-                    <Button title="Schedule" onPress={() => router.push("/(tabs)/ScheduleScreen")} variant="secondary" />
-                    <Button title="Map" onPress={() => router.push("/(tabs)/MapScreen")} variant="secondary" />
+                <View style={{ flexDirection: "row", gap: 12 }}>
+                    <Button
+                        title="Controls"
+                        onPress={() => router.push("/(tabs)/02_ControlScreen")}
+                    />
+                    <Button
+                        title="Schedule"
+                        onPress={() => router.push("/(tabs)/04_ScheduleScreen")}
+                        variant="secondary"
+                    />
+                    <Button
+                        title="Map"
+                        onPress={() => router.push("/(tabs)/03_MapScreen")}
+                        variant="secondary"
+                    />
                 </View>
             </View>
         </ScrollView>

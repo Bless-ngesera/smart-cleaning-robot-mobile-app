@@ -1,4 +1,6 @@
 import { View, Text } from "react-native";
+import { useContext } from "react";
+import { ThemeContext } from "../context/ThemeContext";
 
 type Props = {
     label: string;
@@ -7,21 +9,37 @@ type Props = {
 };
 
 export default function StatTile({ label, value, highlight = false }: Props) {
+    const { colors } = useContext(ThemeContext);
+
+    if (!colors) {
+        console.warn("ThemeContext is missing 'colors'");
+        return null;
+    }
+
     return (
         <View
-            className={`flex-1 rounded-xl p-4 shadow-sm border ${
-                highlight
-                    ? "bg-blue-50 border-blue-200"
-                    : "bg-white border-gray-100"
-            }`}
+            style={{
+                flex: 1,
+                borderRadius: 12,
+                padding: 16,
+                shadowColor: "#000",
+                shadowOpacity: 0.05,
+                shadowRadius: 2,
+                borderWidth: 1,
+                backgroundColor: highlight ? "#eff6ff" : colors.card,
+                borderColor: highlight ? "#bfdbfe" : colors.border,
+            }}
         >
-            {/* C++ BRIDGE: If value comes from robot sensors,
-          fetch via RobotBridge.getStatus() */}
-            <Text className="text-gray-500">{label}</Text>
+            <Text style={{ color: highlight ? "#1e40af" : colors.subtitle }}>
+                {label}
+            </Text>
             <Text
-                className={`text-2xl font-bold mt-1 ${
-                    highlight ? "text-blue-700" : "text-gray-900"
-                }`}
+                style={{
+                    fontSize: 22,
+                    fontWeight: "700",
+                    marginTop: 4,
+                    color: highlight ? "#1e40af" : colors.text,
+                }}
             >
                 {value}
             </Text>

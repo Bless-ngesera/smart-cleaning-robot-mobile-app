@@ -4,17 +4,30 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 type ThemeContextType = {
     darkMode: boolean;
     toggleTheme: () => void;
+    colors: {
+        background: string;
+        card: string;
+        border: string;
+        text: string;
+        subtitle: string;
+    };
 };
 
 export const ThemeContext = createContext<ThemeContextType>({
     darkMode: false,
     toggleTheme: () => {},
+    colors: {
+        background: "#f9fafb",
+        card: "#ffffff",
+        border: "#e5e7eb",
+        text: "#111827",
+        subtitle: "#6b7280",
+    },
 });
 
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
     const [darkMode, setDarkMode] = useState(false);
 
-    // ✅ Load theme preference on mount
     useEffect(() => {
         const loadTheme = async () => {
             try {
@@ -29,7 +42,6 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
         loadTheme();
     }, []);
 
-    // ✅ Toggle and persist theme preference
     const toggleTheme = async () => {
         try {
             const newValue = !darkMode;
@@ -40,8 +52,24 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
         }
     };
 
+    const colors = darkMode
+        ? {
+            background: "#111827", // dark gray
+            card: "#1f2937", // darker card
+            border: "#374151",
+            text: "#ffffff",
+            subtitle: "#9ca3af",
+        }
+        : {
+            background: "#f9fafb", // light gray
+            card: "#ffffff",
+            border: "#e5e7eb",
+            text: "#111827",
+            subtitle: "#6b7280",
+        };
+
     return (
-        <ThemeContext.Provider value={{ darkMode, toggleTheme }}>
+        <ThemeContext.Provider value={{ darkMode, toggleTheme, colors }}>
             {children}
         </ThemeContext.Provider>
     );
