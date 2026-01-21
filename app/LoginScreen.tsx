@@ -1,4 +1,11 @@
-import { View, TextInput, KeyboardAvoidingView, Platform, Alert, ScrollView } from "react-native";
+import {
+    View,
+    TextInput,
+    KeyboardAvoidingView,
+    Platform,
+    Alert,
+    ScrollView,
+} from "react-native";
 import Button from "./src/components/Button";
 import Header from "./src/components/Header";
 import Loader from "./src/components/Loader";
@@ -31,12 +38,9 @@ export default function LoginScreen() {
 
         setLoading(true);
         try {
-            // simulate login delay
             await new Promise((resolve) => setTimeout(resolve, 1500));
-            // save token
             await AsyncStorage.setItem("userToken", "mock-token");
-            // redirect to dashboard
-            router.replace("/(tabs)/DashboardScreen");
+            router.replace("/(tabs)/01_DashboardScreen"); // ✅ fixed route
         } catch {
             Alert.alert("Login Failed", "Something went wrong. Please try again.");
         } finally {
@@ -44,9 +48,7 @@ export default function LoginScreen() {
         }
     };
 
-    if (loading) {
-        return <Loader message="Logging in..." />;
-    }
+    if (loading) return <Loader message="Logging in..." />;
 
     return (
         <KeyboardAvoidingView
@@ -58,8 +60,10 @@ export default function LoginScreen() {
 
                 <View className="flex-1 items-center justify-center px-6">
                     <View
-                        className={`w-full rounded-2xl p-6 shadow-md border ${
-                            darkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+                        className={`w-full rounded-2xl p-6 shadow-md border gap-4 ${
+                            darkMode
+                                ? "bg-gray-800 border-gray-700"
+                                : "bg-white border-gray-200"
                         }`}
                     >
                         <TextInput
@@ -69,7 +73,7 @@ export default function LoginScreen() {
                             value={email}
                             onChangeText={setEmail}
                             placeholderTextColor={darkMode ? "#9CA3AF" : "#6B7280"}
-                            className={`border rounded-xl p-3 mb-4 ${
+                            className={`border rounded-xl p-3 ${
                                 darkMode
                                     ? "border-gray-600 bg-gray-700 text-white"
                                     : "border-gray-300 bg-gray-50 text-black"
@@ -82,30 +86,28 @@ export default function LoginScreen() {
                             value={password}
                             onChangeText={setPassword}
                             placeholderTextColor={darkMode ? "#9CA3AF" : "#6B7280"}
-                            className={`border rounded-xl p-3 mb-6 ${
+                            className={`border rounded-xl p-3 ${
                                 darkMode
                                     ? "border-gray-600 bg-gray-700 text-white"
                                     : "border-gray-300 bg-gray-50 text-black"
                             }`}
                         />
 
-                        {/* Login button with icon + spinner */}
-                        <Button
-                            title="Login"
-                            icon="log-in-outline"
-                            onPress={handleLogin}
-                            loading={loading}
-                            variant="primary"
-                        />
-
-                        {/* Signup navigation button */}
-                        <Button
-                            title="Create Account"
-                            icon="person-add-outline"
-                            onPress={() => router.push("/SignupScreen")}
-                            variant="secondary"
-                            fullWidth={false}
-                        />
+                        <View className="gap-3 mt-4">
+                            <Button
+                                title="Login"
+                                icon="log-in-outline"
+                                onPress={handleLogin}
+                                loading={loading}
+                                variant="primary"
+                            />
+                            <Button
+                                title="Create Account"
+                                icon="person-add-outline"
+                                onPress={() => router.push("/SignupScreen")}
+                                variant="secondary"
+                            />
+                        </View>
                     </View>
                 </View>
             </ScrollView>
