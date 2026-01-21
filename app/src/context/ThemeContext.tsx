@@ -3,33 +3,45 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 type ThemeContextType = {
     darkMode: boolean;
-    toggleDarkMode: () => void;
+    toggleTheme: () => void;
 };
 
 export const ThemeContext = createContext<ThemeContextType>({
     darkMode: false,
-    toggleDarkMode: () => {},
+    toggleTheme: () => {},
 });
 
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
     const [darkMode, setDarkMode] = useState(false);
 
+    // ✅ Load theme preference on mount
     useEffect(() => {
         const loadTheme = async () => {
-            const storedDarkMode = await AsyncStorage.getItem("pref_darkMode");
-            if (storedDarkMode !== null) setDarkMode(storedDarkMode === "true");
+            try {
+                const storedDarkMode = await AsyncStorage.getItem("pref_darkMode");
+                if (storedDarkMode !== null) {
+                    setDarkMode(storedDarkMode === "true");
+                }
+            } catch (error) {
+                console.log("Failed to load theme preference:", error);
+            }
         };
         loadTheme();
     }, []);
 
-    const toggleDarkMode = async () => {
-        const newValue = !darkMode;
-        setDarkMode(newValue);
-        await AsyncStorage.setItem("pref_darkMode", String(newValue));
+    // ✅ Toggle and persist theme preference
+    const toggleTheme = async () => {
+        try {
+            const newValue = !darkMode;
+            setDarkMode(newValue);
+            await AsyncStorage.setItem("pref_darkMode", String(newValue));
+        } catch (error) {
+            console.log("Failed to save theme preference:", error);
+        }
     };
 
     return (
-        <ThemeContext.Provider value={{ darkMode, toggleDarkMode }}>
+        <ThemeContext.Provider value={{ darkMode, toggleTheme }}>
             {children}
         </ThemeContext.Provider>
     );
