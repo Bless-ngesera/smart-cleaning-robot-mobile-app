@@ -1,5 +1,5 @@
 import React, { useState, useContext } from "react";
-import { View, Text, Alert } from "react-native";
+import { View, Text, Alert, StyleSheet } from "react-native";
 import Header from "../src/components/Header";
 import Loader from "../src/components/Loader";
 import Button from "../src/components/Button";
@@ -9,13 +9,14 @@ import { router } from "expo-router";
 export default function MapScreen() {
     const [busy, setBusy] = useState(false);
     const [loadingMessage, setLoadingMessage] = useState("");
-    const { darkMode } = useContext(ThemeContext);
+    const { colors } = useContext(ThemeContext);
 
+    /* ---------------- Fetch Robot Map ---------------- */
     const fetchMap = async () => {
         setBusy(true);
         setLoadingMessage("Fetching robot map...");
         try {
-            // ✅ Future integration with native C++ bridge
+            // C++ BRIDGE: Replace with RobotBridge.getMap() for native robot mapping integration
             console.log("Fetch map (mock)");
             await new Promise((resolve) => setTimeout(resolve, 1500)); // mock delay
         } catch {
@@ -29,68 +30,74 @@ export default function MapScreen() {
         return <Loader message={loadingMessage} />;
     }
 
+    /* --------------------------- UI --------------------------- */
     return (
-        <View className={`flex-1 ${darkMode ? "bg-gray-900" : "bg-gray-50"}`}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
             <Header title="Robot Map" />
 
-            <View className="flex-1 items-center justify-center p-6">
-                {/* Map Placeholder */}
+            <View style={styles.content}>
+                {/* ---------------- Map Placeholder ---------------- */}
                 <View
-                    className={`w-full h-80 rounded-xl shadow-sm border items-center justify-center ${
-                        darkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
-                    }`}
+                    style={[
+                        styles.mapBox,
+                        { backgroundColor: colors.card, borderColor: colors.border },
+                    ]}
                 >
-                    <Text className={darkMode ? "text-gray-400" : "text-gray-500"}>
+                    <Text style={{ color: colors.subtitle }}>
                         Map visualization coming soon…
                     </Text>
                 </View>
 
-                {/* Info Section */}
+                {/* ---------------- Info Section ---------------- */}
                 <View
-                    className={`mt-6 rounded-xl p-4 border w-full ${
-                        darkMode
-                            ? "bg-gray-800 border-gray-700"
-                            : "bg-blue-50 border-blue-200"
-                    }`}
+                    style={[
+                        styles.infoBox,
+                        { backgroundColor: colors.card, borderColor: colors.border },
+                    ]}
                 >
-                    <Text className="text-blue-700 font-semibold mb-2">
+                    <Text style={[styles.infoTitle, { color: "#2563eb" }]}>
                         Navigation Info
                     </Text>
-                    <Text className={darkMode ? "text-gray-300" : "text-gray-700"}>
+                    <Text style={{ color: colors.text }}>
                         The robot’s path, obstacles, and cleaning zones will be displayed
                         here once integrated.
                     </Text>
+                    {/* C++ BRIDGE: Integrate robot path, obstacle detection, and zone mapping here */}
                 </View>
 
-                {/* Fetch Map Button */}
-                <View className="mt-6 w-full">
-                    <Text
-                        className={`mb-2 font-semibold ${
-                            darkMode ? "text-gray-200" : "text-gray-700"
-                        }`}
-                    >
+                {/* ---------------- Fetch Map Button ---------------- */}
+                <View style={styles.actions}>
+                    <Text style={[styles.actionsTitle, { color: colors.text }]}>
                         Actions
                     </Text>
-                    <View className="flex-row gap-3">
-                        <Button title="Fetch Map" onPress={fetchMap} variant="primary" />
+                    <View style={styles.buttonRow}>
+                        <Button
+                            title="Fetch Map"
+                            icon="map-outline"
+                            onPress={fetchMap}
+                            variant="primary"
+                        />
                     </View>
                 </View>
 
-                {/* Navigation Buttons */}
-                <View className="flex-row gap-3 mt-6 w-full">
+                {/* ---------------- Navigation Buttons ---------------- */}
+                <View style={styles.navButtons}>
                     <Button
                         title="Dashboard"
-                        onPress={() => router.push("/(tabs)/DashboardScreen")}
+                        icon="grid-outline"
+                        onPress={() => router.push("./DashboardScreen")}
                         variant="secondary"
                     />
                     <Button
                         title="Control"
-                        onPress={() => router.push("/(tabs)/ControlScreen")}
+                        icon="settings-outline"
+                        onPress={() => router.push("./ControlScreen")}
                         variant="secondary"
                     />
                     <Button
                         title="Schedule"
-                        onPress={() => router.push("/(tabs)/ScheduleScreen")}
+                        icon="calendar-outline"
+                        onPress={() => router.push("./ScheduleScreen")}
                         variant="secondary"
                     />
                 </View>
@@ -98,3 +105,60 @@ export default function MapScreen() {
         </View>
     );
 }
+
+/* ---------------------------- Styles ----------------------------- */
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+    },
+    content: {
+        flex: 1,
+        padding: 24,
+        gap: 16,
+        alignItems: "center",
+        justifyContent: "flex-start",
+    },
+    mapBox: {
+        width: "100%",
+        height: 300,
+        borderRadius: 14,
+        borderWidth: 1,
+        alignItems: "center",
+        justifyContent: "center",
+        shadowColor: "#000",
+        shadowOpacity: 0.06,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    infoBox: {
+        width: "100%",
+        borderRadius: 14,
+        padding: 16,
+        borderWidth: 1,
+        marginTop: 16,
+    },
+    infoTitle: {
+        fontWeight: "600",
+        marginBottom: 8,
+        fontSize: 16,
+    },
+    actions: {
+        width: "100%",
+        marginTop: 24,
+    },
+    actionsTitle: {
+        fontWeight: "600",
+        marginBottom: 8,
+    },
+    buttonRow: {
+        flexDirection: "row",
+        gap: 12,
+    },
+    navButtons: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        gap: 12,
+        marginTop: 24,
+        width: "100%",
+    },
+});

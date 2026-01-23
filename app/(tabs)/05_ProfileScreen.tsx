@@ -1,5 +1,5 @@
 import React, { useContext } from "react";
-import { View, Text, Alert } from "react-native";
+import { View, Text, Alert, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
@@ -8,10 +8,12 @@ import Header from "../src/components/Header";
 import { ThemeContext } from "../src/context/ThemeContext";
 
 export default function ProfileScreen() {
-    const { darkMode, toggleTheme } = useContext(ThemeContext);
+    const { colors, darkMode, toggleTheme } = useContext(ThemeContext);
 
+    /* ---------------- Handle Logout ---------------- */
     const handleLogout = async () => {
         try {
+            // C++ BRIDGE: Integrate native secure logout if robot/user data is tied to hardware
             await AsyncStorage.removeItem("userToken");
             router.replace("/LoginScreen"); // ✅ send back to login
         } catch {
@@ -19,26 +21,22 @@ export default function ProfileScreen() {
         }
     };
 
+    /* --------------------------- UI --------------------------- */
     return (
         <SafeAreaView
-            className={`flex-1 ${darkMode ? "bg-gray-900" : "bg-gray-50"}`}
+            style={[styles.container, { backgroundColor: colors.background }]}
             edges={["top", "bottom"]}
         >
             <Header title="Profile" subtitle="Manage your account settings" />
 
-            <View className="flex-1 items-center justify-center px-6">
+            <View style={styles.content}>
                 <View
-                    className={`w-full rounded-2xl p-6 shadow-md border gap-4 ${
-                        darkMode
-                            ? "bg-gray-800 border-gray-700"
-                            : "bg-white border-gray-200"
-                    }`}
+                    style={[
+                        styles.card,
+                        { backgroundColor: colors.card, borderColor: colors.border },
+                    ]}
                 >
-                    <Text
-                        className={`text-lg font-semibold mb-4 ${
-                            darkMode ? "text-white" : "text-gray-900"
-                        }`}
-                    >
+                    <Text style={[styles.welcomeText, { color: colors.text }]}>
                         Welcome back, User!
                     </Text>
 
@@ -62,3 +60,31 @@ export default function ProfileScreen() {
         </SafeAreaView>
     );
 }
+
+/* ---------------------------- Styles ----------------------------- */
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+    },
+    content: {
+        flex: 1,
+        justifyContent: "center",
+        paddingHorizontal: 24,
+    },
+    card: {
+        width: "100%",
+        borderRadius: 16,
+        padding: 24,
+        borderWidth: 1,
+        shadowColor: "#000",
+        shadowOpacity: 0.06,
+        shadowRadius: 4,
+        elevation: 2,
+        gap: 16,
+    },
+    welcomeText: {
+        fontSize: 18,
+        fontWeight: "600",
+        marginBottom: 12,
+    },
+});

@@ -1,5 +1,15 @@
-import { TouchableOpacity, Text, ActivityIndicator, View } from "react-native";
+import React, { useContext } from "react";
+import {
+    TouchableOpacity,
+    Text,
+    ActivityIndicator,
+    View,
+    StyleSheet,
+    ViewStyle,
+    TextStyle,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { ThemeContext } from "../context/ThemeContext";
 
 type IoniconName = React.ComponentProps<typeof Ionicons>["name"];
 
@@ -8,7 +18,7 @@ type Props = {
     onPress: () => void;
     variant?: "primary" | "secondary" | "danger";
     disabled?: boolean;
-    icon?: IoniconName; // ✅ strictly typed icon name
+    icon?: IoniconName;
     loading?: boolean;
     fullWidth?: boolean;
 };
@@ -22,27 +32,60 @@ export default function Button({
                                    loading = false,
                                    fullWidth = true,
                                }: Props) {
-    const baseStyle = `${fullWidth ? "w-full" : "px-4"} py-3 rounded-xl flex-row items-center justify-center`;
+    const { colors } = useContext(ThemeContext);
 
-    const variantStyles: Record<NonNullable<Props["variant"]>, string> = {
-        primary: "bg-blue-600",
-        secondary: "bg-gray-200",
-        danger: "bg-red-500",
+    const fallbackColors = {
+        card: "#ffffff",
+        border: "#e5e7eb",
+        text: "#111827",
     };
 
-    const textStyles: Record<NonNullable<Props["variant"]>, string> = {
-        primary: "text-white",
-        secondary: "text-gray-800",
-        danger: "text-white",
+    const themeColors = colors ?? fallbackColors;
+
+    const isSecondary = variant === "secondary";
+    const isDanger = variant === "danger";
+
+    const backgroundColor =
+        variant === "primary"
+            ? "#2563eb"
+            : isDanger
+                ? "#ef4444"
+                : themeColors.card;
+
+    const borderColor =
+        variant === "primary"
+            ? "#2563eb"
+            : isDanger
+                ? "#ef4444"
+                : themeColors.border;
+
+    const textColor =
+        variant === "primary" || isDanger ? "#fff" : themeColors.text;
+
+    const buttonStyle: ViewStyle = {
+        width: fullWidth ? "100%" : undefined,
+        paddingVertical: 12,
+        borderRadius: 12,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        opacity: disabled ? 0.5 : 1,
+        backgroundColor,
+        borderColor,
+        borderWidth: isSecondary ? 1 : 0,
+        shadowColor: "#000",
+        shadowOpacity: isSecondary ? 0.05 : 0.1,
+        shadowRadius: 3,
     };
 
-    const background = variantStyles[variant];
-    const textColor = textStyles[variant];
-    const opacity = disabled ? "opacity-50" : "opacity-100";
+    const textStyle: TextStyle = {
+        fontWeight: "600",
+        color: textColor,
+    };
 
     return (
         <TouchableOpacity
-            className={`${baseStyle} ${background} ${opacity}`}
+            style={buttonStyle}
             onPress={onPress}
             disabled={disabled || loading}
             activeOpacity={0.8}
@@ -51,13 +94,21 @@ export default function Button({
           connect here via RobotBridge.start(), stop(), etc. */}
 
             {loading ? (
-                <ActivityIndicator color={variant === "secondary" ? "#1f2937" : "#fff"} />
+                <ActivityIndicator color={textColor} />
             ) : (
-                <View className="flex-row items-center gap-2">
-                    {icon && <Ionicons name={icon} size={20} color={variant === "secondary" ? "#1f2937" : "#fff"} />}
-                    <Text className={`font-semibold ${textColor}`}>{title}</Text>
+                <View style={styles.content}>
+                    {icon && <Ionicons name={icon} size={20} color={textColor} />}
+                    <Text style={textStyle}>{title}</Text>
                 </View>
             )}
         </TouchableOpacity>
     );
 }
+
+const styles = StyleSheet.create({
+    content: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+    },
+});

@@ -1,5 +1,5 @@
 import React, { useState, useContext } from "react";
-import { View, Text, Alert } from "react-native";
+import { View, Text, Alert, StyleSheet } from "react-native";
 import Button from "../src/components/Button";
 import Header from "../src/components/Header";
 import Loader from "../src/components/Loader";
@@ -9,13 +9,20 @@ import { router } from "expo-router";
 export default function ControlScreen() {
     const [busy, setBusy] = useState(false);
     const [loadingMessage, setLoadingMessage] = useState("");
-    const { darkMode } = useContext(ThemeContext);
+    const { colors } = useContext(ThemeContext);
 
-    const simulateAction = async (message: string, log: string, errorMsg: string) => {
+    /* ---------------- Simulated Robot Actions ---------------- */
+    const simulateAction = async (
+        message: string,
+        log: string,
+        errorMsg: string
+    ) => {
         setBusy(true);
         setLoadingMessage(message);
         try {
             console.log(log);
+
+            // C++ BRIDGE: Replace with RobotBridge.start(), stop(), dock() etc.
             await new Promise((resolve) => setTimeout(resolve, 1000));
         } catch {
             Alert.alert("Error", errorMsg);
@@ -28,37 +35,122 @@ export default function ControlScreen() {
         return <Loader message={loadingMessage} />;
     }
 
+    /* --------------------------- UI --------------------------- */
     return (
-        <View className={`flex-1 ${darkMode ? "bg-gray-900" : "bg-gray-50"}`}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
             <Header title="Control Robot" />
 
-            <View className="p-6 gap-4">
-                {/* Main Control Buttons */}
-                <Button title="Start Cleaning" onPress={() => simulateAction("Starting cleaning...", "Start cleaning (mock)", "Failed to start cleaning.")} />
-                <Button title="Stop Cleaning" onPress={() => simulateAction("Stopping cleaning...", "Stop cleaning (mock)", "Failed to stop cleaning.")} variant="secondary" />
-                <Button title="Return to Dock" onPress={() => simulateAction("Returning to dock...", "Return to dock (mock)", "Failed to dock robot.")} variant="secondary" />
+            <View style={styles.content}>
+                {/* ---------------- Main Control Buttons ---------------- */}
+                <Button
+                    title="Start Cleaning"
+                    icon="play-outline"
+                    onPress={() =>
+                        simulateAction(
+                            "Starting cleaning...",
+                            "Start cleaning (mock)",
+                            "Failed to start cleaning."
+                        )
+                    }
+                />
+                <Button
+                    title="Stop Cleaning"
+                    icon="stop-outline"
+                    variant="secondary"
+                    onPress={() =>
+                        simulateAction(
+                            "Stopping cleaning...",
+                            "Stop cleaning (mock)",
+                            "Failed to stop cleaning."
+                        )
+                    }
+                />
+                <Button
+                    title="Return to Dock"
+                    icon="home-outline"
+                    variant="secondary"
+                    onPress={() =>
+                        simulateAction(
+                            "Returning to dock...",
+                            "Return to dock (mock)",
+                            "Failed to dock robot."
+                        )
+                    }
+                />
 
-                {/* Manual Controls Section */}
+                {/* ---------------- Manual Controls ---------------- */}
                 <View
-                    className={`mt-8 rounded-xl p-4 shadow-sm border ${
-                        darkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-100"
-                    }`}
+                    style={[
+                        styles.card,
+                        { backgroundColor: colors.card, borderColor: colors.border },
+                    ]}
                 >
-                    <Text className={`font-semibold mb-2 ${darkMode ? "text-gray-200" : "text-gray-700"}`}>
+                    <Text style={[styles.cardTitle, { color: colors.text }]}>
                         Manual Controls
                     </Text>
-                    <Text className={darkMode ? "text-gray-400" : "text-gray-500"}>
+                    <Text style={[styles.cardSubtitle, { color: colors.subtitle }]}>
                         Joystick and advanced controls coming soon…
                     </Text>
+                    {/* C++ BRIDGE: Integrate joystick and directional controls here */}
                 </View>
 
-                {/* Navigation Buttons */}
-                <View className="flex-row gap-3 mt-6">
-                    <Button title="Dashboard" onPress={() => router.push("/(tabs)/DashboardScreen")} variant="secondary" />
-                    <Button title="Schedule" onPress={() => router.push("/(tabs)/ScheduleScreen")} variant="secondary" />
-                    <Button title="Map" onPress={() => router.push("/(tabs)/MapScreen")} variant="secondary" />
+                {/* ---------------- Navigation Buttons ---------------- */}
+                <View style={styles.navButtons}>
+                    <Button
+                        title="Dashboard"
+                        icon="grid-outline"
+                        variant="secondary"
+                        onPress={() => router.push("./DashboardScreen")}
+                    />
+                    <Button
+                        title="Schedule"
+                        icon="calendar-outline"
+                        variant="secondary"
+                        onPress={() => router.push("./ScheduleScreen")}
+                    />
+                    <Button
+                        title="Map"
+                        icon="map-outline"
+                        variant="secondary"
+                        onPress={() => router.push("./MapScreen")}
+                    />
                 </View>
             </View>
         </View>
     );
 }
+
+/* ---------------------------- Styles ----------------------------- */
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+    },
+    content: {
+        padding: 24,
+        gap: 16,
+    },
+    card: {
+        marginTop: 24,
+        borderRadius: 14,
+        padding: 16,
+        borderWidth: 1,
+        shadowColor: "#000",
+        shadowOpacity: 0.06,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    cardTitle: {
+        fontWeight: "600",
+        fontSize: 16,
+        marginBottom: 6,
+    },
+    cardSubtitle: {
+        fontSize: 14,
+    },
+    navButtons: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        gap: 12,
+        marginTop: 24,
+    },
+});
