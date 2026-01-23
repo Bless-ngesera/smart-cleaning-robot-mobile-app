@@ -124,7 +124,10 @@ export default function ScheduleScreen() {
     if (busy) return <Loader message={loadingMessage} />;
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={["top", "bottom"]}>
+        <SafeAreaView
+            style={[styles.container, { backgroundColor: colors.background }]}
+            edges={["bottom"]}   // ← changed here – header now reaches true top
+        >
             <Header title="Cleaning Schedule" subtitle="Manage your automated routines" />
 
             <ScrollView

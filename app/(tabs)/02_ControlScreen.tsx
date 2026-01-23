@@ -88,7 +88,7 @@ export default function ControlScreen() {
     return (
         <SafeAreaView
             style={[styles.container, { backgroundColor: colors.background }]}
-            edges={["top", "bottom"]}
+            edges={["bottom"]}   // ← changed here – header now reaches true top
         >
             <Header title="Control Robot" subtitle="Manage cleaning operations" />
 

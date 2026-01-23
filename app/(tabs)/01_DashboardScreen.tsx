@@ -7,14 +7,14 @@ import {
     StyleSheet,
     TouchableOpacity,
 } from "react-native";
-import { useEffect, useState, useCallback, useContext, JSX } from "react";
+import { useEffect, useState, useCallback, useContext } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 
-import Button from "../src/components/Button";
-import StatTile from "../src/components/StatTile";
+import Button from "../src/components/Button"; // assuming still used elsewhere
+import StatTile from "../src/components/StatTile"; // not used now — consider removing import if unused
 import Header from "../src/components/Header";
 import Loader from "../src/components/Loader";
 
@@ -38,11 +38,9 @@ export default function DashboardScreen() {
     const [status, setStatus] = useState<RobotStatus | null>(null);
     const [loading, setLoading] = useState(false);
 
-    /* ------------------------- Data Fetch -------------------------- */
     const fetchStatus = useCallback(async () => {
         try {
             setLoading(true);
-            // C++ BRIDGE: Replace getRobotStatus() with RobotBridge.getStatus() for native sensor integration
             const response = await getRobotStatus();
             setStatus(response);
         } catch {
@@ -56,7 +54,7 @@ export default function DashboardScreen() {
         fetchStatus();
     }, [fetchStatus]);
 
-    /* ---------------------- Battery Color ------------------------- */
+    // Battery helpers
     const getBatteryColor = (level: number) => {
         if (level > 60) return "#10B981";
         if (level > 30) return "#F59E0B";
@@ -65,22 +63,22 @@ export default function DashboardScreen() {
 
     const getBatteryIcon = (level: number) => {
         if (level > 80) return "battery-full";
-        if (level > 60) return "battery-half";
-        if (level > 30) return "battery-half";
-        if (level > 10) return "battery-dead";
+        if (level > 50) return "battery-half";
+        if (level > 20) return "battery-low";
         return "battery-dead";
     };
 
-    /* ---------------------- Initial Loader ------------------------- */
     if (loading && !status) {
         return <Loader message="Fetching robot status..." />;
     }
 
-    /* --------------------------- UI ------------------------------- */
+    const batteryLevel = status?.batteryLevel ?? 0;
+    const isCleaning = status?.isCleaning ?? false;
+
     return (
         <SafeAreaView
             style={[styles.container, { backgroundColor: colors.background }]}
-            edges={["top", "bottom"]}
+            edges={["bottom"]} // ← key change: header goes to true top
         >
             <Header title="Dashboard" subtitle="Monitor your robot's status" />
 
@@ -93,280 +91,215 @@ export default function DashboardScreen() {
                 }
             >
                 <View style={styles.content}>
-                    {/* -------------------- Robot Status Card -------------------- */}
+
+                    {/* ─── Hero Status Card ──────────────────────────────────────── */}
                     <View
                         style={[
-                            styles.statusCard,
+                            styles.heroCard,
                             {
                                 backgroundColor: colors.card,
                                 borderColor: colors.border,
                             },
                         ]}
                     >
-                        <View style={styles.statusHeader}>
-                            <View style={styles.statusHeaderLeft}>
-                                <View style={[
-                                    styles.robotIconContainer,
-                                    {
-                                        backgroundColor: status?.isCleaning
-                                            ? "#10B981" + "20"
-                                            : colors.primary + "20"
-                                    }
-                                ]}>
+                        <View style={styles.heroHeader}>
+                            <View style={styles.robotInfo}>
+                                <View
+                                    style={[
+                                        styles.robotAvatar,
+                                        {
+                                            backgroundColor: isCleaning
+                                                ? "#10B98133"
+                                                : `${colors.primary}33`,
+                                        },
+                                    ]}
+                                >
                                     <Ionicons
                                         name="hardware-chip"
-                                        size={32}
-                                        color={status?.isCleaning ? "#10B981" : colors.primary}
+                                        size={40}
+                                        color={isCleaning ? "#10B981" : colors.primary}
                                     />
                                 </View>
-                                <View>
+
+                                <View style={styles.robotText}>
                                     <Text style={[styles.robotName, { color: colors.text }]}>
                                         Smart Cleaner Pro
                                     </Text>
                                     <View style={styles.statusBadge}>
-                                        <View style={[
-                                            styles.statusDot,
-                                            {
-                                                backgroundColor: status?.isCleaning
-                                                    ? "#10B981"
-                                                    : "#94A3B8"
-                                            }
-                                        ]} />
-                                        <Text style={[
-                                            styles.statusText,
-                                            {
-                                                color: status?.isCleaning
-                                                    ? "#10B981"
-                                                    : colors.textSecondary
-                                            }
-                                        ]}>
-                                            {status?.isCleaning ? "Cleaning" : "Idle"}
+                                        <View
+                                            style={[
+                                                styles.statusDot,
+                                                { backgroundColor: isCleaning ? "#10B981" : "#94A3B8" },
+                                            ]}
+                                        />
+                                        <Text
+                                            style={[
+                                                styles.statusLabel,
+                                                { color: isCleaning ? "#10B981" : colors.textSecondary },
+                                            ]}
+                                        >
+                                            {isCleaning ? "Cleaning" : "Idle"}
                                         </Text>
                                     </View>
                                 </View>
                             </View>
 
                             <TouchableOpacity
-                                style={[styles.refreshButton, { backgroundColor: colors.background }]}
+                                style={[styles.refreshBtn, { backgroundColor: colors.background }]}
                                 onPress={fetchStatus}
-                                activeOpacity={0.7}
                             >
-                                <Ionicons
-                                    name="refresh"
-                                    size={20}
-                                    color={colors.primary}
-                                />
+                                <Ionicons name="refresh" size={22} color={colors.primary} />
                             </TouchableOpacity>
                         </View>
 
-                        {/* Battery Progress Bar */}
-                        <View style={styles.batterySection}>
-                            <View style={styles.batterySectionHeader}>
-                                <View style={styles.batteryInfo}>
+                        {/* Battery – prominent */}
+                        <View style={styles.batteryBlock}>
+                            <View style={styles.batteryHeader}>
+                                <View style={styles.batteryLabelRow}>
                                     <Ionicons
-                                        name={getBatteryIcon(status?.batteryLevel || 0)}
-                                        size={24}
-                                        color={getBatteryColor(status?.batteryLevel || 0)}
+                                        name={getBatteryIcon(batteryLevel)}
+                                        size={28}
+                                        color={getBatteryColor(batteryLevel)}
                                     />
-                                    <Text style={[styles.batteryLabel, { color: colors.text }]}>
-                                        Battery Level
+                                    <Text style={[styles.batteryTitle, { color: colors.text }]}>
+                                        Battery
                                     </Text>
                                 </View>
-                                <Text style={[
-                                    styles.batteryValue,
-                                    { color: getBatteryColor(status?.batteryLevel || 0) }
-                                ]}>
-                                    {status?.batteryLevel || 0}%
+                                <Text
+                                    style={[
+                                        styles.batteryPercent,
+                                        { color: getBatteryColor(batteryLevel) },
+                                    ]}
+                                >
+                                    {batteryLevel}%
                                 </Text>
                             </View>
 
-                            <View style={[styles.progressBarBackground, { backgroundColor: colors.background }]}>
-                                <View
-                                    style={[
-                                        styles.progressBarFill,
-                                        {
-                                            width: `${status?.batteryLevel || 0}%`,
-                                            backgroundColor: getBatteryColor(status?.batteryLevel || 0),
-                                        },
-                                    ]}
+                            <View
+                                style={[
+                                    styles.progressBg,
+                                    { backgroundColor: darkMode ? "#333" : "#E5E7EB" },
+                                ]}
+                            >
+                                <LinearGradient
+                                    colors={[getBatteryColor(batteryLevel), `${getBatteryColor(batteryLevel)}CC`]}
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 1, y: 0 }}
+                                    style={[styles.progressFill, { width: `${batteryLevel}%` }]}
                                 />
                             </View>
                         </View>
                     </View>
 
-                    {/* -------------------- Quick Stats -------------------- */}
-                    <View style={styles.statsGrid}>
-                        <View style={[
-                            styles.statCard,
-                            { backgroundColor: colors.card, borderColor: colors.border }
-                        ]}>
-                            <View style={[styles.statIconBox, { backgroundColor: "#10B981" + "20" }]}>
-                                <Ionicons name="checkmark-circle" size={24} color="#10B981" />
+                    {/* ─── Quick Stats ────────────────────────────────────────────── */}
+                    <View style={styles.statsRow}>
+                        <View style={[styles.statTile, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <View style={[styles.statIcon, { backgroundColor: "#10B98133" }]}>
+                                <Ionicons name="checkmark-circle" size={28} color="#10B981" />
                             </View>
-                            <Text style={[styles.statValue, { color: colors.text }]}>
-                                {status?.isCleaning ? "Active" : "Ready"}
+                            <Text style={[styles.statNumber, { color: colors.text }]}>
+                                {isCleaning ? "Active" : "Ready"}
                             </Text>
-                            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-                                Status
-                            </Text>
+                            <Text style={[styles.statCaption, { color: colors.textSecondary }]}>Status</Text>
                         </View>
 
-                        <View style={[
-                            styles.statCard,
-                            { backgroundColor: colors.card, borderColor: colors.border }
-                        ]}>
-                            <View style={[styles.statIconBox, { backgroundColor: "#8B5CF6" + "20" }]}>
-                                <Ionicons name="time" size={24} color="#8B5CF6" />
+                        <View style={[styles.statTile, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <View style={[styles.statIcon, { backgroundColor: "#8B5CF633" }]}>
+                                <Ionicons name="time" size={28} color="#8B5CF6" />
                             </View>
-                            <Text style={[styles.statValue, { color: colors.text }]}>
-                                {status?.isCleaning ? "2.5h" : "—"}
+                            <Text style={[styles.statNumber, { color: colors.text }]}>
+                                {isCleaning ? "2.5 h" : "—"}
                             </Text>
-                            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-                                Runtime
-                            </Text>
+                            <Text style={[styles.statCaption, { color: colors.textSecondary }]}>Runtime</Text>
                         </View>
 
-                        <View style={[
-                            styles.statCard,
-                            { backgroundColor: colors.card, borderColor: colors.border }
-                        ]}>
-                            <View style={[styles.statIconBox, { backgroundColor: "#F59E0B" + "20" }]}>
-                                <Ionicons name="speedometer" size={24} color="#F59E0B" />
+                        <View style={[styles.statTile, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                            <View style={[styles.statIcon, { backgroundColor: "#F59E0B33" }]}>
+                                <Ionicons name="speedometer" size={28} color="#F59E0B" />
                             </View>
-                            <Text style={[styles.statValue, { color: colors.text }]}>
-                                127m²
-                            </Text>
-                            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-                                Area Cleaned
-                            </Text>
+                            <Text style={[styles.statNumber, { color: colors.text }]}>127 m²</Text>
+                            <Text style={[styles.statCaption, { color: colors.textSecondary }]}>Cleaned</Text>
                         </View>
                     </View>
 
-                    {/* ---------------- Last Cleaned Info ---------------- */}
-                    <View
-                        style={[
-                            styles.infoCard,
-                            {
-                                backgroundColor: colors.card,
-                                borderColor: colors.border,
-                            },
-                        ]}
-                    >
-                        <View style={styles.infoHeader}>
-                            <View style={styles.infoTitleContainer}>
-                                <Ionicons name="calendar" size={20} color={colors.primary} />
-                                <Text style={[styles.infoTitle, { color: colors.text }]}>
-                                    Last Cleaning Session
-                                </Text>
-                            </View>
+                    {/* ─── Last Cleaned ───────────────────────────────────────────── */}
+                    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <View style={styles.cardHeader}>
+                            <Ionicons name="calendar" size={22} color={colors.primary} />
+                            <Text style={[styles.cardTitle, { color: colors.text }]}>Last Session</Text>
                         </View>
-
-                        <View style={styles.infoContent}>
-                            <View style={styles.infoRow}>
-                                <Ionicons name="time-outline" size={18} color={colors.textSecondary} />
-                                <Text style={[styles.infoText, { color: colors.text }]}>
-                                    {status ? new Date(status.lastCleaned).toLocaleString() : "No data available"}
-                                </Text>
-                            </View>
-                        </View>
+                        <Text style={[styles.lastCleanedText, { color: colors.text }]}>
+                            {status?.lastCleaned
+                                ? new Date(status.lastCleaned).toLocaleString([], {
+                                    dateStyle: "medium",
+                                    timeStyle: "short",
+                                })
+                                : "No data yet"}
+                        </Text>
                     </View>
 
-                    {/* ------------------ Error Alerts -------------------- */}
-                    {Array.isArray(status?.errors) && status.errors.length > 0 && (
+                    {/* ─── Errors (only when present) ─────────────────────────────── */}
+                    {status?.errors?.length ? (
                         <View style={styles.errorCard}>
                             <View style={styles.errorHeader}>
-                                <View style={styles.errorIconContainer}>
-                                    <Ionicons name="alert-circle" size={24} color="#EF4444" />
+                                <View style={styles.errorIconWrap}>
+                                    <Ionicons name="alert-circle" size={26} color="#EF4444" />
                                 </View>
-                                <View style={styles.errorHeaderText}>
-                                    <Text style={styles.errorTitle}>
-                                        System Alerts
-                                    </Text>
-                                    <Text style={styles.errorCount}>
+                                <View>
+                                    <Text style={styles.errorTitle}>System Alerts</Text>
+                                    <Text style={styles.errorSubtitle}>
                                         {status.errors.length} issue{status.errors.length > 1 ? "s" : ""} detected
                                     </Text>
                                 </View>
                             </View>
+                            {status.errors.map((err, i) => (
+                                <View key={i} style={styles.errorRow}>
+                                    <View style={styles.errorBullet} />
+                                    <Text style={styles.errorMessage}>{err}</Text>
+                                </View>
+                            ))}
+                        </View>
+                    ) : null}
 
-                            <View style={styles.errorList}>
-                                {status.errors.map((error: string, index: number): JSX.Element => (
-                                    <View key={index} style={styles.errorItem}>
-                                        <View style={styles.errorBullet} />
-                                        <Text style={styles.errorText}>{error}</Text>
+                    {/* ─── Quick Actions ──────────────────────────────────────────── */}
+                    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <View style={styles.cardHeader}>
+                            <Ionicons name="flash" size={22} color={colors.primary} />
+                            <Text style={[styles.cardTitle, { color: colors.text }]}>Quick Actions</Text>
+                        </View>
+
+                        <View style={styles.actionsGrid}>
+                            {[
+                                { icon: "game-controller", label: "Controls", route: "/(tabs)/02_ControlScreen", color: colors.primary },
+                                { icon: "calendar", label: "Schedule", route: "/(tabs)/04_ScheduleScreen", color: "#8B5CF6" },
+                                { icon: "map", label: "Map", route: "/(tabs)/03_MapScreen", color: "#10B981" },
+                            ].map((item, idx) => (
+                                <TouchableOpacity
+                                    key={idx}
+                                    style={styles.actionTile}
+                                    onPress={() => router.push(item.route)}
+                                >
+                                    <View style={[styles.actionIconWrap, { backgroundColor: `${item.color}22` }]}>
+                                        <Ionicons name={item.icon} size={32} color={item.color} />
                                     </View>
-                                ))}
-                            </View>
-                        </View>
-                    )}
-
-                    {/* --------------- Quick Actions ---------------- */}
-                    <View style={[
-                        styles.actionsCard,
-                        { backgroundColor: colors.card, borderColor: colors.border }
-                    ]}>
-                        <View style={styles.actionsHeader}>
-                            <View style={styles.actionsTitleContainer}>
-                                <Ionicons name="flash" size={20} color={colors.primary} />
-                                <Text style={[styles.actionsTitle, { color: colors.text }]}>
-                                    Quick Actions
-                                </Text>
-                            </View>
-                        </View>
-
-                        <View style={styles.actionButtons}>
-                            <TouchableOpacity
-                                style={[styles.actionButton, { backgroundColor: colors.background }]}
-                                onPress={() => router.push("/(tabs)/02_ControlScreen")}
-                                activeOpacity={0.7}
-                            >
-                                <View style={[styles.actionIconContainer, { backgroundColor: colors.primary + "20" }]}>
-                                    <Ionicons name="game-controller" size={28} color={colors.primary} />
-                                </View>
-                                <Text style={[styles.actionButtonText, { color: colors.text }]}>
-                                    Controls
-                                </Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={[styles.actionButton, { backgroundColor: colors.background }]}
-                                onPress={() => router.push("/(tabs)/04_ScheduleScreen")}
-                                activeOpacity={0.7}
-                            >
-                                <View style={[styles.actionIconContainer, { backgroundColor: "#8B5CF6" + "20" }]}>
-                                    <Ionicons name="calendar" size={28} color="#8B5CF6" />
-                                </View>
-                                <Text style={[styles.actionButtonText, { color: colors.text }]}>
-                                    Schedule
-                                </Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={[styles.actionButton, { backgroundColor: colors.background }]}
-                                onPress={() => router.push("/(tabs)/03_MapScreen")}
-                                activeOpacity={0.7}
-                            >
-                                <View style={[styles.actionIconContainer, { backgroundColor: "#10B981" + "20" }]}>
-                                    <Ionicons name="map" size={28} color="#10B981" />
-                                </View>
-                                <Text style={[styles.actionButtonText, { color: colors.text }]}>
-                                    Map
-                                </Text>
-                            </TouchableOpacity>
+                                    <Text style={[styles.actionLabel, { color: colors.text }]}>{item.label}</Text>
+                                </TouchableOpacity>
+                            ))}
                         </View>
                     </View>
 
-                    {/* --------------- Performance Tip ---------------- */}
-                    <View style={[
-                        styles.tipCard,
-                        { backgroundColor: colors.primary + "10", borderColor: colors.primary + "30" }
-                    ]}>
-                        <Ionicons name="bulb" size={20} color={colors.primary} />
-                        <View style={styles.tipContent}>
-                            <Text style={[styles.tipTitle, { color: colors.primary }]}>
-                                Performance Tip
-                            </Text>
+                    {/* ─── Tip (optional premium touch) ───────────────────────────── */}
+                    <View
+                        style={[
+                            styles.tipCard,
+                            { backgroundColor: `${colors.primary}0D`, borderColor: `${colors.primary}40` },
+                        ]}
+                    >
+                        <Ionicons name="bulb" size={24} color={colors.primary} />
+                        <View style={styles.tipBody}>
+                            <Text style={[styles.tipHeading, { color: colors.primary }]}>Pro Tip</Text>
                             <Text style={[styles.tipText, { color: colors.text }]}>
-                                For optimal cleaning, ensure the dustbin is empty and sensors are clean before each session.
+                                Empty the dustbin and wipe sensors before starting for best performance.
                             </Text>
                         </View>
                     </View>
@@ -376,199 +309,179 @@ export default function DashboardScreen() {
     );
 }
 
-/* ---------------------------- Styles ----------------------------- */
+/* ──────────────────────────────────────────────────────────────────────── */
+/*                               Styles                                    */
+/* ──────────────────────────────────────────────────────────────────────── */
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    scrollView: {
-        flex: 1,
-    },
-    scrollContent: {
-        paddingBottom: 32,
-    },
+    container: { flex: 1 },
+    scrollView: { flex: 1 },
+    scrollContent: { paddingBottom: 40 },
+
     content: {
-        padding: 20,
+        paddingHorizontal: 20,
+        paddingTop: 12,
     },
 
-    /* Status Card */
-    statusCard: {
-        borderRadius: 20,
-        padding: 20,
+    // Hero card – biggest visual impact
+    heroCard: {
+        borderRadius: 24,
+        padding: 24,
         borderWidth: 1,
-        marginBottom: 20,
-        marginTop: 8,
+        marginBottom: 24,
         shadowColor: "#000",
-        shadowOpacity: 0.08,
-        shadowRadius: 12,
-        shadowOffset: { width: 0, height: 4 },
-        elevation: 4,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.10,
+        shadowRadius: 16,
+        elevation: 8,
     },
-    statusHeader: {
+    heroHeader: {
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "center",
-        marginBottom: 20,
+        marginBottom: 28,
     },
-    statusHeaderLeft: {
+    robotInfo: {
         flexDirection: "row",
         alignItems: "center",
-        gap: 12,
+        gap: 16,
     },
-    robotIconContainer: {
-        width: 60,
-        height: 60,
-        borderRadius: 30,
+    robotAvatar: {
+        width: 72,
+        height: 72,
+        borderRadius: 36,
         alignItems: "center",
         justifyContent: "center",
     },
+    robotText: { gap: 4 },
     robotName: {
-        fontSize: 18,
+        fontSize: 22,
         fontWeight: "700",
-        marginBottom: 4,
     },
     statusBadge: {
         flexDirection: "row",
         alignItems: "center",
-        gap: 6,
+        gap: 8,
     },
     statusDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
+        width: 10,
+        height: 10,
+        borderRadius: 5,
     },
-    statusText: {
-        fontSize: 14,
+    statusLabel: {
+        fontSize: 16,
         fontWeight: "600",
     },
-    refreshButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        alignItems: "center",
-        justifyContent: "center",
-    },
-
-    /* Battery Section */
-    batterySection: {
-        gap: 12,
-    },
-    batterySectionHeader: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-    },
-    batteryInfo: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 10,
-    },
-    batteryLabel: {
-        fontSize: 15,
-        fontWeight: "600",
-    },
-    batteryValue: {
-        fontSize: 24,
-        fontWeight: "700",
-    },
-    progressBarBackground: {
-        height: 12,
-        borderRadius: 6,
-        overflow: "hidden",
-    },
-    progressBarFill: {
-        height: "100%",
-        borderRadius: 6,
-    },
-
-    /* Stats Grid */
-    statsGrid: {
-        flexDirection: "row",
-        gap: 12,
-        marginBottom: 20,
-    },
-    statCard: {
-        flex: 1,
-        borderRadius: 16,
-        padding: 16,
-        borderWidth: 1,
-        alignItems: "center",
-        shadowColor: "#000",
-        shadowOpacity: 0.06,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 2 },
-        elevation: 2,
-    },
-    statIconBox: {
+    refreshBtn: {
         width: 48,
         height: 48,
         borderRadius: 24,
         alignItems: "center",
         justifyContent: "center",
+    },
+
+    // Battery
+    batteryBlock: { gap: 12 },
+    batteryHeader: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+    },
+    batteryLabelRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12,
+    },
+    batteryTitle: {
+        fontSize: 17,
+        fontWeight: "600",
+    },
+    batteryPercent: {
+        fontSize: 32,
+        fontWeight: "800",
+    },
+    progressBg: {
+        height: 14,
+        borderRadius: 7,
+        overflow: "hidden",
+    },
+    progressFill: {
+        height: "100%",
+        borderRadius: 7,
+    },
+
+    // Stats row
+    statsRow: {
+        flexDirection: "row",
+        gap: 12,
+        marginBottom: 24,
+    },
+    statTile: {
+        flex: 1,
+        borderRadius: 20,
+        paddingVertical: 20,
+        paddingHorizontal: 12,
+        borderWidth: 1,
+        alignItems: "center",
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.08,
+        shadowRadius: 10,
+        elevation: 4,
+    },
+    statIcon: {
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        alignItems: "center",
+        justifyContent: "center",
         marginBottom: 12,
     },
-    statValue: {
-        fontSize: 18,
+    statNumber: {
+        fontSize: 20,
         fontWeight: "700",
         marginBottom: 4,
     },
-    statLabel: {
-        fontSize: 12,
+    statCaption: {
+        fontSize: 13,
         fontWeight: "500",
-        textAlign: "center",
     },
 
-    /* Info Card */
-    infoCard: {
-        borderRadius: 16,
+    // Generic card
+    card: {
+        borderRadius: 20,
         padding: 20,
         borderWidth: 1,
         marginBottom: 20,
         shadowColor: "#000",
-        shadowOpacity: 0.06,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 2 },
-        elevation: 2,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.07,
+        shadowRadius: 10,
+        elevation: 4,
     },
-    infoHeader: {
+    cardHeader: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 10,
         marginBottom: 16,
     },
-    infoTitleContainer: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 10,
+    cardTitle: {
+        fontSize: 18,
+        fontWeight: "700",
     },
-    infoTitle: {
+    lastCleanedText: {
         fontSize: 16,
-        fontWeight: "600",
-    },
-    infoContent: {
-        gap: 12,
-    },
-    infoRow: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 10,
-    },
-    infoText: {
-        fontSize: 15,
         fontWeight: "500",
     },
 
-    /* Error Card */
+    // Error card
     errorCard: {
         backgroundColor: "#FEF2F2",
-        borderRadius: 16,
-        padding: 20,
-        borderWidth: 1,
         borderColor: "#FECACA",
-        marginBottom: 20,
-        shadowColor: "#EF4444",
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 2 },
-        elevation: 2,
+        borderWidth: 1,
+        borderRadius: 20,
+        padding: 20,
+        marginBottom: 24,
     },
     errorHeader: {
         flexDirection: "row",
@@ -576,116 +489,85 @@ const styles = StyleSheet.create({
         gap: 12,
         marginBottom: 16,
     },
-    errorIconContainer: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+    errorIconWrap: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
         backgroundColor: "#FEE2E2",
         alignItems: "center",
         justifyContent: "center",
     },
-    errorHeaderText: {
-        flex: 1,
-    },
     errorTitle: {
-        color: "#B91C1C",
+        color: "#991B1B",
+        fontSize: 18,
         fontWeight: "700",
-        fontSize: 16,
-        marginBottom: 2,
     },
-    errorCount: {
-        color: "#DC2626",
-        fontSize: 13,
-        fontWeight: "500",
+    errorSubtitle: {
+        color: "#B91C1C",
+        fontSize: 14,
     },
-    errorList: {
-        gap: 10,
-    },
-    errorItem: {
+    errorRow: {
         flexDirection: "row",
-        alignItems: "flex-start",
         gap: 10,
+        marginBottom: 10,
     },
     errorBullet: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
+        width: 8,
+        height: 8,
+        borderRadius: 4,
         backgroundColor: "#EF4444",
         marginTop: 6,
     },
-    errorText: {
+    errorMessage: {
         flex: 1,
         color: "#DC2626",
-        fontSize: 14,
-        lineHeight: 20,
+        fontSize: 15,
+        lineHeight: 22,
     },
 
-    /* Actions Card */
-    actionsCard: {
-        borderRadius: 16,
-        padding: 20,
-        borderWidth: 1,
-        marginBottom: 20,
-        shadowColor: "#000",
-        shadowOpacity: 0.06,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 2 },
-        elevation: 2,
-    },
-    actionsHeader: {
-        marginBottom: 16,
-    },
-    actionsTitleContainer: {
+    // Actions grid
+    actionsGrid: {
         flexDirection: "row",
-        alignItems: "center",
-        gap: 10,
+        flexWrap: "wrap",
+        gap: 16,
+        marginTop: 8,
     },
-    actionsTitle: {
-        fontSize: 18,
-        fontWeight: "600",
-    },
-    actionButtons: {
-        flexDirection: "row",
-        gap: 12,
-    },
-    actionButton: {
+    actionTile: {
         flex: 1,
-        borderRadius: 12,
-        padding: 16,
+        minWidth: "30%",
         alignItems: "center",
-        gap: 10,
+        paddingVertical: 16,
+        borderRadius: 16,
     },
-    actionIconContainer: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
+    actionIconWrap: {
+        width: 68,
+        height: 68,
+        borderRadius: 34,
         alignItems: "center",
         justifyContent: "center",
+        marginBottom: 10,
     },
-    actionButtonText: {
-        fontSize: 13,
+    actionLabel: {
+        fontSize: 14,
         fontWeight: "600",
     },
 
-    /* Tip Card */
+    // Tip
     tipCard: {
-        borderRadius: 12,
+        borderRadius: 16,
         padding: 16,
         borderWidth: 1,
         flexDirection: "row",
-        gap: 12,
+        gap: 14,
         alignItems: "flex-start",
     },
-    tipContent: {
-        flex: 1,
-        gap: 4,
-    },
-    tipTitle: {
-        fontSize: 14,
+    tipBody: { flex: 1, gap: 4 },
+    tipHeading: {
+        fontSize: 15,
         fontWeight: "700",
     },
     tipText: {
-        fontSize: 13,
-        lineHeight: 18,
+        fontSize: 14,
+        lineHeight: 20,
     },
 });

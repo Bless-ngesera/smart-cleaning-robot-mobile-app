@@ -219,7 +219,7 @@ export default function MapScreen() {
     return (
         <SafeAreaView
             style={[styles.container, { backgroundColor: colors.background }]}
-            edges={["top", "bottom"]}
+            edges={["bottom"]}   // ← changed here – header now reaches true top
         >
             <Header title="Robot Map" subtitle="View navigation and cleaning zones" />
 
