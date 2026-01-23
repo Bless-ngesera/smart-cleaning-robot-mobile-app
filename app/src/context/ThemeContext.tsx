@@ -1,28 +1,37 @@
 import React, { createContext, useState, useEffect, ReactNode } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { OpaqueColorValue } from "react-native";
+
+type ThemeColors = {
+    primary: string | OpaqueColorValue | undefined;
+    textSecondary: any;
+    background: string;
+    card: string;
+    border: string;
+    text: string;
+    subtitle: string;
+};
 
 type ThemeContextType = {
     darkMode: boolean;
     toggleTheme: () => void;
-    colors: {
-        background: string;
-        card: string;
-        border: string;
-        text: string;
-        subtitle: string;
-    };
+    colors: ThemeColors;
+};
+
+const defaultColors: ThemeColors = {
+    primary: "#2563eb", // blue
+    textSecondary: "#4b5563", // gray-600
+    background: "#f9fafb",
+    card: "#ffffff",
+    border: "#e5e7eb",
+    text: "#111827",
+    subtitle: "#6b7280",
 };
 
 export const ThemeContext = createContext<ThemeContextType>({
     darkMode: false,
     toggleTheme: () => {},
-    colors: {
-        background: "#f9fafb",
-        card: "#ffffff",
-        border: "#e5e7eb",
-        text: "#111827",
-        subtitle: "#6b7280",
-    },
+    colors: defaultColors,
 });
 
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
@@ -52,16 +61,20 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
         }
     };
 
-    const colors = darkMode
+    const colors: ThemeColors = darkMode
         ? {
-            background: "#111827", // dark gray
-            card: "#1f2937", // darker card
+            primary: "#3b82f6", // blue-500
+            textSecondary: "#9ca3af", // gray-400
+            background: "#111827",
+            card: "#1f2937",
             border: "#374151",
             text: "#ffffff",
             subtitle: "#9ca3af",
         }
         : {
-            background: "#f9fafb", // light gray
+            primary: "#2563eb", // blue-600
+            textSecondary: "#4b5563", // gray-600
+            background: "#f9fafb",
             card: "#ffffff",
             border: "#e5e7eb",
             text: "#111827",
