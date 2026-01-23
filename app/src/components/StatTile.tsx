@@ -1,4 +1,4 @@
-import { View, Text } from "react-native";
+import { View, Text, StyleSheet } from "react-native";
 import { useContext } from "react";
 import { ThemeContext } from "../context/ThemeContext";
 
@@ -16,33 +16,36 @@ export default function StatTile({ label, value, highlight = false }: Props) {
         return null;
     }
 
+    const backgroundColor = highlight ? colors.primary ?? "#eff6ff" : colors.card;
+    const borderColor = highlight ? colors.primary ?? "#bfdbfe" : colors.border;
+    const labelColor = highlight ? colors.primary ?? "#1e40af" : colors.textSecondary ?? colors.subtitle;
+    const valueColor = highlight ? colors.primary ?? "#1e40af" : colors.text;
+
     return (
-        <View
-            style={{
-                flex: 1,
-                borderRadius: 12,
-                padding: 16,
-                shadowColor: "#000",
-                shadowOpacity: 0.05,
-                shadowRadius: 2,
-                borderWidth: 1,
-                backgroundColor: highlight ? "#eff6ff" : colors.card,
-                borderColor: highlight ? "#bfdbfe" : colors.border,
-            }}
-        >
-            <Text style={{ color: highlight ? "#1e40af" : colors.subtitle }}>
-                {label}
-            </Text>
-            <Text
-                style={{
-                    fontSize: 22,
-                    fontWeight: "700",
-                    marginTop: 4,
-                    color: highlight ? "#1e40af" : colors.text,
-                }}
-            >
-                {value}
-            </Text>
+        <View style={[styles.tile, { backgroundColor, borderColor }]}>
+            <Text style={[styles.label, { color: labelColor }]}>{label}</Text>
+            <Text style={[styles.value, { color: valueColor }]}>{value}</Text>
         </View>
     );
 }
+
+const styles = StyleSheet.create({
+    tile: {
+        flex: 1,
+        borderRadius: 12,
+        padding: 16,
+        shadowColor: "#000",
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+        borderWidth: 1,
+    },
+    label: {
+        fontSize: 14,
+        fontWeight: "500",
+    },
+    value: {
+        fontSize: 22,
+        fontWeight: "700",
+        marginTop: 4,
+    },
+});

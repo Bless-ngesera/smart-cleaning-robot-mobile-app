@@ -2,9 +2,11 @@ import React, { createContext, useState, useEffect, ReactNode } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { OpaqueColorValue } from "react-native";
 
+/* ---------------- Theme Types ---------------- */
 type ThemeColors = {
     primary: string | OpaqueColorValue | undefined;
-    textSecondary: any;
+    error: string | OpaqueColorValue | undefined;
+    textSecondary: string;
     background: string;
     card: string;
     border: string;
@@ -18,8 +20,10 @@ type ThemeContextType = {
     colors: ThemeColors;
 };
 
+/* ---------------- Default Colors ---------------- */
 const defaultColors: ThemeColors = {
     primary: "#2563eb", // blue
+    error: "#dc2626", // red-600
     textSecondary: "#4b5563", // gray-600
     background: "#f9fafb",
     card: "#ffffff",
@@ -28,12 +32,14 @@ const defaultColors: ThemeColors = {
     subtitle: "#6b7280",
 };
 
+/* ---------------- Context ---------------- */
 export const ThemeContext = createContext<ThemeContextType>({
     darkMode: false,
     toggleTheme: () => {},
     colors: defaultColors,
 });
 
+/* ---------------- Provider ---------------- */
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
     const [darkMode, setDarkMode] = useState(false);
 
@@ -64,6 +70,7 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
     const colors: ThemeColors = darkMode
         ? {
             primary: "#3b82f6", // blue-500
+            error: "#f87171", // red-400
             textSecondary: "#9ca3af", // gray-400
             background: "#111827",
             card: "#1f2937",
@@ -73,6 +80,7 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
         }
         : {
             primary: "#2563eb", // blue-600
+            error: "#dc2626", // red-600
             textSecondary: "#4b5563", // gray-600
             background: "#f9fafb",
             card: "#ffffff",

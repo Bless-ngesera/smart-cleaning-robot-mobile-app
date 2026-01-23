@@ -34,33 +34,27 @@ export default function Button({
                                }: Props) {
     const { colors } = useContext(ThemeContext);
 
-    const fallbackColors = {
-        card: "#ffffff",
-        border: "#e5e7eb",
-        text: "#111827",
-    };
-
-    const themeColors = colors ?? fallbackColors;
-
     const isSecondary = variant === "secondary";
     const isDanger = variant === "danger";
 
     const backgroundColor =
         variant === "primary"
-            ? "#2563eb"
+            ? colors.primary ?? "#2563eb"
             : isDanger
                 ? "#ef4444"
-                : themeColors.card;
+                : colors.card;
 
     const borderColor =
         variant === "primary"
-            ? "#2563eb"
+            ? colors.primary ?? "#2563eb"
             : isDanger
                 ? "#ef4444"
-                : themeColors.border;
+                : colors.border;
 
     const textColor =
-        variant === "primary" || isDanger ? "#fff" : themeColors.text;
+        variant === "primary" || isDanger
+            ? "#ffffff"
+            : colors.textSecondary ?? colors.text;
 
     const buttonStyle: ViewStyle = {
         width: fullWidth ? "100%" : undefined,
