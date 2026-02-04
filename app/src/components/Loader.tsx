@@ -7,7 +7,7 @@ import {
     StyleSheet,
     Platform,
 } from 'react-native';
-import { useThemeContext } from '../lib/ThemeContext';
+import { useThemeContext } from '../context/ThemeContext';
 
 interface LoaderProps {
     message?: string;

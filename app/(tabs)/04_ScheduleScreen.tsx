@@ -16,7 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Header from '../src/components/Header';
 import Loader from '../src/components/Loader';
 import Button from '../src/components/Button';
-import { useThemeContext } from '../src/lib/ThemeContext';
+import { useThemeContext } from '../src/context/ThemeContext';
 import { router } from 'expo-router';
 
 type Entry = { id: string; day: string; time: string; enabled: boolean };

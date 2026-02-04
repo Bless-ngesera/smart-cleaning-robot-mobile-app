@@ -1,7 +1,7 @@
 // src/components/Header.tsx
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { useThemeContext } from '../lib/ThemeContext';
+import { useThemeContext } from '../context/ThemeContext';
 
 interface HeaderProps {
     title: string;

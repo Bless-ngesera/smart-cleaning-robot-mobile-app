@@ -2,8 +2,8 @@ import React from "react";
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useAuthGuard } from "../src/lib/authGuard";
-import { ThemeProvider } from "../src/lib/ThemeContext";
+import { useAuthGuard } from "../src/middleware/authGuard";
+import { ThemeProvider } from "../src/context/ThemeContext";
 
 type IoniconName = React.ComponentProps<typeof Ionicons>["name"];
 
