@@ -21,7 +21,7 @@ import { router } from 'expo-router';
 import Button from './src/components/Button';
 import Header from './src/components/Header';
 import Loader from './src/components/Loader';
-import { useThemeContext } from './src/lib/ThemeContext';
+import { useThemeContext } from './src/context/ThemeContext';
 
 export default function SignupScreen() {
     const { colors, darkMode } = useThemeContext();

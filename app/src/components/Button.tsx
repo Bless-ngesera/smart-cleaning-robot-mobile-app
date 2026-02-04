@@ -10,7 +10,7 @@ import {
     TextStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useThemeContext } from '../lib/ThemeContext';
+import { useThemeContext } from '../context/ThemeContext';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 

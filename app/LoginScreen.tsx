@@ -20,8 +20,8 @@ import { router } from 'expo-router';
 import Button from './src/components/Button';
 import Header from './src/components/Header';
 import Loader from './src/components/Loader';
-import { useThemeContext } from './src/lib/ThemeContext';
-import { supabase } from './src/lib/supabase';
+import { useThemeContext } from './src/context/ThemeContext';
+import { supabase } from './src/services/supabase';
 
 export default function LoginScreen() {
     const { colors, darkMode } = useThemeContext();

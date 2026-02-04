@@ -2,7 +2,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useThemeContext } from '../lib/ThemeContext';
+import { useThemeContext } from '../context/ThemeContext';
 
 interface StatTileProps {
     label: string;
