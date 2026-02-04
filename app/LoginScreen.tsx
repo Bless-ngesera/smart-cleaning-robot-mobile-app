@@ -1,4 +1,5 @@
-import React, { useState, useContext } from "react";
+// app/LoginScreen.tsx
+import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
     Text,
@@ -10,55 +11,90 @@ import {
     StyleSheet,
     ScrollView,
     Animated,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { router } from "expo-router";
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 
-import Button from "./src/components/Button";
-import Header from "./src/components/Header";
-import Loader from "./src/components/Loader";
-import { ThemeContext } from "./src/context/ThemeContext";
+import Button from './src/components/Button';
+import Header from './src/components/Header';
+import Loader from './src/components/Loader';
+import { useThemeContext } from './src/lib/ThemeContext';
+import { supabase } from './src/lib/supabase';
 
 export default function LoginScreen() {
-    const { colors, darkMode } = useContext(ThemeContext);
+    const { colors, darkMode } = useThemeContext();
 
-    const [email, setEmail] = useState("");
-    const [password, setPassword] = useState("");
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
 
-    // Floating label animation
-    const emailAnim = useState(new Animated.Value(email ? 1 : 0))[0];
-    const passAnim = useState(new Animated.Value(password ? 1 : 0))[0];
+    const [emailError, setEmailError] = useState('');
+    const [passwordError, setPasswordError] = useState('');
 
-    const validateEmail = (value: string) => /\S+@\S+\.\S+/.test(value);
+    // Floating label animations
+    const emailAnim = useState(new Animated.Value(0))[0];
+    const passAnim = useState(new Animated.Value(0))[0];
+
+    // Ref for focus chaining
+    const passwordRef = useRef<TextInput>(null);
+
+    // Auto-redirect if already logged in
+    useEffect(() => {
+        const checkSession = async () => {
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (session) {
+                    router.replace('/(tabs)/01_DashboardScreen');
+                }
+            } catch (err) {
+                console.error('Session check failed:', err);
+            }
+        };
+        checkSession();
+    }, []);
+
+    const validateForm = () => {
+        let valid = true;
+        setEmailError('');
+        setPasswordError('');
+
+        if (!email.trim()) {
+            setEmailError('Email is required');
+            valid = false;
+        } else if (!/\S+@\S+\.\S+/.test(email.trim())) {
+            setEmailError('Please enter a valid email');
+            valid = false;
+        }
+
+        if (!password.trim()) {
+            setPasswordError('Password is required');
+            valid = false;
+        } else if (password.length < 6) {
+            setPasswordError('Password must be at least 6 characters');
+            valid = false;
+        }
+
+        return valid;
+    };
 
     const handleLogin = async () => {
-        if (!email || !password) {
-            Alert.alert("Error", "Please fill in all fields.");
-            return;
-        }
-        if (!validateEmail(email)) {
-            Alert.alert("Error", "Please enter a valid email address.");
-            return;
-        }
-        if (password.length < 6) {
-            Alert.alert("Error", "Password must be at least 6 characters long.");
-            return;
-        }
+        if (!validateForm()) return;
 
         setLoading(true);
         try {
-            // Mock API delay
-            await new Promise((resolve) => setTimeout(resolve, 1400));
+            const { error } = await supabase.auth.signInWithPassword({
+                email: email.trim(),
+                password,
+            });
 
-            await AsyncStorage.setItem("userToken", "mock-token-" + Date.now());
-            router.replace("/(tabs)/01_DashboardScreen");
-        } catch (err) {
-            Alert.alert("Login Failed", "Something went wrong. Please try again.");
+            if (error) throw error;
+
+            router.replace('/(tabs)/01_DashboardScreen');
+        } catch (err: any) {
+            Alert.alert('Login Failed', err.message || 'Invalid credentials');
         } finally {
             setLoading(false);
         }
@@ -67,7 +103,7 @@ export default function LoginScreen() {
     const animateLabel = (anim: Animated.Value, toValue: number) => {
         Animated.timing(anim, {
             toValue,
-            duration: 200,
+            duration: 220,
             useNativeDriver: false,
         }).start();
     };
@@ -79,17 +115,13 @@ export default function LoginScreen() {
     return (
         <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
             <LinearGradient
-                colors={
-                    darkMode
-                        ? ["#0f172a", "#1e293b", "#0f172a"]
-                        : ["#f8fafc", "#e2e8f0", "#f8fafc"]
-                }
-                style={styles.gradientBg}
+                colors={darkMode ? ['#0f172a', '#1e293b'] : ['#f8fafc', '#e2e8f0']}
+                style={styles.gradient}
             >
                 <KeyboardAvoidingView
-                    behavior={Platform.OS === "ios" ? "padding" : "height"}
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                     style={styles.keyboardAvoid}
-                    keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+                    keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 20}
                 >
                     <ScrollView
                         contentContainerStyle={styles.scrollContent}
@@ -98,24 +130,18 @@ export default function LoginScreen() {
                     >
                         <Header
                             title="Welcome Back"
-                            subtitle="Sign in to control your Smart Cleaner"
+                            subtitle="Sign in to manage your Smart Cleaner"
                         />
 
-                        <View style={styles.formCard}>
-                            {/* Email Field */}
-                            <View style={styles.inputWrapper}>
+                        <View style={styles.formContainer}>
+                            {/* Email */}
+                            <View style={styles.field}>
                                 <Animated.Text
                                     style={[
-                                        styles.floatingLabel,
+                                        styles.label,
                                         {
-                                            top: emailAnim.interpolate({
-                                                inputRange: [0, 1],
-                                                outputRange: [18, 6],
-                                            }),
-                                            fontSize: emailAnim.interpolate({
-                                                inputRange: [0, 1],
-                                                outputRange: [16, 12],
-                                            }),
+                                            top: emailAnim.interpolate({ inputRange: [0, 1], outputRange: [18, 4] }),
+                                            fontSize: emailAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 12] }),
                                             color: emailAnim.interpolate({
                                                 inputRange: [0, 1],
                                                 outputRange: [colors.textSecondary, colors.primary],
@@ -129,7 +155,8 @@ export default function LoginScreen() {
                                 <TextInput
                                     style={[
                                         styles.input,
-                                        { borderColor: colors.border, color: colors.text },
+                                        emailError && styles.inputError,
+                                        { color: colors.text, borderColor: colors.border },
                                     ]}
                                     value={email}
                                     onChangeText={(text) => {
@@ -140,6 +167,8 @@ export default function LoginScreen() {
                                     autoCapitalize="none"
                                     autoCorrect={false}
                                     placeholder=""
+                                    returnKeyType="next"
+                                    onSubmitEditing={() => passwordRef.current?.focus()}
                                     onFocus={() => animateLabel(emailAnim, 1)}
                                     onBlur={() => animateLabel(emailAnim, email ? 1 : 0)}
                                 />
@@ -150,22 +179,18 @@ export default function LoginScreen() {
                                     color={colors.primary}
                                     style={styles.inputIcon}
                                 />
+
+                                {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
                             </View>
 
-                            {/* Password Field */}
-                            <View style={styles.inputWrapper}>
+                            {/* Password */}
+                            <View style={styles.field}>
                                 <Animated.Text
                                     style={[
-                                        styles.floatingLabel,
+                                        styles.label,
                                         {
-                                            top: passAnim.interpolate({
-                                                inputRange: [0, 1],
-                                                outputRange: [18, 6],
-                                            }),
-                                            fontSize: passAnim.interpolate({
-                                                inputRange: [0, 1],
-                                                outputRange: [16, 12],
-                                            }),
+                                            top: passAnim.interpolate({ inputRange: [0, 1], outputRange: [18, 4] }),
+                                            fontSize: passAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 12] }),
                                             color: passAnim.interpolate({
                                                 inputRange: [0, 1],
                                                 outputRange: [colors.textSecondary, colors.primary],
@@ -177,9 +202,11 @@ export default function LoginScreen() {
                                 </Animated.Text>
 
                                 <TextInput
+                                    ref={passwordRef}
                                     style={[
                                         styles.input,
-                                        { borderColor: colors.border, color: colors.text },
+                                        passwordError && styles.inputError,
+                                        { color: colors.text, borderColor: colors.border },
                                     ]}
                                     value={password}
                                     onChangeText={(text) => {
@@ -189,6 +216,7 @@ export default function LoginScreen() {
                                     secureTextEntry={!showPassword}
                                     autoCapitalize="none"
                                     placeholder=""
+                                    returnKeyType="done"
                                     onFocus={() => animateLabel(passAnim, 1)}
                                     onBlur={() => animateLabel(passAnim, password ? 1 : 0)}
                                 />
@@ -205,22 +233,27 @@ export default function LoginScreen() {
                                     onPress={() => setShowPassword(!showPassword)}
                                 >
                                     <Ionicons
-                                        name={showPassword ? "eye-off-outline" : "eye-outline"}
+                                        name={showPassword ? 'eye-off-outline' : 'eye-outline'}
                                         size={20}
                                         color={colors.textSecondary}
                                     />
                                 </TouchableOpacity>
+
+                                {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
                             </View>
 
                             {/* Forgot Password */}
-                            <TouchableOpacity style={styles.forgotLink}>
-                                <Text style={[styles.forgotText, { color: colors.primary }]}>
+                            <TouchableOpacity
+                                style={styles.forgotLink}
+                                onPress={() => router.push('/ForgotPasswordScreen')}
+                            >
+                                <Text style={[styles.linkText, { color: colors.primary }]}>
                                     Forgot password?
                                 </Text>
                             </TouchableOpacity>
 
                             {/* Buttons */}
-                            <View style={styles.buttonContainer}>
+                            <View style={styles.buttons}>
                                 <Button
                                     title="Sign In"
                                     icon="log-in-outline"
@@ -228,20 +261,20 @@ export default function LoginScreen() {
                                     variant="primary"
                                     fullWidth
                                     size="large"
+                                    disabled={loading}
+                                    loading={loading}
                                 />
 
-                                <View style={styles.orContainer}>
+                                <View style={styles.orRow}>
                                     <View style={[styles.orLine, { backgroundColor: colors.border }]} />
-                                    <Text style={[styles.orText, { color: colors.textSecondary }]}>
-                                        OR
-                                    </Text>
+                                    <Text style={[styles.orText, { color: colors.textSecondary }]}>OR</Text>
                                     <View style={[styles.orLine, { backgroundColor: colors.border }]} />
                                 </View>
 
                                 <Button
                                     title="Create New Account"
                                     icon="person-add-outline"
-                                    onPress={() => router.push("/SignupScreen")}
+                                    onPress={() => router.push('/SignupScreen')}
                                     variant="outline"
                                     fullWidth
                                     size="large"
@@ -263,7 +296,7 @@ const styles = StyleSheet.create({
     safeArea: {
         flex: 1,
     },
-    gradientBg: {
+    gradient: {
         flex: 1,
     },
     keyboardAvoid: {
@@ -275,8 +308,8 @@ const styles = StyleSheet.create({
         paddingBottom: 40,
         justifyContent: "center",
     },
-    formCard: {
-        backgroundColor: "rgba(255,255,255,0.07)", // subtle glass-like in both modes
+    formContainer: {
+        backgroundColor: "rgba(255,255,255,0.07)",
         borderRadius: 24,
         padding: 28,
         borderWidth: 1,
@@ -289,9 +322,9 @@ const styles = StyleSheet.create({
         marginTop: 20,
         marginBottom: 32,
     },
-    inputWrapper: {
+    field: {
         marginBottom: 20,
-        position: "relative",
+        position: 'relative',
     },
     input: {
         height: 56,
@@ -300,39 +333,48 @@ const styles = StyleSheet.create({
         paddingHorizontal: 48,
         fontSize: 16,
     },
+    inputError: {
+        borderColor: '#ef4444',
+    },
     inputIcon: {
-        position: "absolute",
+        position: 'absolute',
         left: 16,
         top: 18,
         zIndex: 1,
     },
     eyeIcon: {
-        position: "absolute",
+        position: 'absolute',
         right: 16,
         top: 18,
         zIndex: 1,
     },
-    floatingLabel: {
-        position: "absolute",
+    label: {
+        position: 'absolute',
         left: 48,
         zIndex: 1,
-        backgroundColor: "transparent",
+        backgroundColor: 'transparent',
         paddingHorizontal: 4,
     },
+    errorText: {
+        color: '#ef4444',
+        fontSize: 12,
+        marginTop: 4,
+        marginLeft: 4,
+    },
     forgotLink: {
-        alignSelf: "flex-end",
+        alignSelf: 'flex-end',
         marginBottom: 24,
     },
-    forgotText: {
+    linkText: {
         fontSize: 14,
-        fontWeight: "600",
+        fontWeight: '600',
     },
-    buttonContainer: {
+    buttons: {
         gap: 16,
     },
-    orContainer: {
-        flexDirection: "row",
-        alignItems: "center",
+    orRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
         marginVertical: 8,
     },
     orLine: {
@@ -343,10 +385,10 @@ const styles = StyleSheet.create({
     orText: {
         marginHorizontal: 16,
         fontSize: 13,
-        fontWeight: "500",
+        fontWeight: '500',
     },
     version: {
-        textAlign: "center",
+        textAlign: 'center',
         fontSize: 12,
         marginTop: 16,
     },

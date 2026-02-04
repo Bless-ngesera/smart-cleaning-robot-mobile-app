@@ -1,3 +1,5 @@
+// app/(tabs)/01_DashboardScreen.tsx
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
@@ -6,22 +8,15 @@ import {
     Alert,
     StyleSheet,
     TouchableOpacity,
-} from "react-native";
-import { useEffect, useState, useCallback, useContext } from "react";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { router } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 
-import Button from "../src/components/Button"; // assuming still used elsewhere
-import StatTile from "../src/components/StatTile"; // not used now — consider removing import if unused
-import Header from "../src/components/Header";
-import Loader from "../src/components/Loader";
-
-import { getRobotStatus } from "../src/services/robotService";
-import { ThemeContext } from "../src/context/ThemeContext";
-
-/* ----------------------------- Types ----------------------------- */
+import Header from '../src/components/Header';
+import Loader from '../src/components/Loader';
+import { useThemeContext } from '../src/lib/ThemeContext';
+import { getRobotStatus } from '../src/lib/robotService';
 
 type RobotStatus = {
     batteryLevel: number;
@@ -30,23 +25,24 @@ type RobotStatus = {
     errors: string[];
 };
 
-/* ------------------------- Main Screen --------------------------- */
-
 export default function DashboardScreen() {
-    const { colors, darkMode } = useContext(ThemeContext);
+    const { colors } = useThemeContext();
 
     const [status, setStatus] = useState<RobotStatus | null>(null);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
 
     const fetchStatus = useCallback(async () => {
         try {
             setLoading(true);
             const response = await getRobotStatus();
             setStatus(response);
-        } catch {
-            Alert.alert("Error", "Unable to fetch robot status. Please try again.");
+        } catch (err) {
+            console.error('Failed to fetch robot status:', err);
+            Alert.alert('Error', 'Unable to load robot status. Please try again.');
         } finally {
             setLoading(false);
+            setRefreshing(false);
         }
     }, []);
 
@@ -54,18 +50,23 @@ export default function DashboardScreen() {
         fetchStatus();
     }, [fetchStatus]);
 
+    const onRefresh = useCallback(() => {
+        setRefreshing(true);
+        fetchStatus();
+    }, [fetchStatus]);
+
     // Battery helpers
     const getBatteryColor = (level: number) => {
-        if (level > 60) return "#10B981";
-        if (level > 30) return "#F59E0B";
-        return "#EF4444";
+        if (level > 60) return '#10B981';
+        if (level > 30) return '#F59E0B';
+        return '#EF4444';
     };
 
     const getBatteryIcon = (level: number) => {
-        if (level > 80) return "battery-full";
-        if (level > 50) return "battery-half";
-        if (level > 20) return "battery-low";
-        return "battery-dead";
+        if (level > 80) return 'battery-full';
+        if (level > 50) return 'battery-half';
+        if (level > 20) return 'battery-low';
+        return 'battery-dead';
     };
 
     if (loading && !status) {
@@ -76,23 +77,24 @@ export default function DashboardScreen() {
     const isCleaning = status?.isCleaning ?? false;
 
     return (
-        <SafeAreaView
-            style={[styles.container, { backgroundColor: colors.background }]}
-            edges={["bottom"]} // ← key change: header goes to true top
-        >
-            <Header title="Dashboard" subtitle="Monitor your robot's status" />
+        <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+            <Header title="Dashboard" subtitle="Monitor your Smart Cleaner" />
 
             <ScrollView
                 style={styles.scrollView}
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
                 refreshControl={
-                    <RefreshControl refreshing={loading} onRefresh={fetchStatus} />
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                        tintColor={colors.primary}
+                        colors={[colors.primary]}
+                    />
                 }
             >
                 <View style={styles.content}>
-
-                    {/* ─── Hero Status Card ──────────────────────────────────────── */}
+                    {/* Hero Status Card */}
                     <View
                         style={[
                             styles.heroCard,
@@ -108,16 +110,14 @@ export default function DashboardScreen() {
                                     style={[
                                         styles.robotAvatar,
                                         {
-                                            backgroundColor: isCleaning
-                                                ? "#10B98133"
-                                                : `${colors.primary}33`,
+                                            backgroundColor: isCleaning ? '#10B98133' : `${colors.primary}33`,
                                         },
                                     ]}
                                 >
                                     <Ionicons
                                         name="hardware-chip"
                                         size={40}
-                                        color={isCleaning ? "#10B981" : colors.primary}
+                                        color={isCleaning ? '#10B981' : colors.primary}
                                     />
                                 </View>
 
@@ -129,16 +129,16 @@ export default function DashboardScreen() {
                                         <View
                                             style={[
                                                 styles.statusDot,
-                                                { backgroundColor: isCleaning ? "#10B981" : "#94A3B8" },
+                                                { backgroundColor: isCleaning ? '#10B981' : '#94A3B8' },
                                             ]}
                                         />
                                         <Text
                                             style={[
                                                 styles.statusLabel,
-                                                { color: isCleaning ? "#10B981" : colors.textSecondary },
+                                                { color: isCleaning ? '#10B981' : colors.textSecondary },
                                             ]}
                                         >
-                                            {isCleaning ? "Cleaning" : "Idle"}
+                                            {isCleaning ? 'Cleaning' : 'Idle'}
                                         </Text>
                                     </View>
                                 </View>
@@ -147,12 +147,13 @@ export default function DashboardScreen() {
                             <TouchableOpacity
                                 style={[styles.refreshBtn, { backgroundColor: colors.background }]}
                                 onPress={fetchStatus}
+                                accessibilityLabel="Refresh robot status"
                             >
                                 <Ionicons name="refresh" size={22} color={colors.primary} />
                             </TouchableOpacity>
                         </View>
 
-                        {/* Battery – prominent */}
+                        {/* Battery Section */}
                         <View style={styles.batteryBlock}>
                             <View style={styles.batteryHeader}>
                                 <View style={styles.batteryLabelRow}>
@@ -178,7 +179,7 @@ export default function DashboardScreen() {
                             <View
                                 style={[
                                     styles.progressBg,
-                                    { backgroundColor: darkMode ? "#333" : "#E5E7EB" },
+                                    { backgroundColor: colors.border + '40' },
                                 ]}
                             >
                                 <LinearGradient
@@ -189,32 +190,35 @@ export default function DashboardScreen() {
                                 />
                             </View>
                         </View>
+
+                        {/* C++ BRIDGE: If you want to show real-time robot connection status or errors here,
+                fetch via RobotBridge.getStatus() and display additional badges/info */}
                     </View>
 
-                    {/* ─── Quick Stats ────────────────────────────────────────────── */}
+                    {/* Quick Stats */}
                     <View style={styles.statsRow}>
                         <View style={[styles.statTile, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                            <View style={[styles.statIcon, { backgroundColor: "#10B98133" }]}>
+                            <View style={[styles.statIcon, { backgroundColor: '#10B98133' }]}>
                                 <Ionicons name="checkmark-circle" size={28} color="#10B981" />
                             </View>
                             <Text style={[styles.statNumber, { color: colors.text }]}>
-                                {isCleaning ? "Active" : "Ready"}
+                                {isCleaning ? 'Active' : 'Ready'}
                             </Text>
                             <Text style={[styles.statCaption, { color: colors.textSecondary }]}>Status</Text>
                         </View>
 
                         <View style={[styles.statTile, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                            <View style={[styles.statIcon, { backgroundColor: "#8B5CF633" }]}>
+                            <View style={[styles.statIcon, { backgroundColor: '#8B5CF633' }]}>
                                 <Ionicons name="time" size={28} color="#8B5CF6" />
                             </View>
                             <Text style={[styles.statNumber, { color: colors.text }]}>
-                                {isCleaning ? "2.5 h" : "—"}
+                                {isCleaning ? '2.5 h' : '—'}
                             </Text>
                             <Text style={[styles.statCaption, { color: colors.textSecondary }]}>Runtime</Text>
                         </View>
 
                         <View style={[styles.statTile, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                            <View style={[styles.statIcon, { backgroundColor: "#F59E0B33" }]}>
+                            <View style={[styles.statIcon, { backgroundColor: '#F59E0B33' }]}>
                                 <Ionicons name="speedometer" size={28} color="#F59E0B" />
                             </View>
                             <Text style={[styles.statNumber, { color: colors.text }]}>127 m²</Text>
@@ -222,7 +226,7 @@ export default function DashboardScreen() {
                         </View>
                     </View>
 
-                    {/* ─── Last Cleaned ───────────────────────────────────────────── */}
+                    {/* Last Cleaned */}
                     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
                         <View style={styles.cardHeader}>
                             <Ionicons name="calendar" size={22} color={colors.primary} />
@@ -231,14 +235,14 @@ export default function DashboardScreen() {
                         <Text style={[styles.lastCleanedText, { color: colors.text }]}>
                             {status?.lastCleaned
                                 ? new Date(status.lastCleaned).toLocaleString([], {
-                                    dateStyle: "medium",
-                                    timeStyle: "short",
+                                    dateStyle: 'medium',
+                                    timeStyle: 'short',
                                 })
-                                : "No data yet"}
+                                : 'No data yet'}
                         </Text>
                     </View>
 
-                    {/* ─── Errors (only when present) ─────────────────────────────── */}
+                    {/* Errors – only shown when present */}
                     {status?.errors?.length ? (
                         <View style={styles.errorCard}>
                             <View style={styles.errorHeader}>
@@ -248,7 +252,7 @@ export default function DashboardScreen() {
                                 <View>
                                     <Text style={styles.errorTitle}>System Alerts</Text>
                                     <Text style={styles.errorSubtitle}>
-                                        {status.errors.length} issue{status.errors.length > 1 ? "s" : ""} detected
+                                        {status.errors.length} issue{status.errors.length > 1 ? 's' : ''} detected
                                     </Text>
                                 </View>
                             </View>
@@ -261,7 +265,7 @@ export default function DashboardScreen() {
                         </View>
                     ) : null}
 
-                    {/* ─── Quick Actions ──────────────────────────────────────────── */}
+                    {/* Quick Actions */}
                     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
                         <View style={styles.cardHeader}>
                             <Ionicons name="flash" size={22} color={colors.primary} />
@@ -270,14 +274,16 @@ export default function DashboardScreen() {
 
                         <View style={styles.actionsGrid}>
                             {[
-                                { icon: "game-controller", label: "Controls", route: "/(tabs)/02_ControlScreen", color: colors.primary },
-                                { icon: "calendar", label: "Schedule", route: "/(tabs)/04_ScheduleScreen", color: "#8B5CF6" },
-                                { icon: "map", label: "Map", route: "/(tabs)/03_MapScreen", color: "#10B981" },
+                                { icon: 'game-controller', label: 'Controls', route: '/(tabs)/02_ControlScreen', color: colors.primary },
+                                { icon: 'calendar', label: 'Schedule', route: '/(tabs)/04_ScheduleScreen', color: '#8B5CF6' },
+                                { icon: 'map', label: 'Map', route: '/(tabs)/03_MapScreen', color: '#10B981' },
                             ].map((item, idx) => (
                                 <TouchableOpacity
                                     key={idx}
                                     style={styles.actionTile}
                                     onPress={() => router.push(item.route)}
+                                    activeOpacity={0.85}
+                                    accessibilityLabel={`Go to ${item.label}`}
                                 >
                                     <View style={[styles.actionIconWrap, { backgroundColor: `${item.color}22` }]}>
                                         <Ionicons name={item.icon} size={32} color={item.color} />
@@ -288,7 +294,7 @@ export default function DashboardScreen() {
                         </View>
                     </View>
 
-                    {/* ─── Tip (optional premium touch) ───────────────────────────── */}
+                    {/* Pro Tip */}
                     <View
                         style={[
                             styles.tipCard,
@@ -303,18 +309,17 @@ export default function DashboardScreen() {
                             </Text>
                         </View>
                     </View>
+
+                    {/* C++ BRIDGE: If you want to show real-time robot telemetry or advanced stats here,
+              fetch via RobotBridge.getTelemetry() and add more cards/sections below */}
                 </View>
             </ScrollView>
         </SafeAreaView>
     );
 }
 
-/* ──────────────────────────────────────────────────────────────────────── */
-/*                               Styles                                    */
-/* ──────────────────────────────────────────────────────────────────────── */
-
 const styles = StyleSheet.create({
-    container: { flex: 1 },
+    safeArea: { flex: 1 },
     scrollView: { flex: 1 },
     scrollContent: { paddingBottom: 40 },
 
@@ -323,44 +328,43 @@ const styles = StyleSheet.create({
         paddingTop: 12,
     },
 
-    // Hero card – biggest visual impact
     heroCard: {
         borderRadius: 24,
         padding: 24,
         borderWidth: 1,
         marginBottom: 24,
-        shadowColor: "#000",
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 6 },
         shadowOpacity: 0.10,
         shadowRadius: 16,
         elevation: 8,
     },
     heroHeader: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
         marginBottom: 28,
     },
     robotInfo: {
-        flexDirection: "row",
-        alignItems: "center",
+        flexDirection: 'row',
+        alignItems: 'center',
         gap: 16,
     },
     robotAvatar: {
         width: 72,
         height: 72,
         borderRadius: 36,
-        alignItems: "center",
-        justifyContent: "center",
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     robotText: { gap: 4 },
     robotName: {
         fontSize: 22,
-        fontWeight: "700",
+        fontWeight: '700',
     },
     statusBadge: {
-        flexDirection: "row",
-        alignItems: "center",
+        flexDirection: 'row',
+        alignItems: 'center',
         gap: 8,
     },
     statusDot: {
@@ -370,49 +374,47 @@ const styles = StyleSheet.create({
     },
     statusLabel: {
         fontSize: 16,
-        fontWeight: "600",
+        fontWeight: '600',
     },
     refreshBtn: {
         width: 48,
         height: 48,
         borderRadius: 24,
-        alignItems: "center",
-        justifyContent: "center",
+        alignItems: 'center',
+        justifyContent: 'center',
     },
 
-    // Battery
     batteryBlock: { gap: 12 },
     batteryHeader: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
     },
     batteryLabelRow: {
-        flexDirection: "row",
-        alignItems: "center",
+        flexDirection: 'row',
+        alignItems: 'center',
         gap: 12,
     },
     batteryTitle: {
         fontSize: 17,
-        fontWeight: "600",
+        fontWeight: '600',
     },
     batteryPercent: {
         fontSize: 32,
-        fontWeight: "800",
+        fontWeight: '800',
     },
     progressBg: {
         height: 14,
         borderRadius: 7,
-        overflow: "hidden",
+        overflow: 'hidden',
     },
     progressFill: {
-        height: "100%",
+        height: '100%',
         borderRadius: 7,
     },
 
-    // Stats row
     statsRow: {
-        flexDirection: "row",
+        flexDirection: 'row',
         gap: 12,
         marginBottom: 24,
     },
@@ -422,8 +424,8 @@ const styles = StyleSheet.create({
         paddingVertical: 20,
         paddingHorizontal: 12,
         borderWidth: 1,
-        alignItems: "center",
-        shadowColor: "#000",
+        alignItems: 'center',
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 3 },
         shadowOpacity: 0.08,
         shadowRadius: 10,
@@ -433,59 +435,57 @@ const styles = StyleSheet.create({
         width: 56,
         height: 56,
         borderRadius: 28,
-        alignItems: "center",
-        justifyContent: "center",
+        alignItems: 'center',
+        justifyContent: 'center',
         marginBottom: 12,
     },
     statNumber: {
         fontSize: 20,
-        fontWeight: "700",
+        fontWeight: '700',
         marginBottom: 4,
     },
     statCaption: {
         fontSize: 13,
-        fontWeight: "500",
+        fontWeight: '500',
     },
 
-    // Generic card
     card: {
         borderRadius: 20,
         padding: 20,
         borderWidth: 1,
         marginBottom: 20,
-        shadowColor: "#000",
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 3 },
         shadowOpacity: 0.07,
         shadowRadius: 10,
         elevation: 4,
     },
     cardHeader: {
-        flexDirection: "row",
-        alignItems: "center",
+        flexDirection: 'row',
+        alignItems: 'center',
         gap: 10,
         marginBottom: 16,
     },
     cardTitle: {
         fontSize: 18,
-        fontWeight: "700",
+        fontWeight: '700',
     },
     lastCleanedText: {
         fontSize: 16,
-        fontWeight: "500",
+        fontWeight: '500',
     },
 
-    // Error card
     errorCard: {
-        backgroundColor: "#FEF2F2",
-        borderColor: "#FECACA",
+        backgroundColor: '#FEF2F2',
+        borderColor: '#FECACA',
         borderWidth: 1,
         borderRadius: 20,
         padding: 20,
         marginBottom: 24,
     },
     errorHeader: {
-        flexDirection: "row",
-        alignItems: "center",
+        flexDirection: 'row',
+        alignItems: 'center',
         gap: 12,
         marginBottom: 16,
     },
@@ -493,21 +493,21 @@ const styles = StyleSheet.create({
         width: 48,
         height: 48,
         borderRadius: 24,
-        backgroundColor: "#FEE2E2",
-        alignItems: "center",
-        justifyContent: "center",
+        backgroundColor: '#FEE2E2',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     errorTitle: {
-        color: "#991B1B",
+        color: '#991B1B',
         fontSize: 18,
-        fontWeight: "700",
+        fontWeight: '700',
     },
     errorSubtitle: {
-        color: "#B91C1C",
+        color: '#B91C1C',
         fontSize: 14,
     },
     errorRow: {
-        flexDirection: "row",
+        flexDirection: 'row',
         gap: 10,
         marginBottom: 10,
     },
@@ -515,27 +515,26 @@ const styles = StyleSheet.create({
         width: 8,
         height: 8,
         borderRadius: 4,
-        backgroundColor: "#EF4444",
+        backgroundColor: '#EF4444',
         marginTop: 6,
     },
     errorMessage: {
         flex: 1,
-        color: "#DC2626",
+        color: '#DC2626',
         fontSize: 15,
         lineHeight: 22,
     },
 
-    // Actions grid
     actionsGrid: {
-        flexDirection: "row",
-        flexWrap: "wrap",
+        flexDirection: 'row',
+        flexWrap: 'wrap',
         gap: 16,
         marginTop: 8,
     },
     actionTile: {
         flex: 1,
-        minWidth: "30%",
-        alignItems: "center",
+        minWidth: '30%',
+        alignItems: 'center',
         paddingVertical: 16,
         borderRadius: 16,
     },
@@ -543,28 +542,27 @@ const styles = StyleSheet.create({
         width: 68,
         height: 68,
         borderRadius: 34,
-        alignItems: "center",
-        justifyContent: "center",
+        alignItems: 'center',
+        justifyContent: 'center',
         marginBottom: 10,
     },
     actionLabel: {
         fontSize: 14,
-        fontWeight: "600",
+        fontWeight: '600',
     },
 
-    // Tip
     tipCard: {
         borderRadius: 16,
         padding: 16,
         borderWidth: 1,
-        flexDirection: "row",
+        flexDirection: 'row',
         gap: 14,
-        alignItems: "flex-start",
+        alignItems: 'flex-start',
     },
     tipBody: { flex: 1, gap: 4 },
     tipHeading: {
         fontSize: 15,
-        fontWeight: "700",
+        fontWeight: '700',
     },
     tipText: {
         fontSize: 14,

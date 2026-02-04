@@ -1,4 +1,5 @@
-import React, { useContext } from "react";
+// src/components/Button.tsx
+import React from 'react';
 import {
     TouchableOpacity,
     Text,
@@ -7,74 +8,120 @@ import {
     StyleSheet,
     ViewStyle,
     TextStyle,
-} from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { ThemeContext } from "../context/ThemeContext";
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useThemeContext } from '../lib/ThemeContext';
 
-type IoniconName = React.ComponentProps<typeof Ionicons>["name"];
+type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
-type Props = {
+interface ButtonProps {
     title: string;
     onPress: () => void;
-    variant?: "primary" | "secondary" | "danger";
+    variant?: 'primary' | 'secondary' | 'outline' | 'danger';
+    size?: 'small' | 'medium' | 'large';
     disabled?: boolean;
     icon?: IoniconName;
     loading?: boolean;
     fullWidth?: boolean;
-};
+    style?: ViewStyle;
+}
 
+/**
+ * Modern, theme-aware button component.
+ * Supports variants, sizes, icons, loading state, and disabled.
+ */
 export default function Button({
                                    title,
                                    onPress,
-                                   variant = "primary",
+                                   variant = 'primary',
+                                   size = 'medium',
                                    disabled = false,
                                    icon,
                                    loading = false,
-                                   fullWidth = true,
-                               }: Props) {
-    const { colors } = useContext(ThemeContext);
+                                   fullWidth = false,
+                                   style,
+                               }: ButtonProps) {
+    const { colors } = useThemeContext();
 
-    const isSecondary = variant === "secondary";
-    const isDanger = variant === "danger";
+    // Safe fallbacks – no crashes if theme is incomplete
+    const primaryColor = colors.primary ?? '#2563eb';
+    const textColorBase = colors.text ?? '#111827';
+    const bgDisabled = colors.border ?? '#d1d5db';
 
-    const backgroundColor =
-        variant === "primary"
-            ? colors.primary ?? "#2563eb"
-            : isDanger
-                ? "#ef4444"
-                : colors.card;
+    // Variant styles
+    const getBackground = () => {
+        if (disabled) return bgDisabled;
+        switch (variant) {
+            case 'primary': return primaryColor;
+            case 'danger': return '#ef4444';
+            case 'secondary': return colors.card ?? '#ffffff';
+            case 'outline': return 'transparent';
+            default: return primaryColor;
+        }
+    };
 
-    const borderColor =
-        variant === "primary"
-            ? colors.primary ?? "#2563eb"
-            : isDanger
-                ? "#ef4444"
-                : colors.border;
+    const getBorder = () => {
+        if (disabled) return bgDisabled;
+        if (variant === 'outline') return colors.border ?? '#d1d5db';
+        if (variant === 'secondary') return colors.border ?? '#d1d5db';
+        return 'transparent';
+    };
 
-    const textColor =
-        variant === "primary" || isDanger
-            ? "#ffffff"
-            : colors.textSecondary ?? colors.text;
+    const getTextColor = () => {
+        if (disabled) return '#9ca3af';
+        if (variant === 'primary' || variant === 'danger') return '#ffffff';
+        return textColorBase;
+    };
+
+    // Size styles
+    const sizeStyles = {
+        small: {
+            paddingVertical: 8,
+            paddingHorizontal: 16,
+            fontSize: 14,
+            iconSize: 18,
+        },
+        medium: {
+            paddingVertical: 12,
+            paddingHorizontal: 20,
+            fontSize: 16,
+            iconSize: 20,
+        },
+        large: {
+            paddingVertical: 16,
+            paddingHorizontal: 24,
+            fontSize: 18,
+            iconSize: 24,
+        },
+    };
+
+    const currentSize = sizeStyles[size];
 
     const buttonStyle: ViewStyle = {
-        width: fullWidth ? "100%" : undefined,
-        paddingVertical: 12,
+        width: fullWidth ? '100%' : undefined,
+        paddingVertical: currentSize.paddingVertical,
+        paddingHorizontal: currentSize.paddingHorizontal,
         borderRadius: 12,
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-        opacity: disabled ? 0.5 : 1,
-        backgroundColor,
-        borderColor,
-        borderWidth: isSecondary ? 1 : 0,
-        shadowColor: "#000",
-        shadowOpacity: isSecondary ? 0.05 : 0.1,
-        shadowRadius: 3,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: getBackground(),
+        borderColor: getBorder(),
+        borderWidth: variant === 'outline' || variant === 'secondary' ? 1.5 : 0,
+        opacity: disabled ? 0.6 : 1,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: variant === 'primary' ? 0.15 : 0.06,
+        shadowRadius: 6,
+        elevation: variant === 'primary' ? 4 : 2,
+        ...style,
     };
 
     const textStyle: TextStyle = {
-        fontWeight: "600",
-        color: textColor,
+        fontSize: currentSize.fontSize,
+        fontWeight: '600',
+        color: getTextColor(),
+        marginLeft: icon ? 8 : 0,
     };
 
     return (
@@ -82,16 +129,25 @@ export default function Button({
             style={buttonStyle}
             onPress={onPress}
             disabled={disabled || loading}
-            activeOpacity={0.8}
+            activeOpacity={disabled || loading ? 1 : 0.85}
+            accessibilityLabel={title}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: disabled || loading }}
         >
             {/* C++ BRIDGE: If button triggers native robot commands,
           connect here via RobotBridge.start(), stop(), etc. */}
 
             {loading ? (
-                <ActivityIndicator color={textColor} />
+                <ActivityIndicator color={getTextColor()} size="small" />
             ) : (
                 <View style={styles.content}>
-                    {icon && <Ionicons name={icon} size={20} color={textColor} />}
+                    {icon && (
+                        <Ionicons
+                            name={icon}
+                            size={currentSize.iconSize}
+                            color={getTextColor()}
+                        />
+                    )}
                     <Text style={textStyle}>{title}</Text>
                 </View>
             )}
@@ -101,8 +157,8 @@ export default function Button({
 
 const styles = StyleSheet.create({
     content: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 8,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
 });
