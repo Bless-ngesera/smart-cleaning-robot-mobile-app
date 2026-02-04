@@ -1,5 +1,5 @@
 // screens/ForgotPasswordScreen.tsx
-import React, { useState, useContext } from "react";
+import React, { useState } from 'react';
 import {
     View,
     Text,
@@ -11,52 +11,54 @@ import {
     StyleSheet,
     ScrollView,
     Animated,
-} from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 
-import Button from "./src/components/Button";
-import Header from "./src/components/Header";
-import Loader from "./src/components/Loader";
-import { ThemeContext } from "./src/context/ThemeContext";
+import Button from './src/components/Button';
+import Header from './src/components/Header';
+import Loader from './src/components/Loader';
+import { useThemeContext } from './src/lib/ThemeContext';
 
 export default function ForgotPasswordScreen() {
-    const { colors, darkMode } = useContext(ThemeContext);
+    const { colors, darkMode } = useThemeContext();
 
-    const [email, setEmail] = useState("");
+    const [email, setEmail] = useState('');
     const [loading, setLoading] = useState(false);
     const [sent, setSent] = useState(false);
+    const [emailError, setEmailError] = useState('');
 
+    // Floating label animation
     const emailAnim = useState(new Animated.Value(0))[0];
-    const [emailError, setEmailError] = useState("");
 
     const validateEmail = (value: string) => /\S+@\S+\.\S+/.test(value);
 
     const handleReset = async () => {
-        setEmailError("");
+        setEmailError('');
 
-        if (!email) {
-            setEmailError("Email is required");
+        if (!email.trim()) {
+            setEmailError('Email is required');
             return;
         }
-        if (!validateEmail(email)) {
-            setEmailError("Please enter a valid email address");
+        if (!validateEmail(email.trim())) {
+            setEmailError('Please enter a valid email address');
             return;
         }
 
         setLoading(true);
         try {
-            // Simulate API call
-            await new Promise((resolve) => setTimeout(resolve, 1400));
+            // C++ BRIDGE: Replace with real robot/backend password reset call
+            // e.g. await RobotBridge.sendResetLink(email.trim());
+            // or await api.post('/auth/reset-password', { email: email.trim() });
 
-            // In real app → call your backend password reset endpoint
-            // await api.post('/auth/reset-password', { email });
+            await new Promise((resolve) => setTimeout(resolve, 1400)); // mock delay
 
             setSent(true);
+            Alert.alert('Success', 'Reset link sent! Check your email.');
         } catch (err) {
-            Alert.alert("Error", "Failed to send reset link. Please try again.");
+            Alert.alert('Error', 'Failed to send reset link. Please try again.');
         } finally {
             setLoading(false);
         }
@@ -79,18 +81,20 @@ export default function ForgotPasswordScreen() {
             <LinearGradient
                 colors={
                     darkMode
-                        ? ["#0f172a", "#1e293b", "#0f172a"]
-                        : ["#f8fafc", "#e2e8f0", "#f8fafc"]
+                        ? ['#0f172a', '#1e293b', '#0f172a']
+                        : ['#f8fafc', '#e2e8f0', '#f8fafc']
                 }
                 style={styles.gradientBg}
             >
                 <KeyboardAvoidingView
-                    behavior={Platform.OS === "ios" ? "padding" : "height"}
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                     style={styles.keyboardAvoid}
+                    keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 20}
                 >
                     <ScrollView
                         contentContainerStyle={styles.scrollContent}
                         keyboardShouldPersistTaps="handled"
+                        showsVerticalScrollIndicator={false}
                     >
                         <Header
                             title="Reset Password"
@@ -104,8 +108,8 @@ export default function ForgotPasswordScreen() {
                                     Check your email
                                 </Text>
                                 <Text style={[styles.successText, { color: colors.textSecondary }]}>
-                                    We sent a password reset link to{"\n"}
-                                    <Text style={{ color: colors.primary, fontWeight: "600" }}>
+                                    We sent a password reset link to{'\n'}
+                                    <Text style={{ color: colors.primary, fontWeight: '600' }}>
                                         {email}
                                     </Text>
                                 </Text>
@@ -113,7 +117,7 @@ export default function ForgotPasswordScreen() {
                                 <Button
                                     title="Back to Login"
                                     variant="primary"
-                                    onPress={() => router.push("/LoginScreen")}
+                                    onPress={() => router.push('/LoginScreen')}
                                     fullWidth
                                     style={{ marginTop: 32 }}
                                 />
@@ -148,7 +152,7 @@ export default function ForgotPasswordScreen() {
                                         style={[
                                             styles.input,
                                             {
-                                                borderColor: emailError ? "#ef4444" : colors.border,
+                                                borderColor: emailError ? '#ef4444' : colors.border,
                                                 color: colors.text,
                                             },
                                         ]}
@@ -160,6 +164,7 @@ export default function ForgotPasswordScreen() {
                                         placeholder=""
                                         onFocus={() => animateLabel(1)}
                                         onBlur={() => animateLabel(email ? 1 : 0)}
+                                        accessibilityLabel="Email input"
                                     />
 
                                     <Ionicons
@@ -186,6 +191,7 @@ export default function ForgotPasswordScreen() {
                                         variant="primary"
                                         fullWidth
                                         size="large"
+                                        loading={loading}
                                     />
 
                                     <TouchableOpacity
@@ -223,15 +229,15 @@ const styles = StyleSheet.create({
         flexGrow: 1,
         paddingHorizontal: 24,
         paddingBottom: 40,
-        justifyContent: "center",
+        justifyContent: 'center',
     },
     formCard: {
-        backgroundColor: "rgba(255,255,255,0.07)",
+        backgroundColor: 'rgba(255,255,255,0.07)',
         borderRadius: 24,
         padding: 28,
         borderWidth: 1,
-        borderColor: "rgba(200,200,200,0.12)",
-        shadowColor: "#000",
+        borderColor: 'rgba(200,200,200,0.12)',
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 10 },
         shadowOpacity: 0.18,
         shadowRadius: 20,
@@ -240,27 +246,27 @@ const styles = StyleSheet.create({
         marginBottom: 32,
     },
     successCard: {
-        alignItems: "center",
-        backgroundColor: "rgba(16,185,129,0.08)",
+        alignItems: 'center',
+        backgroundColor: 'rgba(16,185,129,0.08)',
         borderRadius: 24,
         padding: 40,
         borderWidth: 1,
-        borderColor: "rgba(16,185,129,0.2)",
+        borderColor: 'rgba(16,185,129,0.2)',
         marginTop: 20,
         marginBottom: 32,
     },
     successTitle: {
         fontSize: 24,
-        fontWeight: "700",
+        fontWeight: '700',
         marginTop: 16,
         marginBottom: 8,
     },
     successText: {
         fontSize: 16,
-        textAlign: "center",
+        textAlign: 'center',
         lineHeight: 24,
     },
-    inputWrapper: { marginBottom: 20, position: "relative" },
+    inputWrapper: { marginBottom: 20, position: 'relative' },
     input: {
         height: 56,
         borderWidth: 1.5,
@@ -268,16 +274,16 @@ const styles = StyleSheet.create({
         paddingHorizontal: 48,
         fontSize: 16,
     },
-    inputIcon: { position: "absolute", left: 16, top: 18, zIndex: 1 },
+    inputIcon: { position: 'absolute', left: 16, top: 18, zIndex: 1 },
     floatingLabel: {
-        position: "absolute",
+        position: 'absolute',
         left: 48,
         zIndex: 1,
-        backgroundColor: "transparent",
+        backgroundColor: 'transparent',
         paddingHorizontal: 4,
     },
     errorText: {
-        color: "#ef4444",
+        color: '#ef4444',
         fontSize: 12,
         marginTop: 4,
         marginLeft: 4,
@@ -285,16 +291,16 @@ const styles = StyleSheet.create({
     infoText: {
         fontSize: 14,
         lineHeight: 20,
-        textAlign: "center",
+        textAlign: 'center',
         marginTop: 8,
     },
     backLink: {
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
         gap: 8,
         paddingVertical: 12,
     },
-    backText: { fontSize: 15, fontWeight: "600" },
-    version: { textAlign: "center", fontSize: 12, marginTop: 16 },
+    backText: { fontSize: 15, fontWeight: '600' },
+    version: { textAlign: 'center', fontSize: 12, marginTop: 16 },
 });

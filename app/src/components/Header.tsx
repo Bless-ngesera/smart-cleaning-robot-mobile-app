@@ -1,25 +1,32 @@
-import { View, Text, StyleSheet } from "react-native";
-import { useContext } from "react";
-import { ThemeContext } from "../context/ThemeContext";
+// src/components/Header.tsx
+import React from 'react';
+import { View, Text, StyleSheet } from 'react-native';
+import { useThemeContext } from '../lib/ThemeContext';
 
-type HeaderProps = {
+interface HeaderProps {
     title: string;
     subtitle?: string;
-};
+}
 
+/**
+ * Clean, modern header component with theme support.
+ * Used across all main screens.
+ */
 export default function Header({ title, subtitle }: HeaderProps) {
-    const { colors } = useContext(ThemeContext);
+    const { colors } = useThemeContext();
 
-    const titleColor = colors.primary ?? colors.text;
-    const subtitleColor = colors.textSecondary ?? colors.subtitle;
+    // Safe fallbacks – prevents crashes if theme is not fully loaded
+    const titleColor = colors.text ?? '#111827';
+    const subtitleColor = colors.textSecondary ?? '#6B7280';
 
     return (
-        <View style={[styles.container, { backgroundColor: colors.card }]}>
-            {/* C++ BRIDGE: If header needs to show robot status (e.g., battery, connection),
-          fetch via RobotBridge.getStatus() and display here */}
+        <View style={styles.container}>
             <Text style={[styles.title, { color: titleColor }]}>{title}</Text>
+
             {subtitle && (
-                <Text style={[styles.subtitle, { color: subtitleColor }]}>{subtitle}</Text>
+                <Text style={[styles.subtitle, { color: subtitleColor }]}>
+                    {subtitle}
+                </Text>
             )}
         </View>
     );
@@ -27,18 +34,27 @@ export default function Header({ title, subtitle }: HeaderProps) {
 
 const styles = StyleSheet.create({
     container: {
-        padding: 16,
-        shadowColor: "#000",
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 2,
+        paddingHorizontal: 24,
+        paddingTop: 16,
+        paddingBottom: 24,
+        alignItems: 'center',
+        // Optional subtle shadow – looks good on both light/dark
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 6,
+        elevation: 3,
     },
     title: {
-        fontSize: 20,
-        fontWeight: "bold",
+        fontSize: 28,
+        fontWeight: '700',
+        letterSpacing: -0.3,
     },
     subtitle: {
-        fontSize: 14,
-        marginTop: 4,
+        fontSize: 16,
+        fontWeight: '500',
+        marginTop: 6,
+        textAlign: 'center',
+        opacity: 0.85,
     },
 });

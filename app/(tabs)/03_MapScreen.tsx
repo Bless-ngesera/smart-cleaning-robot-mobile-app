@@ -1,12 +1,22 @@
-import React, { useState, useContext, useEffect, useRef } from "react";
-import { View, Text, Alert, StyleSheet, TouchableOpacity, Animated, ScrollView } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
-import Header from "../src/components/Header";
-import Loader from "../src/components/Loader";
-import { ThemeContext } from "../src/context/ThemeContext";
-import { router } from "expo-router";
+// app/(tabs)/03_MapScreen.tsx
+import React, { useState, useEffect, useRef } from 'react';
+import {
+    View,
+    Text,
+    TouchableOpacity,
+    StyleSheet,
+    ScrollView,
+    Alert,
+    Animated,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+
+import Header from '../src/components/Header';
+import Loader from '../src/components/Loader';
+import { useThemeContext } from '../src/lib/ThemeContext';
+import { router } from 'expo-router';
 
 type MapData = {
     mappedArea: number;
@@ -28,8 +38,10 @@ type Zone = {
 };
 
 export default function MapScreen() {
+    const { colors, darkMode } = useThemeContext();
+
     const [busy, setBusy] = useState(false);
-    const [loadingMessage, setLoadingMessage] = useState("");
+    const [loadingMessage, setLoadingMessage] = useState('');
     const [mapData, setMapData] = useState<MapData>({
         mappedArea: 127,
         obstacles: 3,
@@ -42,15 +54,14 @@ export default function MapScreen() {
         ],
     });
     const [zones, setZones] = useState<Zone[]>([
-        { id: "1", name: "Living Room", color: "#10B981", x: 10, y: 10, width: 45, height: 40 },
-        { id: "2", name: "Kitchen", color: "#8B5CF6", x: 60, y: 10, width: 35, height: 30 },
-        { id: "3", name: "Bedroom", color: "#F59E0B", x: 10, y: 55, width: 40, height: 40 },
-        { id: "4", name: "Hallway", color: "#3B82F6", x: 55, y: 45, width: 15, height: 50 },
-        { id: "5", name: "Bathroom", color: "#EF4444", x: 75, y: 45, width: 20, height: 25 },
+        { id: '1', name: 'Living Room', color: '#10B981', x: 10, y: 10, width: 45, height: 40 },
+        { id: '2', name: 'Kitchen', color: '#8B5CF6', x: 60, y: 10, width: 35, height: 30 },
+        { id: '3', name: 'Bedroom', color: '#F59E0B', x: 10, y: 55, width: 40, height: 40 },
+        { id: '4', name: 'Hallway', color: '#3B82F6', x: 55, y: 45, width: 15, height: 50 },
+        { id: '5', name: 'Bathroom', color: '#EF4444', x: 75, y: 45, width: 20, height: 25 },
     ]);
     const [selectedZone, setSelectedZone] = useState<string | null>(null);
     const [showGrid, setShowGrid] = useState(true);
-    const { colors, darkMode } = useContext(ThemeContext);
 
     // Animations
     const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -110,10 +121,10 @@ export default function MapScreen() {
     /* ---------------- Fetch Robot Map ---------------- */
     const fetchMap = async () => {
         setBusy(true);
-        setLoadingMessage("Fetching robot map...");
+        setLoadingMessage('Fetching robot map...');
         try {
-            // C++ BRIDGE: Replace with RobotBridge.getMap() for native robot mapping integration
-            console.log("Fetch map (mock)");
+            // C++ BRIDGE: Replace with RobotBridge.getMap() for native robot mapping
+            console.log('Fetch map (mock)');
             await new Promise((resolve) => setTimeout(resolve, 1500));
 
             // Simulate updated map data
@@ -123,9 +134,9 @@ export default function MapScreen() {
                 mappedArea: mapData.mappedArea + Math.floor(Math.random() * 10),
             });
 
-            Alert.alert("Success", "Map data refreshed successfully!");
+            Alert.alert('Success', 'Map data refreshed successfully!');
         } catch {
-            Alert.alert("Error", "Failed to fetch robot map.");
+            Alert.alert('Error', 'Failed to fetch robot map.');
         } finally {
             setBusy(false);
         }
@@ -137,37 +148,33 @@ export default function MapScreen() {
     };
 
     const handleDeleteZone = (zoneId: string) => {
-        Alert.alert(
-            "Delete Zone",
-            "Are you sure you want to delete this zone?",
-            [
-                { text: "Cancel", style: "cancel" },
-                {
-                    text: "Delete",
-                    style: "destructive",
-                    onPress: () => {
-                        setZones(zones.filter(z => z.id !== zoneId));
-                        setSelectedZone(null);
-                        setMapData({
-                            ...mapData,
-                            zones: mapData.zones - 1,
-                        });
-                        Alert.alert("Success", "Zone deleted successfully!");
-                    },
+        Alert.alert('Delete Zone', 'Are you sure you want to delete this zone?', [
+            { text: 'Cancel', style: 'cancel' },
+            {
+                text: 'Delete',
+                style: 'destructive',
+                onPress: () => {
+                    setZones(zones.filter((z) => z.id !== zoneId));
+                    setSelectedZone(null);
+                    setMapData({
+                        ...mapData,
+                        zones: mapData.zones - 1,
+                    });
+                    Alert.alert('Success', 'Zone deleted successfully!');
                 },
-            ]
-        );
+            },
+        ]);
     };
 
     const handleEditZone = () => {
-        Alert.alert("Edit Zone", "Zone editor will open with advanced customization options.");
+        Alert.alert('Edit Zone', 'Zone editor will open with advanced customization options.');
     };
 
     const handleAddZone = () => {
         const newZone: Zone = {
             id: Date.now().toString(),
             name: `Zone ${zones.length + 1}`,
-            color: ["#10B981", "#8B5CF6", "#F59E0B", "#3B82F6", "#EF4444"][zones.length % 5],
+            color: ['#10B981', '#8B5CF6', '#F59E0B', '#3B82F6', '#EF4444'][zones.length % 5],
             x: Math.random() * 60 + 10,
             y: Math.random() * 60 + 10,
             width: 20 + Math.random() * 20,
@@ -178,37 +185,33 @@ export default function MapScreen() {
             ...mapData,
             zones: mapData.zones + 1,
         });
-        Alert.alert("Success", "New zone added successfully!");
+        Alert.alert('Success', 'New zone added successfully!');
     };
 
     /* ---------------- Export Map ---------------- */
     const handleExportMap = () => {
-        Alert.alert(
-            "Export Map",
-            "Choose export format:",
-            [
-                { text: "Cancel", style: "cancel" },
-                {
-                    text: "PNG Image",
-                    onPress: () => {
-                        console.log("Exporting as PNG...");
-                        Alert.alert("Success", "Map exported as PNG image!");
-                    },
+        Alert.alert('Export Map', 'Choose export format:', [
+            { text: 'Cancel', style: 'cancel' },
+            {
+                text: 'PNG Image',
+                onPress: () => {
+                    console.log('Exporting as PNG...');
+                    Alert.alert('Success', 'Map exported as PNG image!');
                 },
-                {
-                    text: "JSON Data",
-                    onPress: () => {
-                        console.log("Exporting as JSON...", { mapData, zones });
-                        Alert.alert("Success", "Map data exported as JSON!");
-                    },
+            },
+            {
+                text: 'JSON Data',
+                onPress: () => {
+                    console.log('Exporting as JSON...', { mapData, zones });
+                    Alert.alert('Success', 'Map data exported as JSON!');
                 },
-            ]
-        );
+            },
+        ]);
     };
 
     const robotRotation = robotAnim.interpolate({
         inputRange: [0, 1],
-        outputRange: ["0deg", "360deg"],
+        outputRange: ['0deg', '360deg'],
     });
 
     if (busy) {
@@ -217,10 +220,7 @@ export default function MapScreen() {
 
     /* --------------------------- UI --------------------------- */
     return (
-        <SafeAreaView
-            style={[styles.container, { backgroundColor: colors.background }]}
-            edges={["bottom"]}   // ← changed here – header now reaches true top
-        >
+        <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
             <Header title="Robot Map" subtitle="View navigation and cleaning zones" />
 
             <ScrollView
@@ -233,15 +233,16 @@ export default function MapScreen() {
                         styles.content,
                         {
                             opacity: fadeAnim,
-                            transform: [{ scale: scaleAnim }]
-                        }
+                            transform: [{ scale: scaleAnim }],
+                        },
                     ]}
                 >
-                    {/* ---------------- Premium Map Container ---------------- */}
+                    {/* Premium Map Container */}
                     <LinearGradient
-                        colors={darkMode
-                            ? ['rgba(99, 102, 241, 0.15)', 'rgba(99, 102, 241, 0.05)']
-                            : ['rgba(99, 102, 241, 0.08)', 'rgba(99, 102, 241, 0.02)']
+                        colors={
+                            darkMode
+                                ? ['rgba(99, 102, 241, 0.15)', 'rgba(99, 102, 241, 0.05)']
+                                : ['rgba(99, 102, 241, 0.08)', 'rgba(99, 102, 241, 0.02)']
                         }
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 1 }}
@@ -252,7 +253,7 @@ export default function MapScreen() {
                                 styles.mapBox,
                                 {
                                     backgroundColor: colors.card,
-                                    borderColor: darkMode ? 'rgba(99, 102, 241, 0.3)' : colors.border
+                                    borderColor: darkMode ? 'rgba(99, 102, 241, 0.3)' : colors.border,
                                 },
                             ]}
                         >
@@ -267,10 +268,8 @@ export default function MapScreen() {
                                                     style={[
                                                         styles.gridCell,
                                                         {
-                                                            borderColor: darkMode
-                                                                ? 'rgba(255,255,255,0.05)'
-                                                                : 'rgba(0,0,0,0.05)'
-                                                        }
+                                                            borderColor: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+                                                        },
                                                     ]}
                                                 />
                                             ))}
@@ -290,17 +289,15 @@ export default function MapScreen() {
                                             top: `${zone.y}%`,
                                             width: `${zone.width}%`,
                                             height: `${zone.height}%`,
-                                            backgroundColor: zone.color + "30",
-                                            borderColor: selectedZone === zone.id ? zone.color : zone.color + "60",
+                                            backgroundColor: `${zone.color}30`,
+                                            borderColor: selectedZone === zone.id ? zone.color : `${zone.color}60`,
                                             borderWidth: selectedZone === zone.id ? 3 : 1,
-                                        }
+                                        },
                                     ]}
                                     onPress={() => handleZoneSelect(zone.id)}
                                     activeOpacity={0.7}
                                 >
-                                    <Text style={[styles.zoneName, { color: zone.color }]}>
-                                        {zone.name}
-                                    </Text>
+                                    <Text style={[styles.zoneName, { color: zone.color }]}>{zone.name}</Text>
                                 </TouchableOpacity>
                             ))}
 
@@ -315,9 +312,9 @@ export default function MapScreen() {
                                             top: `${area.y}%`,
                                             width: `${area.width}%`,
                                             height: `${area.height}%`,
-                                            backgroundColor: "#10B981" + "15",
-                                            borderColor: "#10B981" + "40",
-                                        }
+                                            backgroundColor: '#10B98115',
+                                            borderColor: '#10B98140',
+                                        },
                                     ]}
                                 />
                             ))}
@@ -330,11 +327,11 @@ export default function MapScreen() {
                                         left: `${mapData.robotPosition.x}%`,
                                         top: `${mapData.robotPosition.y}%`,
                                         transform: [{ rotate: robotRotation }],
-                                    }
+                                    },
                                 ]}
                             >
                                 <LinearGradient
-                                    colors={[colors.primary, colors.primary + "CC"]}
+                                    colors={[colors.primary, `${colors.primary}CC`]}
                                     style={styles.robotIcon}
                                 >
                                     <Ionicons name="navigate" size={20} color="#FFFFFF" />
@@ -343,9 +340,9 @@ export default function MapScreen() {
                                     style={[
                                         styles.robotPulse,
                                         {
-                                            backgroundColor: colors.primary + "30",
-                                            transform: [{ scale: pulseAnim }]
-                                        }
+                                            backgroundColor: `${colors.primary}30`,
+                                            transform: [{ scale: pulseAnim }],
+                                        },
                                     ]}
                                 />
                             </Animated.View>
@@ -356,11 +353,7 @@ export default function MapScreen() {
                                 onPress={() => setShowGrid(!showGrid)}
                                 activeOpacity={0.7}
                             >
-                                <Ionicons
-                                    name={showGrid ? "grid" : "grid-outline"}
-                                    size={20}
-                                    color={colors.primary}
-                                />
+                                <Ionicons name={showGrid ? 'grid' : 'grid-outline'} size={20} color={colors.primary} />
                             </TouchableOpacity>
 
                             {/* Last Updated */}
@@ -373,12 +366,12 @@ export default function MapScreen() {
                         </View>
                     </LinearGradient>
 
-                    {/* ---------------- Selected Zone Info ---------------- */}
+                    {/* Selected Zone Info */}
                     {selectedZone && (
                         <Animated.View
                             style={[
                                 styles.zoneInfoCard,
-                                { backgroundColor: colors.card, borderColor: colors.border }
+                                { backgroundColor: colors.card, borderColor: colors.border },
                             ]}
                         >
                             <View style={styles.zoneInfoHeader}>
@@ -387,18 +380,15 @@ export default function MapScreen() {
                                         style={[
                                             styles.zoneColorIndicator,
                                             {
-                                                backgroundColor: zones.find(z => z.id === selectedZone)?.color
-                                            }
+                                                backgroundColor: zones.find((z) => z.id === selectedZone)?.color,
+                                            },
                                         ]}
                                     />
                                     <Text style={[styles.zoneInfoTitle, { color: colors.text }]}>
-                                        {zones.find(z => z.id === selectedZone)?.name}
+                                        {zones.find((z) => z.id === selectedZone)?.name}
                                     </Text>
                                 </View>
-                                <TouchableOpacity
-                                    onPress={() => setSelectedZone(null)}
-                                    activeOpacity={0.7}
-                                >
+                                <TouchableOpacity onPress={() => setSelectedZone(null)} activeOpacity={0.7}>
                                     <Ionicons name="close-circle" size={24} color={colors.textSecondary} />
                                 </TouchableOpacity>
                             </View>
@@ -410,9 +400,7 @@ export default function MapScreen() {
                                     activeOpacity={0.7}
                                 >
                                     <Ionicons name="create-outline" size={20} color={colors.primary} />
-                                    <Text style={[styles.zoneActionText, { color: colors.text }]}>
-                                        Edit
-                                    </Text>
+                                    <Text style={[styles.zoneActionText, { color: colors.text }]}>Edit</Text>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
@@ -421,82 +409,73 @@ export default function MapScreen() {
                                     activeOpacity={0.7}
                                 >
                                     <Ionicons name="trash-outline" size={20} color="#EF4444" />
-                                    <Text style={[styles.zoneActionText, { color: colors.text }]}>
-                                        Delete
-                                    </Text>
+                                    <Text style={[styles.zoneActionText, { color: colors.text }]}>Delete</Text>
                                 </TouchableOpacity>
                             </View>
                         </Animated.View>
                     )}
 
-                    {/* ---------------- Map Stats Grid ---------------- */}
+                    {/* Map Stats Grid */}
                     <View style={styles.statsGrid}>
-                        <View style={[
-                            styles.statCard,
-                            { backgroundColor: colors.card, borderColor: darkMode ? 'rgba(16, 185, 129, 0.3)' : colors.border }
-                        ]}>
-                            <LinearGradient
-                                colors={["#10B981", "#059669"]}
-                                style={styles.statIconBox}
-                            >
+                        <View
+                            style={[
+                                styles.statCard,
+                                {
+                                    backgroundColor: colors.card,
+                                    borderColor: darkMode ? 'rgba(16, 185, 129, 0.3)' : colors.border,
+                                },
+                            ]}
+                        >
+                            <LinearGradient colors={['#10B981', '#059669']} style={styles.statIconBox}>
                                 <Ionicons name="navigate" size={22} color="#FFFFFF" />
                             </LinearGradient>
                             <Text style={[styles.statValue, { color: colors.text }]}>
                                 {mapData.mappedArea}m²
                             </Text>
-                            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-                                Mapped Area
-                            </Text>
+                            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Mapped Area</Text>
                         </View>
 
-                        <View style={[
-                            styles.statCard,
-                            { backgroundColor: colors.card, borderColor: darkMode ? 'rgba(139, 92, 246, 0.3)' : colors.border }
-                        ]}>
-                            <LinearGradient
-                                colors={["#8B5CF6", "#7C3AED"]}
-                                style={styles.statIconBox}
-                            >
+                        <View
+                            style={[
+                                styles.statCard,
+                                {
+                                    backgroundColor: colors.card,
+                                    borderColor: darkMode ? 'rgba(139, 92, 246, 0.3)' : colors.border,
+                                },
+                            ]}
+                        >
+                            <LinearGradient colors={['#8B5CF6', '#7C3AED']} style={styles.statIconBox}>
                                 <Ionicons name="warning" size={22} color="#FFFFFF" />
                             </LinearGradient>
-                            <Text style={[styles.statValue, { color: colors.text }]}>
-                                {mapData.obstacles}
-                            </Text>
-                            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-                                Obstacles
-                            </Text>
+                            <Text style={[styles.statValue, { color: colors.text }]}>{mapData.obstacles}</Text>
+                            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Obstacles</Text>
                         </View>
 
-                        <View style={[
-                            styles.statCard,
-                            { backgroundColor: colors.card, borderColor: darkMode ? 'rgba(245, 158, 11, 0.3)' : colors.border }
-                        ]}>
-                            <LinearGradient
-                                colors={["#F59E0B", "#D97706"]}
-                                style={styles.statIconBox}
-                            >
+                        <View
+                            style={[
+                                styles.statCard,
+                                {
+                                    backgroundColor: colors.card,
+                                    borderColor: darkMode ? 'rgba(245, 158, 11, 0.3)' : colors.border,
+                                },
+                            ]}
+                        >
+                            <LinearGradient colors={['#F59E0B', '#D97706']} style={styles.statIconBox}>
                                 <Ionicons name="grid" size={22} color="#FFFFFF" />
                             </LinearGradient>
-                            <Text style={[styles.statValue, { color: colors.text }]}>
-                                {mapData.zones}
-                            </Text>
-                            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-                                Zones
-                            </Text>
+                            <Text style={[styles.statValue, { color: colors.text }]}>{mapData.zones}</Text>
+                            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Zones</Text>
                         </View>
                     </View>
 
-                    {/* ---------------- Zone List ---------------- */}
-                    <View style={[
-                        styles.zoneListCard,
-                        { backgroundColor: colors.card, borderColor: colors.border }
-                    ]}>
+                    {/* Zone List */}
+                    <View
+                        style={[styles.zoneListCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                    >
                         <View style={styles.zoneListHeader}>
                             <View style={styles.cardTitleContainer}>
                                 <Ionicons name="layers" size={20} color={colors.primary} />
-                                <Text style={[styles.cardTitle, { color: colors.text }]}>
-                                    Cleaning Zones
-                                </Text>
+                                <Text style={[styles.cardTitle, { color: colors.text }]}>Cleaning Zones</Text>
                             </View>
                             <TouchableOpacity
                                 style={[styles.addZoneButton, { backgroundColor: colors.primary }]}
@@ -516,47 +495,30 @@ export default function MapScreen() {
                                         { backgroundColor: colors.background },
                                         index < zones.length - 1 && {
                                             borderBottomWidth: 1,
-                                            borderBottomColor: colors.border
-                                        }
+                                            borderBottomColor: colors.border,
+                                        },
                                     ]}
                                     onPress={() => handleZoneSelect(zone.id)}
                                     activeOpacity={0.7}
                                 >
-                                    <View
-                                        style={[
-                                            styles.zoneListColor,
-                                            { backgroundColor: zone.color }
-                                        ]}
-                                    />
-                                    <Text style={[styles.zoneListName, { color: colors.text }]}>
-                                        {zone.name}
-                                    </Text>
-                                    <Ionicons
-                                        name="chevron-forward"
-                                        size={20}
-                                        color={colors.textSecondary}
-                                    />
+                                    <View style={[styles.zoneListColor, { backgroundColor: zone.color }]} />
+                                    <Text style={[styles.zoneListName, { color: colors.text }]}>{zone.name}</Text>
+                                    <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
                                 </TouchableOpacity>
                             ))}
                         </View>
                     </View>
 
-                    {/* ---------------- Map Actions ---------------- */}
-                    <View style={[
-                        styles.actionsCard,
-                        { backgroundColor: colors.card, borderColor: colors.border }
-                    ]}>
+                    {/* Map Actions */}
+                    <View
+                        style={[styles.actionsCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                    >
                         <View style={styles.actionsHeader}>
                             <View style={styles.actionsTitleContainer}>
-                                <View style={[
-                                    styles.flashIconContainer,
-                                    { backgroundColor: colors.primary + "15" }
-                                ]}>
+                                <View style={[styles.flashIconContainer, { backgroundColor: `${colors.primary}15` }]}>
                                     <Ionicons name="flash" size={18} color={colors.primary} />
                                 </View>
-                                <Text style={[styles.actionsTitle, { color: colors.text }]}>
-                                    Map Actions
-                                </Text>
+                                <Text style={[styles.actionsTitle, { color: colors.text }]}>Map Actions</Text>
                             </View>
                         </View>
 
@@ -564,63 +526,57 @@ export default function MapScreen() {
                             <TouchableOpacity
                                 style={[
                                     styles.actionButton,
-                                    { backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : colors.background }
+                                    { backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : colors.background },
                                 ]}
                                 onPress={fetchMap}
                                 activeOpacity={0.7}
                             >
                                 <LinearGradient
-                                    colors={[colors.primary, colors.primary + "CC"]}
+                                    colors={[colors.primary, `${colors.primary}CC`]}
                                     style={styles.actionIconContainer}
                                 >
                                     <Ionicons name="refresh" size={24} color="#FFFFFF" />
                                 </LinearGradient>
-                                <Text style={[styles.actionButtonText, { color: colors.text }]}>
-                                    Refresh Map
-                                </Text>
+                                <Text style={[styles.actionButtonText, { color: colors.text }]}>Refresh Map</Text>
                             </TouchableOpacity>
 
                             <TouchableOpacity
                                 style={[
                                     styles.actionButton,
-                                    { backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : colors.background }
+                                    { backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : colors.background },
                                 ]}
                                 onPress={handleAddZone}
                                 activeOpacity={0.7}
                             >
                                 <LinearGradient
-                                    colors={["#10B981", "#059669"]}
+                                    colors={['#10B981', '#059669']}
                                     style={styles.actionIconContainer}
                                 >
                                     <Ionicons name="add" size={24} color="#FFFFFF" />
                                 </LinearGradient>
-                                <Text style={[styles.actionButtonText, { color: colors.text }]}>
-                                    Add Zone
-                                </Text>
+                                <Text style={[styles.actionButtonText, { color: colors.text }]}>Add Zone</Text>
                             </TouchableOpacity>
 
                             <TouchableOpacity
                                 style={[
                                     styles.actionButton,
-                                    { backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : colors.background }
+                                    { backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : colors.background },
                                 ]}
                                 onPress={handleExportMap}
                                 activeOpacity={0.7}
                             >
                                 <LinearGradient
-                                    colors={["#8B5CF6", "#7C3AED"]}
+                                    colors={['#8B5CF6', '#7C3AED']}
                                     style={styles.actionIconContainer}
                                 >
                                     <Ionicons name="download" size={24} color="#FFFFFF" />
                                 </LinearGradient>
-                                <Text style={[styles.actionButtonText, { color: colors.text }]}>
-                                    Export
-                                </Text>
+                                <Text style={[styles.actionButtonText, { color: colors.text }]}>Export</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
 
-                    {/* ---------------- Premium Info Section ---------------- */}
+                    {/* Premium Info Section */}
                     <View
                         style={[
                             styles.infoBox,
@@ -628,15 +584,10 @@ export default function MapScreen() {
                         ]}
                     >
                         <View style={styles.infoHeader}>
-                            <View style={[
-                                styles.infoIconContainer,
-                                { backgroundColor: colors.primary + "15" }
-                            ]}>
+                            <View style={[styles.infoIconContainer, { backgroundColor: `${colors.primary}15` }]}>
                                 <Ionicons name="information-circle" size={20} color={colors.primary} />
                             </View>
-                            <Text style={[styles.infoTitle, { color: colors.primary }]}>
-                                Navigation Info
-                            </Text>
+                            <Text style={[styles.infoTitle, { color: colors.primary }]}>Navigation Info</Text>
                         </View>
 
                         <Text style={[styles.infoText, { color: colors.text }]}>
@@ -646,104 +597,75 @@ export default function MapScreen() {
                         {/* Feature List */}
                         <View style={styles.featureList}>
                             <View style={styles.featureItem}>
-                                <View style={[styles.featureBullet, { backgroundColor: "#10B981" }]} />
-                                <Text style={[styles.featureText, { color: colors.text }]}>
-                                    Real-time position tracking
-                                </Text>
+                                <View style={[styles.featureBullet, { backgroundColor: '#10B981' }]} />
+                                <Text style={[styles.featureText, { color: colors.text }]}>Real-time position tracking</Text>
                             </View>
                             <View style={styles.featureItem}>
-                                <View style={[styles.featureBullet, { backgroundColor: "#8B5CF6" }]} />
-                                <Text style={[styles.featureText, { color: colors.text }]}>
-                                    Obstacle detection & mapping
-                                </Text>
+                                <View style={[styles.featureBullet, { backgroundColor: '#8B5CF6' }]} />
+                                <Text style={[styles.featureText, { color: colors.text }]}>Obstacle detection & mapping</Text>
                             </View>
                             <View style={styles.featureItem}>
-                                <View style={[styles.featureBullet, { backgroundColor: "#F59E0B" }]} />
-                                <Text style={[styles.featureText, { color: colors.text }]}>
-                                    Custom cleaning zones
-                                </Text>
+                                <View style={[styles.featureBullet, { backgroundColor: '#F59E0B' }]} />
+                                <Text style={[styles.featureText, { color: colors.text }]}>Custom cleaning zones</Text>
                             </View>
                         </View>
-                        {/* C++ BRIDGE: Integrate with RobotBridge.getMap(), updatePosition(), etc. */}
                     </View>
 
-                    {/* ---------------- Quick Navigation ---------------- */}
-                    <View style={[
-                        styles.navCard,
-                        { backgroundColor: colors.card, borderColor: colors.border }
-                    ]}>
-                        <Text style={[styles.navTitle, { color: colors.text }]}>
-                            Quick Navigation
-                        </Text>
+                    {/* Quick Navigation */}
+                    <View
+                        style={[styles.navCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+                    >
+                        <Text style={[styles.navTitle, { color: colors.text }]}>Quick Navigation</Text>
 
                         <View style={styles.navButtons}>
                             <TouchableOpacity
-                                style={[
-                                    styles.navButton,
-                                    { backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : colors.background }
-                                ]}
-                                onPress={() => router.push("./DashboardScreen")}
+                                style={[styles.navButton, { backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : colors.background }]}
+                                onPress={() => router.push('/(tabs)/01_DashboardScreen')}
                                 activeOpacity={0.7}
                             >
                                 <Ionicons name="grid" size={20} color={colors.primary} />
-                                <Text style={[styles.navButtonText, { color: colors.text }]}>
-                                    Dashboard
-                                </Text>
+                                <Text style={[styles.navButtonText, { color: colors.text }]}>Dashboard</Text>
                             </TouchableOpacity>
 
                             <TouchableOpacity
-                                style={[
-                                    styles.navButton,
-                                    { backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : colors.background }
-                                ]}
-                                onPress={() => router.push("./ControlScreen")}
+                                style={[styles.navButton, { backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : colors.background }]}
+                                onPress={() => router.push('/(tabs)/02_ControlScreen')}
                                 activeOpacity={0.7}
                             >
                                 <Ionicons name="game-controller" size={20} color={colors.primary} />
-                                <Text style={[styles.navButtonText, { color: colors.text }]}>
-                                    Control
-                                </Text>
+                                <Text style={[styles.navButtonText, { color: colors.text }]}>Control</Text>
                             </TouchableOpacity>
 
                             <TouchableOpacity
-                                style={[
-                                    styles.navButton,
-                                    { backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : colors.background }
-                                ]}
-                                onPress={() => router.push("./ScheduleScreen")}
+                                style={[styles.navButton, { backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : colors.background }]}
+                                onPress={() => router.push('/(tabs)/04_ScheduleScreen')}
                                 activeOpacity={0.7}
                             >
                                 <Ionicons name="calendar" size={20} color={colors.primary} />
-                                <Text style={[styles.navButtonText, { color: colors.text }]}>
-                                    Schedule
-                                </Text>
+                                <Text style={[styles.navButtonText, { color: colors.text }]}>Schedule</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
 
-                    {/* ---------------- Premium Tip ---------------- */}
+                    {/* Premium Tip */}
                     <LinearGradient
-                        colors={darkMode
-                            ? ['rgba(99, 102, 241, 0.15)', 'rgba(99, 102, 241, 0.08)']
-                            : ['rgba(99, 102, 241, 0.08)', 'rgba(99, 102, 241, 0.03)']
+                        colors={
+                            darkMode
+                                ? ['rgba(99, 102, 241, 0.15)', 'rgba(99, 102, 241, 0.08)']
+                                : ['rgba(99, 102, 241, 0.08)', 'rgba(99, 102, 241, 0.03)']
                         }
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 1 }}
                         style={[
                             styles.tipCard,
-                            { borderColor: darkMode ? 'rgba(99, 102, 241, 0.3)' : colors.primary + "30" }
+                            { borderColor: darkMode ? 'rgba(99, 102, 241, 0.3)' : `${colors.primary}30` },
                         ]}
                     >
-                        <View style={[
-                            styles.tipIconContainer,
-                            { backgroundColor: colors.primary + "20" }
-                        ]}>
+                        <View style={[styles.tipIconContainer, { backgroundColor: `${colors.primary}20` }]}>
                             <Ionicons name="bulb" size={20} color={colors.primary} />
                         </View>
                         <View style={styles.tipContent}>
-                            <Text style={[styles.tipTitle, { color: colors.primary }]}>
-                                Pro Tip
-                            </Text>
+                            <Text style={[styles.tipTitle, { color: colors.primary }]}>Pro Tip</Text>
                             <Text style={[styles.tipText, { color: colors.text }]}>
                                 Run a full mapping cycle in an empty room for the most accurate navigation data.
                             </Text>
@@ -755,19 +677,18 @@ export default function MapScreen() {
     );
 }
 
-/* ---------------------------- Styles ----------------------------- */
+/* ──────────────────────────────────────────────────────────────────────── */
+/*                               Styles                                    */
+/* ──────────────────────────────────────────────────────────────────────── */
+
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    scrollView: {
-        flex: 1,
-    },
-    scrollContent: {
-        paddingBottom: 32,
-    },
+    safeArea: { flex: 1 },
+    scrollView: { flex: 1 },
+    scrollContent: { paddingBottom: 40 },
+
     content: {
-        padding: 20,
+        paddingHorizontal: 20,
+        paddingTop: 12,
         gap: 20,
     },
 
@@ -777,25 +698,25 @@ const styles = StyleSheet.create({
         padding: 2,
     },
     mapBox: {
-        width: "100%",
+        width: '100%',
         height: 320,
         borderRadius: 22,
         borderWidth: 1,
-        overflow: "hidden",
-        shadowColor: "#6366F1",
+        overflow: 'hidden',
+        shadowColor: '#6366F1',
         shadowOpacity: 0.15,
         shadowRadius: 20,
         shadowOffset: { width: 0, height: 8 },
         elevation: 8,
-        position: "relative",
+        position: 'relative',
     },
     gridOverlay: {
-        position: "absolute",
+        position: 'absolute',
         top: 0,
         left: 0,
         right: 0,
         bottom: 0,
-        flexDirection: "row",
+        flexDirection: 'row',
         zIndex: 1,
     },
     gridColumn: {
@@ -806,26 +727,26 @@ const styles = StyleSheet.create({
         borderWidth: 0.5,
     },
     zone: {
-        position: "absolute",
+        position: 'absolute',
         borderRadius: 8,
-        alignItems: "center",
-        justifyContent: "center",
+        alignItems: 'center',
+        justifyContent: 'center',
         zIndex: 3,
     },
     zoneName: {
         fontSize: 10,
-        fontWeight: "700",
-        textAlign: "center",
+        fontWeight: '700',
+        textAlign: 'center',
     },
     cleanedArea: {
-        position: "absolute",
+        position: 'absolute',
         borderRadius: 6,
         borderWidth: 1,
-        borderStyle: "dashed",
+        borderStyle: 'dashed',
         zIndex: 2,
     },
     robotPosition: {
-        position: "absolute",
+        position: 'absolute',
         zIndex: 4,
         marginLeft: -20,
         marginTop: -20,
@@ -834,16 +755,16 @@ const styles = StyleSheet.create({
         width: 40,
         height: 40,
         borderRadius: 20,
-        alignItems: "center",
-        justifyContent: "center",
-        shadowColor: "#000",
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#000',
         shadowOpacity: 0.3,
         shadowRadius: 8,
         shadowOffset: { width: 0, height: 4 },
         elevation: 4,
     },
     robotPulse: {
-        position: "absolute",
+        position: 'absolute',
         width: 60,
         height: 60,
         borderRadius: 30,
@@ -852,33 +773,33 @@ const styles = StyleSheet.create({
         opacity: 0.4,
     },
     gridToggle: {
-        position: "absolute",
+        position: 'absolute',
         top: 12,
         right: 12,
         width: 36,
         height: 36,
         borderRadius: 18,
-        alignItems: "center",
-        justifyContent: "center",
+        alignItems: 'center',
+        justifyContent: 'center',
         zIndex: 5,
-        shadowColor: "#000",
+        shadowColor: '#000',
         shadowOpacity: 0.1,
         shadowRadius: 4,
         shadowOffset: { width: 0, height: 2 },
         elevation: 2,
     },
     updateBadge: {
-        position: "absolute",
+        position: 'absolute',
         bottom: 12,
         left: 12,
-        flexDirection: "row",
-        alignItems: "center",
+        flexDirection: 'row',
+        alignItems: 'center',
         gap: 6,
         paddingHorizontal: 12,
         paddingVertical: 6,
         borderRadius: 12,
         zIndex: 5,
-        shadowColor: "#000",
+        shadowColor: '#000',
         shadowOpacity: 0.1,
         shadowRadius: 4,
         shadowOffset: { width: 0, height: 2 },
@@ -886,7 +807,7 @@ const styles = StyleSheet.create({
     },
     updateText: {
         fontSize: 11,
-        fontWeight: "600",
+        fontWeight: '600',
     },
 
     /* Zone Info Card */
@@ -894,21 +815,21 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         padding: 16,
         borderWidth: 1,
-        shadowColor: "#000",
+        shadowColor: '#000',
         shadowOpacity: 0.08,
         shadowRadius: 8,
         shadowOffset: { width: 0, height: 2 },
         elevation: 2,
     },
     zoneInfoHeader: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
         marginBottom: 12,
     },
     zoneInfoLeft: {
-        flexDirection: "row",
-        alignItems: "center",
+        flexDirection: 'row',
+        alignItems: 'center',
         gap: 10,
     },
     zoneColorIndicator: {
@@ -918,29 +839,29 @@ const styles = StyleSheet.create({
     },
     zoneInfoTitle: {
         fontSize: 16,
-        fontWeight: "700",
+        fontWeight: '700',
     },
     zoneInfoActions: {
-        flexDirection: "row",
+        flexDirection: 'row',
         gap: 10,
     },
     zoneActionButton: {
         flex: 1,
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
         gap: 8,
         padding: 12,
         borderRadius: 10,
     },
     zoneActionText: {
         fontSize: 14,
-        fontWeight: "600",
+        fontWeight: '600',
     },
 
     /* Stats Grid */
     statsGrid: {
-        flexDirection: "row",
+        flexDirection: 'row',
         gap: 12,
     },
     statCard: {
@@ -948,8 +869,8 @@ const styles = StyleSheet.create({
         borderRadius: 18,
         padding: 16,
         borderWidth: 1,
-        alignItems: "center",
-        shadowColor: "#000",
+        alignItems: 'center',
+        shadowColor: '#000',
         shadowOpacity: 0.08,
         shadowRadius: 12,
         shadowOffset: { width: 0, height: 4 },
@@ -959,10 +880,10 @@ const styles = StyleSheet.create({
         width: 48,
         height: 48,
         borderRadius: 24,
-        alignItems: "center",
-        justifyContent: "center",
+        alignItems: 'center',
+        justifyContent: 'center',
         marginBottom: 12,
-        shadowColor: "#000",
+        shadowColor: '#000',
         shadowOpacity: 0.15,
         shadowRadius: 8,
         shadowOffset: { width: 0, height: 4 },
@@ -970,14 +891,14 @@ const styles = StyleSheet.create({
     },
     statValue: {
         fontSize: 18,
-        fontWeight: "800",
+        fontWeight: '800',
         marginBottom: 4,
         letterSpacing: 0.3,
     },
     statLabel: {
         fontSize: 11,
-        fontWeight: "600",
-        textAlign: "center",
+        fontWeight: '600',
+        textAlign: 'center',
         letterSpacing: 0.5,
     },
 
@@ -986,35 +907,35 @@ const styles = StyleSheet.create({
         borderRadius: 18,
         padding: 20,
         borderWidth: 1,
-        shadowColor: "#000",
+        shadowColor: '#000',
         shadowOpacity: 0.08,
         shadowRadius: 12,
         shadowOffset: { width: 0, height: 4 },
         elevation: 4,
     },
     zoneListHeader: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
         marginBottom: 16,
     },
     cardTitleContainer: {
-        flexDirection: "row",
-        alignItems: "center",
+        flexDirection: 'row',
+        alignItems: 'center',
         gap: 10,
     },
     cardTitle: {
         fontSize: 18,
-        fontWeight: "700",
+        fontWeight: '700',
         letterSpacing: 0.3,
     },
     addZoneButton: {
         width: 36,
         height: 36,
         borderRadius: 18,
-        alignItems: "center",
-        justifyContent: "center",
-        shadowColor: "#000",
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#000',
         shadowOpacity: 0.15,
         shadowRadius: 8,
         shadowOffset: { width: 0, height: 4 },
@@ -1024,8 +945,8 @@ const styles = StyleSheet.create({
         gap: 0,
     },
     zoneListItem: {
-        flexDirection: "row",
-        alignItems: "center",
+        flexDirection: 'row',
+        alignItems: 'center',
         gap: 12,
         padding: 14,
         borderRadius: 10,
@@ -1038,7 +959,7 @@ const styles = StyleSheet.create({
     zoneListName: {
         flex: 1,
         fontSize: 15,
-        fontWeight: "600",
+        fontWeight: '600',
     },
 
     /* Info Box */
@@ -1046,15 +967,15 @@ const styles = StyleSheet.create({
         borderRadius: 18,
         padding: 20,
         borderWidth: 1,
-        shadowColor: "#000",
+        shadowColor: '#000',
         shadowOpacity: 0.08,
         shadowRadius: 12,
         shadowOffset: { width: 0, height: 4 },
         elevation: 4,
     },
     infoHeader: {
-        flexDirection: "row",
-        alignItems: "center",
+        flexDirection: 'row',
+        alignItems: 'center',
         gap: 10,
         marginBottom: 14,
     },
@@ -1062,18 +983,18 @@ const styles = StyleSheet.create({
         width: 32,
         height: 32,
         borderRadius: 16,
-        alignItems: "center",
-        justifyContent: "center",
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     infoTitle: {
-        fontWeight: "800",
+        fontWeight: '800',
         fontSize: 17,
         letterSpacing: 0.3,
     },
     infoText: {
         fontSize: 14,
         lineHeight: 21,
-        fontWeight: "500",
+        fontWeight: '500',
         letterSpacing: 0.2,
         marginBottom: 16,
     },
@@ -1081,8 +1002,8 @@ const styles = StyleSheet.create({
         gap: 12,
     },
     featureItem: {
-        flexDirection: "row",
-        alignItems: "center",
+        flexDirection: 'row',
+        alignItems: 'center',
         gap: 12,
     },
     featureBullet: {
@@ -1092,7 +1013,7 @@ const styles = StyleSheet.create({
     },
     featureText: {
         fontSize: 13,
-        fontWeight: "600",
+        fontWeight: '600',
         letterSpacing: 0.2,
     },
 
@@ -1101,7 +1022,7 @@ const styles = StyleSheet.create({
         borderRadius: 18,
         padding: 20,
         borderWidth: 1,
-        shadowColor: "#000",
+        shadowColor: '#000',
         shadowOpacity: 0.08,
         shadowRadius: 12,
         shadowOffset: { width: 0, height: 4 },
@@ -1111,33 +1032,33 @@ const styles = StyleSheet.create({
         marginBottom: 18,
     },
     actionsTitleContainer: {
-        flexDirection: "row",
-        alignItems: "center",
+        flexDirection: 'row',
+        alignItems: 'center',
         gap: 10,
     },
     flashIconContainer: {
         width: 32,
         height: 32,
         borderRadius: 16,
-        alignItems: "center",
-        justifyContent: "center",
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     actionsTitle: {
         fontSize: 18,
-        fontWeight: "700",
+        fontWeight: '700',
         letterSpacing: 0.3,
     },
     actionButtons: {
-        flexDirection: "row",
+        flexDirection: 'row',
         gap: 12,
     },
     actionButton: {
         flex: 1,
         borderRadius: 14,
         padding: 16,
-        alignItems: "center",
+        alignItems: 'center',
         gap: 10,
-        shadowColor: "#000",
+        shadowColor: '#000',
         shadowOpacity: 0.06,
         shadowRadius: 8,
         shadowOffset: { width: 0, height: 2 },
@@ -1147,9 +1068,9 @@ const styles = StyleSheet.create({
         width: 52,
         height: 52,
         borderRadius: 26,
-        alignItems: "center",
-        justifyContent: "center",
-        shadowColor: "#000",
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#000',
         shadowOpacity: 0.15,
         shadowRadius: 8,
         shadowOffset: { width: 0, height: 4 },
@@ -1157,9 +1078,9 @@ const styles = StyleSheet.create({
     },
     actionButtonText: {
         fontSize: 12,
-        fontWeight: "700",
+        fontWeight: '700',
         letterSpacing: 0.5,
-        textAlign: "center",
+        textAlign: 'center',
     },
 
     /* Navigation Card */
@@ -1167,7 +1088,7 @@ const styles = StyleSheet.create({
         borderRadius: 18,
         padding: 20,
         borderWidth: 1,
-        shadowColor: "#000",
+        shadowColor: '#000',
         shadowOpacity: 0.08,
         shadowRadius: 12,
         shadowOffset: { width: 0, height: 4 },
@@ -1175,23 +1096,23 @@ const styles = StyleSheet.create({
     },
     navTitle: {
         fontSize: 16,
-        fontWeight: "700",
+        fontWeight: '700',
         marginBottom: 16,
         letterSpacing: 0.3,
     },
     navButtons: {
-        flexDirection: "row",
+        flexDirection: 'row',
         gap: 10,
     },
     navButton: {
         flex: 1,
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
         gap: 8,
         padding: 14,
         borderRadius: 12,
-        shadowColor: "#000",
+        shadowColor: '#000',
         shadowOpacity: 0.04,
         shadowRadius: 6,
         shadowOffset: { width: 0, height: 2 },
@@ -1199,7 +1120,7 @@ const styles = StyleSheet.create({
     },
     navButtonText: {
         fontSize: 12,
-        fontWeight: "700",
+        fontWeight: '700',
         letterSpacing: 0.3,
     },
 
@@ -1208,10 +1129,10 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         padding: 18,
         borderWidth: 1,
-        flexDirection: "row",
+        flexDirection: 'row',
         gap: 14,
-        alignItems: "flex-start",
-        shadowColor: "#6366F1",
+        alignItems: 'flex-start',
+        shadowColor: '#6366F1',
         shadowOpacity: 0.12,
         shadowRadius: 12,
         shadowOffset: { width: 0, height: 4 },
@@ -1221,8 +1142,8 @@ const styles = StyleSheet.create({
         width: 36,
         height: 36,
         borderRadius: 18,
-        alignItems: "center",
-        justifyContent: "center",
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     tipContent: {
         flex: 1,
@@ -1230,13 +1151,13 @@ const styles = StyleSheet.create({
     },
     tipTitle: {
         fontSize: 15,
-        fontWeight: "800",
+        fontWeight: '800',
         letterSpacing: 0.3,
     },
     tipText: {
         fontSize: 13,
         lineHeight: 19,
-        fontWeight: "500",
+        fontWeight: '500',
         letterSpacing: 0.2,
         opacity: 0.9,
     },
