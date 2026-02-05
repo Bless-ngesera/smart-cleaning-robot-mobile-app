@@ -1,5 +1,5 @@
-// app/SignupScreen.tsx  (or app/(auth)/SignupScreen.tsx – adjust path as needed)
-import React, { useState } from 'react';
+// app/SignupScreen.tsx
+import React, { useState, useRef } from 'react';
 import {
     View,
     Text,
@@ -24,7 +24,7 @@ import Loader from '../src/components/Loader';
 import { useThemeContext } from '@/src/context/ThemeContext';
 
 export default function SignupScreen() {
-    const { colors, darkMode } = useThemeContext();
+    const { colors } = useThemeContext();
 
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
@@ -34,17 +34,21 @@ export default function SignupScreen() {
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-    // Error states
     const [nameError, setNameError] = useState('');
     const [emailError, setEmailError] = useState('');
     const [passwordError, setPasswordError] = useState('');
     const [confirmError, setConfirmError] = useState('');
 
     // Floating label animations
-    const nameAnim = useState(new Animated.Value(0))[0];
-    const emailAnim = useState(new Animated.Value(0))[0];
-    const passAnim = useState(new Animated.Value(0))[0];
-    const confirmAnim = useState(new Animated.Value(0))[0];
+    const nameAnim = useRef(new Animated.Value(0)).current;
+    const emailAnim = useRef(new Animated.Value(0)).current;
+    const passAnim = useRef(new Animated.Value(0)).current;
+    const confirmAnim = useRef(new Animated.Value(0)).current;
+
+    // Refs for focus chaining
+    const emailRef = useRef<TextInput>(null);
+    const passRef = useRef<TextInput>(null);
+    const confirmRef = useRef<TextInput>(null);
 
     const validateEmail = (value: string) => /\S+@\S+\.\S+/.test(value);
 
@@ -76,7 +80,7 @@ export default function SignupScreen() {
             setEmailError('Email is required');
             valid = false;
         } else if (!validateEmail(email.trim())) {
-            setEmailError('Please enter a valid email address');
+            setEmailError('Invalid email format');
             valid = false;
         }
 
@@ -125,7 +129,7 @@ export default function SignupScreen() {
     const animateLabel = (anim: Animated.Value, toValue: number) => {
         Animated.timing(anim, {
             toValue,
-            duration: 180,
+            duration: 200,
             useNativeDriver: false,
         }).start();
     };
@@ -137,12 +141,10 @@ export default function SignupScreen() {
     return (
         <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
             <LinearGradient
-                colors={
-                    darkMode
-                        ? ['#0f172a', '#1e293b', '#0f172a']
-                        : ['#f8fafc', '#e2e8f0', '#f8fafc']
-                }
-                style={styles.gradientBg}
+                colors={[colors.background, colors.card]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
+                style={styles.gradient}
             >
                 <KeyboardAvoidingView
                     behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -159,18 +161,18 @@ export default function SignupScreen() {
                             subtitle="Join Smart Cleaner Pro today"
                         />
 
-                        <View style={styles.formCard}>
+                        <View style={styles.form}>
                             {/* Full Name */}
-                            <View style={styles.inputWrapper}>
+                            <View style={styles.field}>
                                 <Animated.Text
                                     style={[
-                                        styles.floatingLabel,
+                                        styles.label,
                                         {
-                                            top: nameAnim.interpolate({ inputRange: [0, 1], outputRange: [18, 6] }),
+                                            top: nameAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 8] }),
                                             fontSize: nameAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 12] }),
                                             color: nameAnim.interpolate({
                                                 inputRange: [0, 1],
-                                                outputRange: [colors.textSecondary ?? '#6b7280', colors.primary ?? '#2563eb'],
+                                                outputRange: [colors.textSecondary, colors.primary],
                                             }),
                                         },
                                     ]}
@@ -181,10 +183,7 @@ export default function SignupScreen() {
                                 <TextInput
                                     style={[
                                         styles.input,
-                                        {
-                                            borderColor: nameError ? '#ef4444' : colors.border,
-                                            color: colors.text ?? '#111827',
-                                        },
+                                        { borderColor: nameError ? colors.error : colors.border, color: colors.text },
                                     ]}
                                     value={name}
                                     onChangeText={(text) => {
@@ -193,6 +192,8 @@ export default function SignupScreen() {
                                     }}
                                     autoCapitalize="words"
                                     placeholder=""
+                                    returnKeyType="next"
+                                    onSubmitEditing={() => emailRef.current?.focus()}
                                     onFocus={() => animateLabel(nameAnim, 1)}
                                     onBlur={() => animateLabel(nameAnim, name ? 1 : 0)}
                                     accessibilityLabel="Full name input"
@@ -201,7 +202,7 @@ export default function SignupScreen() {
                                 <Ionicons
                                     name="person-outline"
                                     size={20}
-                                    color={colors.primary ?? '#2563eb'}
+                                    color={colors.primary}
                                     style={styles.inputIcon}
                                 />
 
@@ -209,16 +210,16 @@ export default function SignupScreen() {
                             </View>
 
                             {/* Email */}
-                            <View style={styles.inputWrapper}>
+                            <View style={styles.field}>
                                 <Animated.Text
                                     style={[
-                                        styles.floatingLabel,
+                                        styles.label,
                                         {
-                                            top: emailAnim.interpolate({ inputRange: [0, 1], outputRange: [18, 6] }),
+                                            top: emailAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 8] }),
                                             fontSize: emailAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 12] }),
                                             color: emailAnim.interpolate({
                                                 inputRange: [0, 1],
-                                                outputRange: [colors.textSecondary ?? '#6b7280', colors.primary ?? '#2563eb'],
+                                                outputRange: [colors.textSecondary, colors.primary],
                                             }),
                                         },
                                     ]}
@@ -227,12 +228,10 @@ export default function SignupScreen() {
                                 </Animated.Text>
 
                                 <TextInput
+                                    ref={emailRef}
                                     style={[
                                         styles.input,
-                                        {
-                                            borderColor: emailError ? '#ef4444' : colors.border,
-                                            color: colors.text ?? '#111827',
-                                        },
+                                        { borderColor: emailError ? colors.error : colors.border, color: colors.text },
                                     ]}
                                     value={email}
                                     onChangeText={(text) => {
@@ -243,6 +242,8 @@ export default function SignupScreen() {
                                     autoCapitalize="none"
                                     autoCorrect={false}
                                     placeholder=""
+                                    returnKeyType="next"
+                                    onSubmitEditing={() => passRef.current?.focus()}
                                     onFocus={() => animateLabel(emailAnim, 1)}
                                     onBlur={() => animateLabel(emailAnim, email ? 1 : 0)}
                                     accessibilityLabel="Email input"
@@ -251,7 +252,7 @@ export default function SignupScreen() {
                                 <Ionicons
                                     name="mail-outline"
                                     size={20}
-                                    color={colors.primary ?? '#2563eb'}
+                                    color={colors.primary}
                                     style={styles.inputIcon}
                                 />
 
@@ -259,16 +260,16 @@ export default function SignupScreen() {
                             </View>
 
                             {/* Password */}
-                            <View style={styles.inputWrapper}>
+                            <View style={styles.field}>
                                 <Animated.Text
                                     style={[
-                                        styles.floatingLabel,
+                                        styles.label,
                                         {
-                                            top: passAnim.interpolate({ inputRange: [0, 1], outputRange: [18, 6] }),
+                                            top: passAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 8] }),
                                             fontSize: passAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 12] }),
                                             color: passAnim.interpolate({
                                                 inputRange: [0, 1],
-                                                outputRange: [colors.textSecondary ?? '#6b7280', colors.primary ?? '#2563eb'],
+                                                outputRange: [colors.textSecondary, colors.primary],
                                             }),
                                         },
                                     ]}
@@ -277,12 +278,10 @@ export default function SignupScreen() {
                                 </Animated.Text>
 
                                 <TextInput
+                                    ref={passRef}
                                     style={[
                                         styles.input,
-                                        {
-                                            borderColor: passwordError ? '#ef4444' : colors.border,
-                                            color: colors.text ?? '#111827',
-                                        },
+                                        { borderColor: passwordError ? colors.error : colors.border, color: colors.text },
                                     ]}
                                     value={password}
                                     onChangeText={(text) => {
@@ -292,6 +291,8 @@ export default function SignupScreen() {
                                     secureTextEntry={!showPassword}
                                     autoCapitalize="none"
                                     placeholder=""
+                                    returnKeyType="next"
+                                    onSubmitEditing={() => confirmRef.current?.focus()}
                                     onFocus={() => animateLabel(passAnim, 1)}
                                     onBlur={() => animateLabel(passAnim, password ? 1 : 0)}
                                     accessibilityLabel="Password input"
@@ -300,18 +301,19 @@ export default function SignupScreen() {
                                 <Ionicons
                                     name="lock-closed-outline"
                                     size={20}
-                                    color={colors.primary ?? '#2563eb'}
+                                    color={colors.primary}
                                     style={styles.inputIcon}
                                 />
 
                                 <TouchableOpacity
                                     style={styles.eyeIcon}
                                     onPress={() => setShowPassword(!showPassword)}
+                                    hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                                 >
                                     <Ionicons
                                         name={showPassword ? 'eye-off-outline' : 'eye-outline'}
                                         size={20}
-                                        color={colors.textSecondary ?? '#6b7280'}
+                                        color={colors.textSecondary}
                                     />
                                 </TouchableOpacity>
 
@@ -326,16 +328,16 @@ export default function SignupScreen() {
                             </View>
 
                             {/* Confirm Password */}
-                            <View style={styles.inputWrapper}>
+                            <View style={styles.field}>
                                 <Animated.Text
                                     style={[
-                                        styles.floatingLabel,
+                                        styles.label,
                                         {
-                                            top: confirmAnim.interpolate({ inputRange: [0, 1], outputRange: [18, 6] }),
+                                            top: confirmAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 8] }),
                                             fontSize: confirmAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 12] }),
                                             color: confirmAnim.interpolate({
                                                 inputRange: [0, 1],
-                                                outputRange: [colors.textSecondary ?? '#6b7280', colors.primary ?? '#2563eb'],
+                                                outputRange: [colors.textSecondary, colors.primary],
                                             }),
                                         },
                                     ]}
@@ -344,12 +346,10 @@ export default function SignupScreen() {
                                 </Animated.Text>
 
                                 <TextInput
+                                    ref={confirmRef}
                                     style={[
                                         styles.input,
-                                        {
-                                            borderColor: confirmError ? '#ef4444' : colors.border,
-                                            color: colors.text ?? '#111827',
-                                        },
+                                        { borderColor: confirmError ? colors.error : colors.border, color: colors.text },
                                     ]}
                                     value={confirmPassword}
                                     onChangeText={(text) => {
@@ -359,6 +359,7 @@ export default function SignupScreen() {
                                     secureTextEntry={!showConfirmPassword}
                                     autoCapitalize="none"
                                     placeholder=""
+                                    returnKeyType="done"
                                     onFocus={() => animateLabel(confirmAnim, 1)}
                                     onBlur={() => animateLabel(confirmAnim, confirmPassword ? 1 : 0)}
                                     accessibilityLabel="Confirm password input"
@@ -367,18 +368,19 @@ export default function SignupScreen() {
                                 <Ionicons
                                     name="lock-closed-outline"
                                     size={20}
-                                    color={colors.primary ?? '#2563eb'}
+                                    color={colors.primary}
                                     style={styles.inputIcon}
                                 />
 
                                 <TouchableOpacity
                                     style={styles.eyeIcon}
                                     onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                                    hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                                 >
                                     <Ionicons
                                         name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
                                         size={20}
-                                        color={colors.textSecondary ?? '#6b7280'}
+                                        color={colors.textSecondary}
                                     />
                                 </TouchableOpacity>
 
@@ -386,14 +388,14 @@ export default function SignupScreen() {
                             </View>
 
                             {/* Terms */}
-                            <Text style={[styles.termsText, { color: colors.textSecondary }]}>
+                            <Text style={[styles.terms, { color: colors.textSecondary }]}>
                                 By creating an account, you agree to our{' '}
                                 <Text style={{ color: colors.primary }}>Terms of Service</Text> and{' '}
                                 <Text style={{ color: colors.primary }}>Privacy Policy</Text>
                             </Text>
 
-                            {/* Action Buttons */}
-                            <View style={styles.buttonContainer}>
+                            {/* Buttons */}
+                            <View style={styles.buttons}>
                                 <Button
                                     title="Create Account"
                                     icon="person-add-outline"
@@ -402,9 +404,10 @@ export default function SignupScreen() {
                                     fullWidth
                                     size="large"
                                     loading={loading}
+                                    disabled={loading}
                                 />
 
-                                {/* Social Signup (placeholders – connect real SDKs later) */}
+                                {/* Social Signup (placeholders) */}
                                 <View style={styles.socialContainer}>
                                     <TouchableOpacity
                                         style={[styles.socialButton, { backgroundColor: '#4285F4' }]}
@@ -423,12 +426,14 @@ export default function SignupScreen() {
                                     </TouchableOpacity>
                                 </View>
 
+                                {/* Back to Login */}
                                 <TouchableOpacity
-                                    style={styles.backToLogin}
+                                    style={styles.backLink}
                                     onPress={() => router.push('/LoginScreen')}
+                                    activeOpacity={0.7}
                                 >
                                     <Ionicons name="arrow-back-outline" size={18} color={colors.primary} />
-                                    <Text style={[styles.backToLoginText, { color: colors.primary }]}>
+                                    <Text style={[styles.backLinkText, { color: colors.primary }]}>
                                         Already have an account? Sign in
                                     </Text>
                                 </TouchableOpacity>
@@ -446,75 +451,81 @@ export default function SignupScreen() {
 }
 
 const styles = StyleSheet.create({
-    safeArea: { flex: 1 },
-    gradientBg: { flex: 1 },
-    keyboardAvoid: { flex: 1 },
+    safeArea: {
+        flex: 1,
+    },
+    gradient: {
+        flex: 1,
+    },
+    keyboardAvoid: {
+        flex: 1,
+    },
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
+        paddingTop: 40,
         paddingBottom: 40,
         justifyContent: 'center',
     },
-    formCard: {
-        backgroundColor: 'rgba(255,255,255,0.07)',
-        borderRadius: 24,
-        padding: 28,
-        borderWidth: 1,
-        borderColor: 'rgba(200,200,200,0.12)',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.18,
-        shadowRadius: 20,
-        elevation: 10,
-        marginTop: 20,
-        marginBottom: 32,
+    form: {
+        width: '100%',
+        maxWidth: 420,
+        alignSelf: 'center',
+        marginVertical: 32,
     },
-    inputWrapper: { marginBottom: 20, position: 'relative' },
+    field: {
+        marginBottom: 24,
+        position: 'relative',
+    },
     input: {
         height: 56,
         borderWidth: 1.5,
         borderRadius: 16,
         paddingHorizontal: 48,
         fontSize: 16,
+        backgroundColor: 'transparent',
     },
-    inputIcon: { position: 'absolute', left: 16, top: 18, zIndex: 1 },
-    eyeIcon: { position: 'absolute', right: 16, top: 18, zIndex: 1 },
-    floatingLabel: {
+    inputIcon: {
+        position: 'absolute',
+        left: 16,
+        top: 18,
+        zIndex: 1,
+    },
+    eyeIcon: {
+        position: 'absolute',
+        right: 16,
+        top: 18,
+        zIndex: 1,
+        padding: 8,
+    },
+    label: {
         position: 'absolute',
         left: 48,
         zIndex: 1,
         backgroundColor: 'transparent',
         paddingHorizontal: 4,
+        pointerEvents: 'none',
     },
     errorText: {
         color: '#ef4444',
         fontSize: 12,
-        marginTop: 4,
+        marginTop: 6,
         marginLeft: 4,
     },
-    strengthBarContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginTop: 6,
-        gap: 8,
-    },
-    strengthBar: {
-        height: 6,
-        borderRadius: 3,
-    },
-    strengthText: {
-        fontSize: 12,
-        fontWeight: '600',
-    },
-    termsText: {
+    terms: {
         fontSize: 13,
         lineHeight: 18,
         marginTop: 8,
-        marginBottom: 24,
+        marginBottom: 32,
         textAlign: 'center',
     },
-    buttonContainer: { gap: 16 },
-    socialContainer: { gap: 12, marginTop: 12 },
+    buttons: {
+        gap: 16,
+    },
+    socialContainer: {
+        gap: 12,
+        marginTop: 12,
+    },
     socialButton: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -528,13 +539,22 @@ const styles = StyleSheet.create({
         fontSize: 15,
         fontWeight: '600',
     },
-    backToLogin: {
+    backLink: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         gap: 8,
         paddingVertical: 12,
+        marginTop: 8,
     },
-    backToLoginText: { fontSize: 15, fontWeight: '600' },
-    version: { textAlign: 'center', fontSize: 12, marginTop: 16 },
+    backLinkText: {
+        fontSize: 15,
+        fontWeight: '600',
+    },
+    version: {
+        textAlign: 'center',
+        fontSize: 12,
+        marginTop: 32,
+        opacity: 0.7,
+    },
 });

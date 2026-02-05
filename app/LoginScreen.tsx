@@ -24,7 +24,7 @@ import { useThemeContext } from '@/src/context/ThemeContext';
 import { supabase } from '@/src/services/supabase';
 
 export default function LoginScreen() {
-    const { colors, darkMode } = useThemeContext();
+    const { colors } = useThemeContext();
 
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -35,8 +35,8 @@ export default function LoginScreen() {
     const [passwordError, setPasswordError] = useState('');
 
     // Floating label animations
-    const emailAnim = useState(new Animated.Value(0))[0];
-    const passAnim = useState(new Animated.Value(0))[0];
+    const emailAnim = useRef(new Animated.Value(0)).current;
+    const passAnim = useRef(new Animated.Value(0)).current;
 
     // Ref for focus chaining
     const passwordRef = useRef<TextInput>(null);
@@ -65,15 +65,12 @@ export default function LoginScreen() {
             setEmailError('Email is required');
             valid = false;
         } else if (!/\S+@\S+\.\S+/.test(email.trim())) {
-            setEmailError('Please enter a valid email');
+            setEmailError('Invalid email format');
             valid = false;
         }
 
         if (!password.trim()) {
             setPasswordError('Password is required');
-            valid = false;
-        } else if (password.length < 6) {
-            setPasswordError('Password must be at least 6 characters');
             valid = false;
         }
 
@@ -103,7 +100,7 @@ export default function LoginScreen() {
     const animateLabel = (anim: Animated.Value, toValue: number) => {
         Animated.timing(anim, {
             toValue,
-            duration: 220,
+            duration: 200,
             useNativeDriver: false,
         }).start();
     };
@@ -115,7 +112,9 @@ export default function LoginScreen() {
     return (
         <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
             <LinearGradient
-                colors={darkMode ? ['#0f172a', '#1e293b'] : ['#f8fafc', '#e2e8f0']}
+                colors={[colors.background, colors.card]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
                 style={styles.gradient}
             >
                 <KeyboardAvoidingView
@@ -133,14 +132,14 @@ export default function LoginScreen() {
                             subtitle="Sign in to manage your Smart Cleaner"
                         />
 
-                        <View style={styles.formContainer}>
+                        <View style={styles.form}>
                             {/* Email */}
                             <View style={styles.field}>
                                 <Animated.Text
                                     style={[
                                         styles.label,
                                         {
-                                            top: emailAnim.interpolate({ inputRange: [0, 1], outputRange: [18, 4] }),
+                                            top: emailAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 8] }),
                                             fontSize: emailAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 12] }),
                                             color: emailAnim.interpolate({
                                                 inputRange: [0, 1],
@@ -155,8 +154,7 @@ export default function LoginScreen() {
                                 <TextInput
                                     style={[
                                         styles.input,
-                                        emailError && styles.inputError,
-                                        { color: colors.text, borderColor: colors.border },
+                                        { borderColor: emailError ? colors.error : colors.border, color: colors.text },
                                     ]}
                                     value={email}
                                     onChangeText={(text) => {
@@ -171,6 +169,7 @@ export default function LoginScreen() {
                                     onSubmitEditing={() => passwordRef.current?.focus()}
                                     onFocus={() => animateLabel(emailAnim, 1)}
                                     onBlur={() => animateLabel(emailAnim, email ? 1 : 0)}
+                                    accessibilityLabel="Email input"
                                 />
 
                                 <Ionicons
@@ -189,7 +188,7 @@ export default function LoginScreen() {
                                     style={[
                                         styles.label,
                                         {
-                                            top: passAnim.interpolate({ inputRange: [0, 1], outputRange: [18, 4] }),
+                                            top: passAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 8] }),
                                             fontSize: passAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 12] }),
                                             color: passAnim.interpolate({
                                                 inputRange: [0, 1],
@@ -205,8 +204,7 @@ export default function LoginScreen() {
                                     ref={passwordRef}
                                     style={[
                                         styles.input,
-                                        passwordError && styles.inputError,
-                                        { color: colors.text, borderColor: colors.border },
+                                        { borderColor: passwordError ? colors.error : colors.border, color: colors.text },
                                     ]}
                                     value={password}
                                     onChangeText={(text) => {
@@ -219,6 +217,7 @@ export default function LoginScreen() {
                                     returnKeyType="done"
                                     onFocus={() => animateLabel(passAnim, 1)}
                                     onBlur={() => animateLabel(passAnim, password ? 1 : 0)}
+                                    accessibilityLabel="Password input"
                                 />
 
                                 <Ionicons
@@ -231,6 +230,7 @@ export default function LoginScreen() {
                                 <TouchableOpacity
                                     style={styles.eyeIcon}
                                     onPress={() => setShowPassword(!showPassword)}
+                                    hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                                 >
                                     <Ionicons
                                         name={showPassword ? 'eye-off-outline' : 'eye-outline'}
@@ -246,6 +246,7 @@ export default function LoginScreen() {
                             <TouchableOpacity
                                 style={styles.forgotLink}
                                 onPress={() => router.push('/ForgotPasswordScreen')}
+                                activeOpacity={0.7}
                             >
                                 <Text style={[styles.linkText, { color: colors.primary }]}>
                                     Forgot password?
@@ -261,8 +262,8 @@ export default function LoginScreen() {
                                     variant="primary"
                                     fullWidth
                                     size="large"
-                                    disabled={loading}
                                     loading={loading}
+                                    disabled={loading}
                                 />
 
                                 <View style={styles.orRow}>
@@ -305,25 +306,18 @@ const styles = StyleSheet.create({
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
+        paddingTop: 40,
         paddingBottom: 40,
-        justifyContent: "center",
+        justifyContent: 'center',
     },
-    formContainer: {
-        backgroundColor: "rgba(255,255,255,0.07)",
-        borderRadius: 24,
-        padding: 28,
-        borderWidth: 1,
-        borderColor: "rgba(200,200,200,0.12)",
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.18,
-        shadowRadius: 20,
-        elevation: 10,
-        marginTop: 20,
-        marginBottom: 32,
+    form: {
+        width: '100%',
+        maxWidth: 420,
+        alignSelf: 'center',
+        marginVertical: 32,
     },
     field: {
-        marginBottom: 20,
+        marginBottom: 24,
         position: 'relative',
     },
     input: {
@@ -332,9 +326,7 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         paddingHorizontal: 48,
         fontSize: 16,
-    },
-    inputError: {
-        borderColor: '#ef4444',
+        backgroundColor: 'transparent',
     },
     inputIcon: {
         position: 'absolute',
@@ -347,6 +339,7 @@ const styles = StyleSheet.create({
         right: 16,
         top: 18,
         zIndex: 1,
+        padding: 8,
     },
     label: {
         position: 'absolute',
@@ -354,19 +347,21 @@ const styles = StyleSheet.create({
         zIndex: 1,
         backgroundColor: 'transparent',
         paddingHorizontal: 4,
+        pointerEvents: 'none',
     },
     errorText: {
         color: '#ef4444',
         fontSize: 12,
-        marginTop: 4,
+        marginTop: 6,
         marginLeft: 4,
     },
     forgotLink: {
         alignSelf: 'flex-end',
-        marginBottom: 24,
+        marginBottom: 32,
+        paddingVertical: 8,
     },
     linkText: {
-        fontSize: 14,
+        fontSize: 15,
         fontWeight: '600',
     },
     buttons: {
@@ -380,7 +375,7 @@ const styles = StyleSheet.create({
     orLine: {
         flex: 1,
         height: 1,
-        opacity: 0.4,
+        opacity: 0.3,
     },
     orText: {
         marginHorizontal: 16,
@@ -390,6 +385,7 @@ const styles = StyleSheet.create({
     version: {
         textAlign: 'center',
         fontSize: 12,
-        marginTop: 16,
+        marginTop: 32,
+        opacity: 0.7,
     },
 });
