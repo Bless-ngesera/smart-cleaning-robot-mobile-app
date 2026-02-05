@@ -13,10 +13,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
-import Header from '../src/components/Header';
-import Loader from '../src/components/Loader';
-import { useThemeContext } from '../src/context/ThemeContext';
-import { getRobotStatus } from '../src/services/robotService';
+import Header from '../../src/components/Header';
+import Loader from '../../src/components/Loader';
+import { useThemeContext } from '@/src/context/ThemeContext';
+import { getRobotStatus } from '@/src/services/robotService';
 
 type RobotStatus = {
     batteryLevel: number;

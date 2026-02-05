@@ -17,10 +17,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
-import Button from './src/components/Button';
-import Header from './src/components/Header';
-import Loader from './src/components/Loader';
-import { useThemeContext } from './src/context/ThemeContext';
+import Button from '../src/components/Button';
+import Header from '../src/components/Header';
+import Loader from '../src/components/Loader';
+import { useThemeContext } from '@/src/context/ThemeContext';
 
 export default function ForgotPasswordScreen() {
     const { colors, darkMode } = useThemeContext();

@@ -13,9 +13,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
-import Header from '../src/components/Header';
-import Loader from '../src/components/Loader';
-import { useThemeContext } from '../src/context/ThemeContext';
+import Header from '../../src/components/Header';
+import Loader from '../../src/components/Loader';
+import { useThemeContext } from '@/src/context/ThemeContext';
 import { router } from 'expo-router';
 
 type MapData = {

@@ -18,10 +18,10 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 
-import Button from './src/components/Button';
-import Header from './src/components/Header';
-import Loader from './src/components/Loader';
-import { useThemeContext } from './src/context/ThemeContext';
+import Button from '../src/components/Button';
+import Header from '../src/components/Header';
+import Loader from '../src/components/Loader';
+import { useThemeContext } from '@/src/context/ThemeContext';
 
 export default function SignupScreen() {
     const { colors, darkMode } = useThemeContext();
