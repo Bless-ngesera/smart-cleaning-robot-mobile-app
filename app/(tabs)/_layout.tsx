@@ -1,11 +1,11 @@
 // app/(tabs)/_layout.tsx
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useThemeContext } from '@/src/context/ThemeContext'; // adjust path if needed
+import { router } from 'expo-router';
 
-// Optional: if auth guard returns a loading state or redirect, handle it here
-import { useAuthGuard } from '@/src/middleware/authGuard'; // adjust path
+import { useThemeContext } from '@/src/context/ThemeContext';
+import { supabase } from '@/src/services/supabase';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -19,9 +19,40 @@ const tabIcons: Record<string, IoniconName> = {
 
 export default function TabLayout() {
     const { colors, darkMode } = useThemeContext();
+    const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
-    const checking = useAuthGuard();
-    if (checking) return null; // or <Loader /> if you prefer
+    useEffect(() => {
+        // Initial session check
+        const checkSession = async () => {
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                if (!session) {
+                    router.replace('/LoginScreen');
+                }
+            } catch (err) {
+                console.error('Session check failed:', err);
+                router.replace('/LoginScreen');
+            } finally {
+                setIsCheckingAuth(false);
+            }
+        };
+
+        checkSession();
+
+        // Real-time auth state listener
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            if (!session) {
+                router.replace('/LoginScreen');
+            }
+        });
+
+        return () => subscription.unsubscribe();
+    }, []);
+
+    // Show nothing while checking auth (prevents flash of tabs)
+    if (isCheckingAuth) {
+        return null;
+    }
 
     return (
         <Tabs
@@ -32,7 +63,7 @@ export default function TabLayout() {
                 tabBarStyle: {
                     backgroundColor: colors.card,
                     borderTopColor: colors.border,
-                    borderTopWidth: darkMode ? 0 : 1, // cleaner in dark mode
+                    borderTopWidth: darkMode ? 0 : 1,
                     height: 62,
                     paddingBottom: 8,
                     paddingTop: 6,
@@ -49,7 +80,6 @@ export default function TabLayout() {
                 tabBarIconStyle: {
                     marginBottom: -2,
                 },
-                // Optional: tiny active indicator line (looks premium)
                 tabBarActiveBackgroundColor: darkMode ? `${colors.primary}10` : undefined,
             }}
         >
