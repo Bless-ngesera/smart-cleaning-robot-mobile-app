@@ -1,20 +1,43 @@
-import { useEffect, useState } from "react";
-import { router, usePathname } from "expo-router";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useEffect, useState } from 'react';
+import { router, usePathname } from 'expo-router';
+import { supabase } from '@/src/services/supabase';
 
 export function useAuthGuard() {
     const pathname = usePathname();
     const [checking, setChecking] = useState(true);
 
     useEffect(() => {
-        const checkAuth = async () => {
-            const token = await AsyncStorage.getItem("userToken");
-            if (!token && pathname.startsWith("/(tabs)")) {
-                router.replace("/LoginScreen");
+        let isMounted = true;
+
+        const checkSession = async () => {
+            const {
+                data: { session },
+            } = await supabase.auth.getSession();
+
+            if (
+                isMounted &&
+                !session &&
+                pathname.startsWith('/(tabs)')
+            ) {
+                router.replace('/LoginScreen');
             }
-            setChecking(false);
+
+            if (isMounted) setChecking(false);
         };
-        checkAuth();
+
+        checkSession();
+
+        const { data: listener } =
+            supabase.auth.onAuthStateChange((_event, session) => {
+                if (!session && pathname.startsWith('/(tabs)')) {
+                    router.replace('/LoginScreen');
+                }
+            });
+
+        return () => {
+            isMounted = false;
+            listener.subscription.unsubscribe();
+        };
     }, [pathname]);
 
     return checking;
