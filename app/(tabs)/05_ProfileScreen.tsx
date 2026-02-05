@@ -22,22 +22,35 @@ export default function ProfileScreen() {
 
     const [userName, setUserName] = useState('Guest');
     const [userEmail, setUserEmail] = useState('');
+    const [loading, setLoading] = useState(true);
 
-    // Fetch user data on mount + listen for auth changes
+    // Fetch user data + listen for auth changes
     useEffect(() => {
         const fetchUser = async () => {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-                setUserEmail(user.email || '');
-                setUserName(user.user_metadata?.full_name || user.email?.split('@')[0] || 'User');
-            } else {
-                router.replace('/LoginScreen');
+            setLoading(true);
+            try {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                    setUserEmail(user.email || '');
+                    setUserName(
+                        user.user_metadata?.full_name ||
+                        user.email?.split('@')[0] ||
+                        'User'
+                    );
+                } else {
+                    router.replace('/LoginScreen');
+                }
+            } catch (err) {
+                console.error('Failed to fetch user:', err);
+                Alert.alert('Error', 'Could not load profile data');
+            } finally {
+                setLoading(false);
             }
         };
 
         fetchUser();
 
-        // Listen for logout / session changes
+        // Real-time auth listener (logout, session expire, etc.)
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
             if (!session) {
                 router.replace('/LoginScreen');
@@ -49,8 +62,7 @@ export default function ProfileScreen() {
         return () => subscription.unsubscribe();
     }, []);
 
-    /* ---------------- Handle Logout ---------------- */
-    const handleLogout = async () => {
+    const handleLogout = () => {
         Alert.alert('Logout', 'Are you sure you want to log out?', [
             { text: 'Cancel', style: 'cancel' },
             {
@@ -60,7 +72,7 @@ export default function ProfileScreen() {
                     try {
                         const { error } = await supabase.auth.signOut();
                         if (error) throw error;
-                        // No need to clear storage — Supabase handles it
+                        // Supabase clears session automatically
                     } catch (err: any) {
                         Alert.alert('Logout Failed', err.message || 'Something went wrong');
                     }
@@ -69,46 +81,53 @@ export default function ProfileScreen() {
         ]);
     };
 
-    /* ---------------- Menu Items ---------------- */
+    // Menu items with real nested routes
     const menuItems = [
         {
             id: 1,
             title: 'Account Settings',
             subtitle: 'Manage your personal information',
             icon: 'person-outline',
-            onPress: () => Alert.alert('Coming Soon', 'Account settings will be available soon.'),
+            route: '/settings/account',
         },
         {
             id: 2,
             title: 'Robot Management',
             subtitle: 'Configure your cleaning robot',
             icon: 'hardware-chip-outline',
-            onPress: () => Alert.alert('Coming Soon', 'Robot management will be available soon.'),
+            route: '/settings/robot',
         },
         {
             id: 3,
             title: 'Cleaning History',
             subtitle: 'View past cleaning sessions',
             icon: 'time-outline',
-            onPress: () => Alert.alert('Coming Soon', 'Cleaning history will be available soon.'),
+            route: '/settings/history',
         },
         {
             id: 4,
             title: 'Notifications',
             subtitle: 'Manage alerts and reminders',
             icon: 'notifications-outline',
-            onPress: () => Alert.alert('Coming Soon', 'Notifications settings will be available soon.'),
+            route: '/settings/notifications',
         },
         {
             id: 5,
             title: 'Help & Support',
             subtitle: 'Get help and contact support',
             icon: 'help-circle-outline',
-            onPress: () => Alert.alert('Coming Soon', 'Help & Support will be available soon.'),
+            route: '/settings/support',
         },
     ];
 
-    /* --------------------------- UI --------------------------- */
+    if (loading) {
+        return (
+            <SafeAreaView style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }}>
+                <Text style={{ color: colors.textSecondary }}>Loading profile...</Text>
+            </SafeAreaView>
+        );
+    }
+
     return (
         <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
             <Header title="Profile" subtitle="Manage your account & preferences" />
@@ -129,6 +148,7 @@ export default function ProfileScreen() {
                     <Text style={[styles.userName, { color: colors.text }]}>{userName}</Text>
                     <Text style={[styles.userEmail, { color: colors.textSecondary }]}>{userEmail}</Text>
 
+                    {/* Stats (placeholders – replace with real data later) */}
                     <View style={styles.statsContainer}>
                         <View style={styles.statItem}>
                             <Text style={[styles.statValue, { color: colors.primary }]}>24</Text>
@@ -192,7 +212,7 @@ export default function ProfileScreen() {
                     </TouchableOpacity>
                 </View>
 
-                {/* Menu Items */}
+                {/* Settings Menu */}
                 <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <View style={styles.cardHeader}>
                         <View style={styles.cardTitleContainer}>
@@ -211,7 +231,7 @@ export default function ProfileScreen() {
                                     borderBottomColor: colors.border,
                                 },
                             ]}
-                            onPress={item.onPress}
+                            onPress={() => router.push(item.route)}
                             activeOpacity={0.7}
                         >
                             <View style={[styles.menuIconContainer, { backgroundColor: `${colors.primary}15` }]}>
@@ -250,10 +270,6 @@ export default function ProfileScreen() {
         </SafeAreaView>
     );
 }
-
-/* ──────────────────────────────────────────────────────────────────────── */
-/*                               Styles                                    */
-/* ──────────────────────────────────────────────────────────────────────── */
 
 const styles = StyleSheet.create({
     safeArea: { flex: 1 },
