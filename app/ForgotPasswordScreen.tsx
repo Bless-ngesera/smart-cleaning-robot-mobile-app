@@ -1,5 +1,5 @@
 // screens/ForgotPasswordScreen.tsx
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
     View,
     Text,
@@ -23,7 +23,7 @@ import Loader from '../src/components/Loader';
 import { useThemeContext } from '@/src/context/ThemeContext';
 
 export default function ForgotPasswordScreen() {
-    const { colors, darkMode } = useThemeContext();
+    const { colors } = useThemeContext();
 
     const [email, setEmail] = useState('');
     const [loading, setLoading] = useState(false);
@@ -31,7 +31,10 @@ export default function ForgotPasswordScreen() {
     const [emailError, setEmailError] = useState('');
 
     // Floating label animation
-    const emailAnim = useState(new Animated.Value(0))[0];
+    const emailAnim = useRef(new Animated.Value(0)).current;
+
+    // Ref for focus
+    const emailRef = useRef<TextInput>(null);
 
     const validateEmail = (value: string) => /\S+@\S+\.\S+/.test(value);
 
@@ -51,7 +54,7 @@ export default function ForgotPasswordScreen() {
         try {
             // C++ BRIDGE: Replace with real robot/backend password reset call
             // e.g. await RobotBridge.sendResetLink(email.trim());
-            // or await api.post('/auth/reset-password', { email: email.trim() });
+            // or await supabase.auth.resetPasswordForEmail(email.trim());
 
             await new Promise((resolve) => setTimeout(resolve, 1400)); // mock delay
 
@@ -67,7 +70,7 @@ export default function ForgotPasswordScreen() {
     const animateLabel = (toValue: number) => {
         Animated.timing(emailAnim, {
             toValue,
-            duration: 180,
+            duration: 200,
             useNativeDriver: false,
         }).start();
     };
@@ -79,12 +82,10 @@ export default function ForgotPasswordScreen() {
     return (
         <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
             <LinearGradient
-                colors={
-                    darkMode
-                        ? ['#0f172a', '#1e293b', '#0f172a']
-                        : ['#f8fafc', '#e2e8f0', '#f8fafc']
-                }
-                style={styles.gradientBg}
+                colors={[colors.background, colors.card]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
+                style={styles.gradient}
             >
                 <KeyboardAvoidingView
                     behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -102,8 +103,8 @@ export default function ForgotPasswordScreen() {
                         />
 
                         {sent ? (
-                            <View style={styles.successCard}>
-                                <Ionicons name="checkmark-circle" size={64} color="#10b981" />
+                            <View style={styles.success}>
+                                <Ionicons name="checkmark-circle" size={64} color={colors.primary} />
                                 <Text style={[styles.successTitle, { color: colors.text }]}>
                                     Check your email
                                 </Text>
@@ -119,25 +120,20 @@ export default function ForgotPasswordScreen() {
                                     variant="primary"
                                     onPress={() => router.push('/LoginScreen')}
                                     fullWidth
+                                    size="large"
                                     style={{ marginTop: 32 }}
                                 />
                             </View>
                         ) : (
-                            <View style={styles.formCard}>
+                            <View style={styles.form}>
                                 {/* Email Field */}
-                                <View style={styles.inputWrapper}>
+                                <View style={styles.field}>
                                     <Animated.Text
                                         style={[
-                                            styles.floatingLabel,
+                                            styles.label,
                                             {
-                                                top: emailAnim.interpolate({
-                                                    inputRange: [0, 1],
-                                                    outputRange: [18, 6],
-                                                }),
-                                                fontSize: emailAnim.interpolate({
-                                                    inputRange: [0, 1],
-                                                    outputRange: [16, 12],
-                                                }),
+                                                top: emailAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 8] }),
+                                                fontSize: emailAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 12] }),
                                                 color: emailAnim.interpolate({
                                                     inputRange: [0, 1],
                                                     outputRange: [colors.textSecondary, colors.primary],
@@ -149,12 +145,10 @@ export default function ForgotPasswordScreen() {
                                     </Animated.Text>
 
                                     <TextInput
+                                        ref={emailRef}
                                         style={[
                                             styles.input,
-                                            {
-                                                borderColor: emailError ? '#ef4444' : colors.border,
-                                                color: colors.text,
-                                            },
+                                            { borderColor: emailError ? colors.error : colors.border, color: colors.text },
                                         ]}
                                         value={email}
                                         onChangeText={setEmail}
@@ -162,6 +156,7 @@ export default function ForgotPasswordScreen() {
                                         autoCapitalize="none"
                                         autoCorrect={false}
                                         placeholder=""
+                                        returnKeyType="done"
                                         onFocus={() => animateLabel(1)}
                                         onBlur={() => animateLabel(email ? 1 : 0)}
                                         accessibilityLabel="Email input"
@@ -174,16 +169,14 @@ export default function ForgotPasswordScreen() {
                                         style={styles.inputIcon}
                                     />
 
-                                    {emailError ? (
-                                        <Text style={styles.errorText}>{emailError}</Text>
-                                    ) : null}
+                                    {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
                                 </View>
 
-                                <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+                                <Text style={[styles.info, { color: colors.textSecondary }]}>
                                     Enter the email associated with your account and we'll send you a reset link.
                                 </Text>
 
-                                <View style={{ marginTop: 32, gap: 16 }}>
+                                <View style={styles.buttons}>
                                     <Button
                                         title="Send Reset Link"
                                         icon="mail-outline"
@@ -192,17 +185,15 @@ export default function ForgotPasswordScreen() {
                                         fullWidth
                                         size="large"
                                         loading={loading}
+                                        disabled={loading}
                                     />
 
                                     <TouchableOpacity
                                         style={styles.backLink}
                                         onPress={() => router.back()}
+                                        activeOpacity={0.7}
                                     >
-                                        <Ionicons
-                                            name="arrow-back-outline"
-                                            size={18}
-                                            color={colors.primary}
-                                        />
+                                        <Ionicons name="arrow-back-outline" size={18} color={colors.primary} />
                                         <Text style={[styles.backText, { color: colors.primary }]}>
                                             Back to Login
                                         </Text>
@@ -222,38 +213,87 @@ export default function ForgotPasswordScreen() {
 }
 
 const styles = StyleSheet.create({
-    safeArea: { flex: 1 },
-    gradientBg: { flex: 1 },
-    keyboardAvoid: { flex: 1 },
+    safeArea: {
+        flex: 1,
+    },
+    gradient: {
+        flex: 1,
+    },
+    keyboardAvoid: {
+        flex: 1,
+    },
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
+        paddingTop: 40,
         paddingBottom: 40,
         justifyContent: 'center',
     },
-    formCard: {
-        backgroundColor: 'rgba(255,255,255,0.07)',
-        borderRadius: 24,
-        padding: 28,
-        borderWidth: 1,
-        borderColor: 'rgba(200,200,200,0.12)',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.18,
-        shadowRadius: 20,
-        elevation: 10,
-        marginTop: 20,
+    form: {
+        width: '100%',
+        maxWidth: 420,
+        alignSelf: 'center',
+        marginVertical: 32,
+    },
+    field: {
+        marginBottom: 24,
+        position: 'relative',
+    },
+    input: {
+        height: 56,
+        borderWidth: 1.5,
+        borderRadius: 16,
+        paddingHorizontal: 48,
+        fontSize: 16,
+        backgroundColor: 'transparent',
+    },
+    inputIcon: {
+        position: 'absolute',
+        left: 16,
+        top: 18,
+        zIndex: 1,
+    },
+    label: {
+        position: 'absolute',
+        left: 48,
+        zIndex: 1,
+        backgroundColor: 'transparent',
+        paddingHorizontal: 4,
+        pointerEvents: 'none',
+    },
+    errorText: {
+        color: '#ef4444',
+        fontSize: 12,
+        marginTop: 6,
+        marginLeft: 4,
+    },
+    info: {
+        fontSize: 14,
+        lineHeight: 20,
+        textAlign: 'center',
+        marginTop: 8,
         marginBottom: 32,
     },
-    successCard: {
+    buttons: {
+        gap: 16,
+    },
+    backLink: {
+        flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: 'rgba(16,185,129,0.08)',
-        borderRadius: 24,
-        padding: 40,
-        borderWidth: 1,
-        borderColor: 'rgba(16,185,129,0.2)',
-        marginTop: 20,
-        marginBottom: 32,
+        justifyContent: 'center',
+        gap: 8,
+        paddingVertical: 12,
+    },
+    backText: {
+        fontSize: 15,
+        fontWeight: '600',
+    },
+    success: {
+        width: '100%',
+        maxWidth: 420,
+        alignSelf: 'center',
+        alignItems: 'center',
+        marginVertical: 32,
     },
     successTitle: {
         fontSize: 24,
@@ -266,41 +306,10 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         lineHeight: 24,
     },
-    inputWrapper: { marginBottom: 20, position: 'relative' },
-    input: {
-        height: 56,
-        borderWidth: 1.5,
-        borderRadius: 16,
-        paddingHorizontal: 48,
-        fontSize: 16,
-    },
-    inputIcon: { position: 'absolute', left: 16, top: 18, zIndex: 1 },
-    floatingLabel: {
-        position: 'absolute',
-        left: 48,
-        zIndex: 1,
-        backgroundColor: 'transparent',
-        paddingHorizontal: 4,
-    },
-    errorText: {
-        color: '#ef4444',
-        fontSize: 12,
-        marginTop: 4,
-        marginLeft: 4,
-    },
-    infoText: {
-        fontSize: 14,
-        lineHeight: 20,
+    version: {
         textAlign: 'center',
-        marginTop: 8,
+        fontSize: 12,
+        marginTop: 32,
+        opacity: 0.7,
     },
-    backLink: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 8,
-        paddingVertical: 12,
-    },
-    backText: { fontSize: 15, fontWeight: '600' },
-    version: { textAlign: 'center', fontSize: 12, marginTop: 16 },
 });
