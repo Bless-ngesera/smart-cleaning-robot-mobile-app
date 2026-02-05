@@ -1,5 +1,5 @@
 // app/SignupScreen.tsx
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
     View,
     Text,
@@ -15,13 +15,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
 
 import Button from '../src/components/Button';
 import Header from '../src/components/Header';
 import Loader from '../src/components/Loader';
 import { useThemeContext } from '@/src/context/ThemeContext';
+import { supabase } from '@/src/services/supabase';
 
 export default function SignupScreen() {
     const { colors } = useThemeContext();
@@ -49,6 +49,25 @@ export default function SignupScreen() {
     const emailRef = useRef<TextInput>(null);
     const passRef = useRef<TextInput>(null);
     const confirmRef = useRef<TextInput>(null);
+
+    // Auto-redirect if already logged in + listen for auth changes
+    useEffect(() => {
+        // Check current session
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session) {
+                router.replace('/(tabs)/01_DashboardScreen');
+            }
+        });
+
+        // Listen for auth state changes (login/signup confirmation)
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            if (session) {
+                router.replace('/(tabs)/01_DashboardScreen');
+            }
+        });
+
+        return () => subscription.unsubscribe();
+    }, []);
 
     const validateEmail = (value: string) => /\S+@\S+\.\S+/.test(value);
 
@@ -108,19 +127,37 @@ export default function SignupScreen() {
 
         setLoading(true);
         try {
-            // C++ BRIDGE: Replace with real robot/user registration call
-            // e.g. await RobotBridge.registerUser(name.trim(), email.trim(), password);
-            // or await supabase.auth.signUp({ email: email.trim(), password, options: { data: { name } } });
+            const { data, error } = await supabase.auth.signUp({
+                email: email.trim(),
+                password,
+                options: {
+                    data: {
+                        full_name: name.trim(), // optional metadata
+                    },
+                },
+            });
 
-            await new Promise((resolve) => setTimeout(resolve, 1400)); // mock delay
+            if (error) throw error;
 
-            await AsyncStorage.setItem('userToken', 'mock-token-' + Date.now());
-            await AsyncStorage.setItem('userName', name.trim());
-            await AsyncStorage.setItem('userEmail', email.trim());
-
-            router.replace('/(tabs)/01_DashboardScreen');
-        } catch (err) {
-            Alert.alert('Signup Failed', 'Something went wrong. Please try again.');
+            if (data.user) {
+                Alert.alert(
+                    'Account Created',
+                    'Please check your email to confirm your account before signing in.'
+                );
+                router.push('/LoginScreen');
+            } else {
+                throw new Error('No user returned');
+            }
+        } catch (err: any) {
+            let message = 'Something went wrong';
+            if (err.message.includes('User already registered')) {
+                message = 'This email is already registered';
+            } else if (err.message.includes('Password should be at least')) {
+                message = 'Password is too weak';
+            } else {
+                message = err.message;
+            }
+            Alert.alert('Signup Failed', message);
         } finally {
             setLoading(false);
         }
@@ -407,7 +444,7 @@ export default function SignupScreen() {
                                     disabled={loading}
                                 />
 
-                                {/* Social Signup (placeholders) */}
+                                {/* Social Signup (placeholders – connect real SDKs later) */}
                                 <View style={styles.socialContainer}>
                                     <TouchableOpacity
                                         style={[styles.socialButton, { backgroundColor: '#4285F4' }]}

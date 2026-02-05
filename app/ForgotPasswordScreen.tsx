@@ -21,6 +21,7 @@ import Button from '../src/components/Button';
 import Header from '../src/components/Header';
 import Loader from '../src/components/Loader';
 import { useThemeContext } from '@/src/context/ThemeContext';
+import { supabase } from '@/src/services/supabase';
 
 export default function ForgotPasswordScreen() {
     const { colors } = useThemeContext();
@@ -52,16 +53,27 @@ export default function ForgotPasswordScreen() {
 
         setLoading(true);
         try {
-            // C++ BRIDGE: Replace with real robot/backend password reset call
-            // e.g. await RobotBridge.sendResetLink(email.trim());
-            // or await supabase.auth.resetPasswordForEmail(email.trim());
+            const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+                redirectTo: 'yourapp://reset-password', // Optional: deep link for your app (add later)
+            });
 
-            await new Promise((resolve) => setTimeout(resolve, 1400)); // mock delay
+            if (error) throw error;
 
             setSent(true);
-            Alert.alert('Success', 'Reset link sent! Check your email.');
-        } catch (err) {
-            Alert.alert('Error', 'Failed to send reset link. Please try again.');
+            Alert.alert(
+                'Reset Link Sent',
+                'Check your email (including spam) for the password reset link.'
+            );
+        } catch (err: any) {
+            let message = 'Failed to send reset link';
+            if (err.message.includes('rate limit')) {
+                message = 'Too many requests — please wait a few minutes';
+            } else if (err.message.includes('not found')) {
+                message = 'No account found with this email';
+            } else {
+                message = err.message;
+            }
+            Alert.alert('Error', message);
         } finally {
             setLoading(false);
         }

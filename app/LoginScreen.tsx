@@ -41,19 +41,26 @@ export default function LoginScreen() {
     // Ref for focus chaining
     const passwordRef = useRef<TextInput>(null);
 
-    // Auto-redirect if already logged in
+    // Auto-redirect if already logged in + listen for auth changes
     useEffect(() => {
-        const checkSession = async () => {
-            try {
-                const { data: { session } } = await supabase.auth.getSession();
-                if (session) {
-                    router.replace('/(tabs)/01_DashboardScreen');
-                }
-            } catch (err) {
-                console.error('Session check failed:', err);
+        // Check current session
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session) {
+                router.replace('/(tabs)/01_DashboardScreen');
             }
-        };
-        checkSession();
+        });
+
+        // Listen for future auth changes (login/logout)
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            if (session) {
+                router.replace('/(tabs)/01_DashboardScreen');
+            } else {
+                // Optional: stay on login if logged out
+            }
+        });
+
+        // Cleanup listener
+        return () => subscription.unsubscribe();
     }, []);
 
     const validateForm = () => {
@@ -82,16 +89,26 @@ export default function LoginScreen() {
 
         setLoading(true);
         try {
-            const { error } = await supabase.auth.signInWithPassword({
+            const { data, error } = await supabase.auth.signInWithPassword({
                 email: email.trim(),
                 password,
             });
 
             if (error) throw error;
 
+            // Success: Supabase auto-saves session to AsyncStorage
+            // No need for manual token storage
             router.replace('/(tabs)/01_DashboardScreen');
         } catch (err: any) {
-            Alert.alert('Login Failed', err.message || 'Invalid credentials');
+            let message = 'Invalid credentials';
+            if (err.message.includes('Invalid login credentials')) {
+                message = 'Incorrect email or password';
+            } else if (err.message.includes('Email not confirmed')) {
+                message = 'Please confirm your email before signing in';
+            } else {
+                message = err.message;
+            }
+            Alert.alert('Login Failed', message);
         } finally {
             setLoading(false);
         }
