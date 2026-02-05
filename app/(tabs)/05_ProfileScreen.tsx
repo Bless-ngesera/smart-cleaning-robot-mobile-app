@@ -88,35 +88,36 @@ export default function ProfileScreen() {
             title: 'Account Settings',
             subtitle: 'Manage your personal information',
             icon: 'person-outline',
-            route: '/settings/account',
+            route: '../settings/account',
         },
         {
             id: 2,
             title: 'Robot Management',
             subtitle: 'Configure your cleaning robot',
             icon: 'hardware-chip-outline',
-            route: '/settings/robot',
+            route: '../settings/robot',
         },
         {
             id: 3,
             title: 'Cleaning History',
             subtitle: 'View past cleaning sessions',
             icon: 'time-outline',
-            route: '/settings/history',
+            route: '../settings/history',
         },
         {
             id: 4,
             title: 'Notifications',
             subtitle: 'Manage alerts and reminders',
             icon: 'notifications-outline',
-            route: '/settings/notifications',
+            route: '' +
+                '../settings/notifications',
         },
         {
             id: 5,
             title: 'Help & Support',
             subtitle: 'Get help and contact support',
             icon: 'help-circle-outline',
-            route: '/settings/support',
+            route: '../settings/support',
         },
     ];
 
