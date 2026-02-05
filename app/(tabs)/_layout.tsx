@@ -2,10 +2,10 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useThemeContext } from '../src/context/ThemeContext'; // adjust path if needed
+import { useThemeContext } from '@/src/context/ThemeContext'; // adjust path if needed
 
 // Optional: if auth guard returns a loading state or redirect, handle it here
-import { useAuthGuard } from '../src/middleware/authGuard'; // adjust path
+import { useAuthGuard } from '@/src/middleware/authGuard'; // adjust path
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 

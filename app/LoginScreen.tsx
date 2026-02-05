@@ -17,11 +17,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
-import Button from './src/components/Button';
-import Header from './src/components/Header';
-import Loader from './src/components/Loader';
-import { useThemeContext } from './src/context/ThemeContext';
-import { supabase } from './src/services/supabase';
+import Button from '../src/components/Button';
+import Header from '../src/components/Header';
+import Loader from '../src/components/Loader';
+import { useThemeContext } from '@/src/context/ThemeContext';
+import { supabase } from '@/src/services/supabase';
 
 export default function LoginScreen() {
     const { colors, darkMode } = useThemeContext();

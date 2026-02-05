@@ -11,9 +11,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
-import Header from '../src/components/Header';
-import Button from '../src/components/Button';
-import { useThemeContext } from '../src/context/ThemeContext';
+import Header from '../../src/components/Header';
+import Button from '../../src/components/Button';
+import { useThemeContext } from '@/src/context/ThemeContext';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
