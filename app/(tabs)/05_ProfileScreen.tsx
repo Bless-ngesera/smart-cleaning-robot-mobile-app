@@ -1,5 +1,5 @@
 // app/(tabs)/05_ProfileScreen.tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -10,19 +10,47 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 
 import Header from '../../src/components/Header';
 import Button from '../../src/components/Button';
 import { useThemeContext } from '@/src/context/ThemeContext';
-import { router } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '@/src/services/supabase';
 
 export default function ProfileScreen() {
     const { colors, darkMode, toggleTheme } = useThemeContext();
-    const [userName] = useState('Muhindo'); // Can be dynamic from auth later
+
+    const [userName, setUserName] = useState('Guest');
+    const [userEmail, setUserEmail] = useState('');
+
+    // Fetch user data on mount + listen for auth changes
+    useEffect(() => {
+        const fetchUser = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                setUserEmail(user.email || '');
+                setUserName(user.user_metadata?.full_name || user.email?.split('@')[0] || 'User');
+            } else {
+                router.replace('/LoginScreen');
+            }
+        };
+
+        fetchUser();
+
+        // Listen for logout / session changes
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+            if (!session) {
+                router.replace('/LoginScreen');
+            } else {
+                fetchUser();
+            }
+        });
+
+        return () => subscription.unsubscribe();
+    }, []);
 
     /* ---------------- Handle Logout ---------------- */
-    const handleLogout = () => {
+    const handleLogout = async () => {
         Alert.alert('Logout', 'Are you sure you want to log out?', [
             { text: 'Cancel', style: 'cancel' },
             {
@@ -30,10 +58,11 @@ export default function ProfileScreen() {
                 style: 'destructive',
                 onPress: async () => {
                     try {
-                        await AsyncStorage.removeItem('userToken');
-                        router.replace('/LoginScreen');
-                    } catch (error) {
-                        Alert.alert('Logout Failed', 'Something went wrong. Please try again.');
+                        const { error } = await supabase.auth.signOut();
+                        if (error) throw error;
+                        // No need to clear storage — Supabase handles it
+                    } catch (err: any) {
+                        Alert.alert('Logout Failed', err.message || 'Something went wrong');
                     }
                 },
             },
@@ -90,12 +119,7 @@ export default function ProfileScreen() {
                 showsVerticalScrollIndicator={false}
             >
                 {/* Profile Header Card */}
-                <View
-                    style={[
-                        styles.profileCard,
-                        { backgroundColor: colors.card, borderColor: colors.border },
-                    ]}
-                >
+                <View style={[styles.profileCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <View style={styles.avatarContainer}>
                         <View style={[styles.avatar, { backgroundColor: `${colors.primary}20` }]}>
                             <Ionicons name="person" size={48} color={colors.primary} />
@@ -103,6 +127,7 @@ export default function ProfileScreen() {
                     </View>
 
                     <Text style={[styles.userName, { color: colors.text }]}>{userName}</Text>
+                    <Text style={[styles.userEmail, { color: colors.textSecondary }]}>{userEmail}</Text>
 
                     <View style={styles.statsContainer}>
                         <View style={styles.statItem}>
@@ -127,28 +152,16 @@ export default function ProfileScreen() {
                 </View>
 
                 {/* Theme Toggle Card */}
-                <View
-                    style={[
-                        styles.card,
-                        { backgroundColor: colors.card, borderColor: colors.border },
-                    ]}
-                >
+                <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <View style={styles.cardHeader}>
                         <View style={styles.cardTitleContainer}>
-                            <Ionicons
-                                name={darkMode ? 'moon' : 'sunny'}
-                                size={20}
-                                color={colors.primary}
-                            />
+                            <Ionicons name={darkMode ? 'moon' : 'sunny'} size={20} color={colors.primary} />
                             <Text style={[styles.cardTitle, { color: colors.text }]}>Appearance</Text>
                         </View>
                     </View>
 
                     <TouchableOpacity
-                        style={[
-                            styles.toggleContainer,
-                            { backgroundColor: colors.background },
-                        ]}
+                        style={[styles.toggleContainer, { backgroundColor: colors.background }]}
                         onPress={toggleTheme}
                         activeOpacity={0.7}
                     >
@@ -180,12 +193,7 @@ export default function ProfileScreen() {
                 </View>
 
                 {/* Menu Items */}
-                <View
-                    style={[
-                        styles.card,
-                        { backgroundColor: colors.card, borderColor: colors.border },
-                    ]}
-                >
+                <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <View style={styles.cardHeader}>
                         <View style={styles.cardTitleContainer}>
                             <Ionicons name="settings" size={20} color={colors.primary} />
@@ -258,11 +266,6 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         marginTop: 16,
         marginBottom: 20,
-        shadowColor: '#000',
-        shadowOpacity: 0.08,
-        shadowRadius: 12,
-        shadowOffset: { width: 0, height: 4 },
-        elevation: 4,
         alignItems: 'center',
     },
     avatarContainer: {
@@ -278,6 +281,10 @@ const styles = StyleSheet.create({
     userName: {
         fontSize: 24,
         fontWeight: '700',
+        marginBottom: 8,
+    },
+    userEmail: {
+        fontSize: 15,
         marginBottom: 20,
     },
     statsContainer: {
@@ -310,11 +317,6 @@ const styles = StyleSheet.create({
         padding: 20,
         borderWidth: 1,
         marginBottom: 16,
-        shadowColor: '#000',
-        shadowOpacity: 0.08,
-        shadowRadius: 12,
-        shadowOffset: { width: 0, height: 4 },
-        elevation: 4,
     },
     cardHeader: {
         marginBottom: 16,
@@ -357,11 +359,6 @@ const styles = StyleSheet.create({
         height: 24,
         borderRadius: 12,
         backgroundColor: '#fff',
-        shadowColor: '#000',
-        shadowOpacity: 0.2,
-        shadowRadius: 2,
-        shadowOffset: { width: 0, height: 1 },
-        elevation: 2,
     },
     toggleThumbActive: {
         alignSelf: 'flex-end',
