@@ -1,5 +1,4 @@
-// app/settings/account.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     View,
     Text,
@@ -9,26 +8,32 @@ import {
     StyleSheet,
     ActivityIndicator,
     TouchableOpacity,
+    Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 import { useThemeContext } from '@/src/context/ThemeContext';
-import Header from '../../src/components/Header';
-import Button from '../../src/components/Button';
+import Header from '@/src/components/Header';
+import Button from '@/src/components/Button';
 import { supabase } from '@/src/services/supabase';
 import { router } from 'expo-router';
+
+const AnimatedCard = Animated.createAnimatedComponent(View);
 
 export default function AccountSettings() {
     const { colors } = useThemeContext();
 
     const [fullName, setFullName] = useState('');
     const [email, setEmail] = useState('');
-    const [mfaEnabled, setMfaEnabled] = useState(false);
 
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [deletePassword, setDeletePassword] = useState('');
+
+    const [show, setShow] = useState({ current: false, new: false, confirm: false, delete: false });
 
     const [loading, setLoading] = useState(true);
     const [savingName, setSavingName] = useState(false);
@@ -37,19 +42,12 @@ export default function AccountSettings() {
 
     useEffect(() => {
         const loadUser = async () => {
-            setLoading(true);
             try {
-                const { data: { user } } = await supabase.auth.getUser();
-                if (user) {
-                    setEmail(user.email || 'Not available');
-                    setFullName(user.user_metadata?.full_name || '');
-
-                    // Check MFA status
-                    const { data: factors } = await supabase.auth.mfa.listFactors();
-                    setMfaEnabled((factors?.totp || []).length > 0);
+                const { data } = await supabase.auth.getUser();
+                if (data.user) {
+                    setEmail(data.user.email ?? '');
+                    setFullName(data.user.user_metadata?.full_name ?? '');
                 }
-            } catch (err) {
-                console.error(err);
             } finally {
                 setLoading(false);
             }
@@ -57,18 +55,24 @@ export default function AccountSettings() {
         loadUser();
     }, []);
 
+    const haptic = () => {
+        if (Platform.OS !== 'web') {
+            Haptics.selectionAsync();
+        }
+    };
+
     const saveName = async () => {
         if (!fullName.trim()) return Alert.alert('Error', 'Full name cannot be empty');
-
+        haptic();
         setSavingName(true);
         try {
             const { error } = await supabase.auth.updateUser({
                 data: { full_name: fullName.trim() },
             });
             if (error) throw error;
-            Alert.alert('Success', 'Name updated');
+            Alert.alert('Saved', 'Your name has been updated');
         } catch (e: any) {
-            Alert.alert('Error', e.message || 'Failed to update name');
+            Alert.alert('Error', e.message);
         } finally {
             setSavingName(false);
         }
@@ -76,19 +80,18 @@ export default function AccountSettings() {
 
     const updatePassword = async () => {
         if (!currentPassword) return Alert.alert('Error', 'Current password required');
-        if (newPassword.length < 6) return Alert.alert('Error', 'New password must be at least 6 characters');
+        if (newPassword.length < 6) return Alert.alert('Error', 'Password too short');
         if (newPassword !== confirmPassword) return Alert.alert('Error', 'Passwords do not match');
 
+        haptic();
         setSavingPassword(true);
         try {
-            // Re-authenticate
             const { error: authError } = await supabase.auth.signInWithPassword({
                 email,
                 password: currentPassword,
             });
-            if (authError) return Alert.alert('Error', 'Current password incorrect');
+            if (authError) throw authError;
 
-            // Update
             const { error } = await supabase.auth.updateUser({ password: newPassword });
             if (error) throw error;
 
@@ -97,7 +100,7 @@ export default function AccountSettings() {
             setNewPassword('');
             setConfirmPassword('');
         } catch (e: any) {
-            Alert.alert('Error', e.message || 'Failed to update password');
+            Alert.alert('Error', e.message);
         } finally {
             setSavingPassword(false);
         }
@@ -116,27 +119,34 @@ export default function AccountSettings() {
                     style: 'destructive',
                     onPress: async () => {
                         setDeleting(true);
+                        haptic();
                         try {
-                            // Re-authenticate
                             const { error: authError } = await supabase.auth.signInWithPassword({
                                 email,
                                 password: deletePassword,
                             });
                             if (authError) throw authError;
 
-                            // Delete user (requires service_role key in server-side, not client-side!)
-                            // Note: Client-side deleteUser is not allowed by Supabase for security.
-                            // You must implement this via a secure server function (Edge Function or your backend).
-                            Alert.alert(
-                                'Not Allowed',
-                                'Account deletion is a sensitive action and must be done through a secure server endpoint.'
+                            const { error: deleteError } = await supabase.auth.admin.deleteUser(
+                                (await supabase.auth.getUser()).data.user!.id
                             );
 
-                            // Placeholder for future server-side delete:
-                            // await fetch('/api/delete-user', { method: 'POST', body: JSON.stringify({ password: deletePassword }) });
+                            if (deleteError) throw deleteError;
 
+                            await supabase.auth.signOut();
+                            Alert.alert('Account Deleted', 'Your account has been permanently removed.');
+                            router.replace('/LoginScreen');
                         } catch (e: any) {
-                            Alert.alert('Error', e.message || 'Failed to delete account');
+                            const msg = e.message || 'Failed to delete account';
+                            if (msg.includes('permission') || msg.includes('not allowed')) {
+                                Alert.alert(
+                                    'Restricted Action',
+                                    'Client-side account deletion is blocked for security. ' +
+                                    'Please contact support to delete your account.'
+                                );
+                            } else {
+                                Alert.alert('Error', msg);
+                            }
                         } finally {
                             setDeleting(false);
                         }
@@ -149,7 +159,7 @@ export default function AccountSettings() {
     if (loading) {
         return (
             <SafeAreaView style={[styles.center, { backgroundColor: colors.background }]}>
-                <ActivityIndicator size="large" color={colors.primary} />
+                <ActivityIndicator color={colors.primary} />
             </SafeAreaView>
         );
     }
@@ -158,72 +168,71 @@ export default function AccountSettings() {
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
             <Header
                 title="Account"
-                subtitle="Manage your profile"
+                subtitle="Personal info & security"
                 showBack
-                onBack={() => router.back()} // Ensures back goes to Profile
+                onBack={() => router.back()}
             />
 
-            <ScrollView contentContainerStyle={styles.container}>
-                {/* PERSONAL */}
-                <Group title="Personal Information">
-                    <Input
-                        label="Full Name"
-                        value={fullName}
-                        onChangeText={setFullName}
-                        placeholder="Your full name"
-                    />
-                    <ReadOnly label="Email" value={email} />
-                    <Button
-                        title="Save Changes"
-                        onPress={saveName}
-                        loading={savingName}
-                        disabled={savingName}
-                        fullWidth
-                    />
-                </Group>
+            <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+                {/* Personal Info */}
+                <AnimatedCard entering={FadeInDown.duration(350).springify()} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <SectionTitle title="Personal Information" />
 
-                {/* SECURITY */}
-                <Group title="Security">
-                    <Row label="Two-Factor Authentication" value={mfaEnabled ? 'Enabled' : 'Disabled'} />
-                    <Input
-                        label="Current Password"
-                        value={currentPassword}
-                        onChangeText={setCurrentPassword}
-                        secureTextEntry
-                        placeholder="••••••••"
-                    />
-                    <Input
-                        label="New Password"
-                        value={newPassword}
-                        onChangeText={setNewPassword}
-                        secureTextEntry
-                        placeholder="Minimum 6 characters"
-                    />
-                    <Input
-                        label="Confirm New Password"
-                        value={confirmPassword}
-                        onChangeText={setConfirmPassword}
-                        secureTextEntry
-                        placeholder="Re-enter new password"
-                    />
-                    <Button
-                        title="Update Password"
-                        onPress={updatePassword}
-                        loading={savingPassword}
-                        disabled={savingPassword}
-                        fullWidth
-                    />
-                </Group>
+                    <Field label="Full name">
+                        <View style={styles.inputWrapper}>
+                            <Ionicons name="person-outline" size={20} color={colors.primary} style={styles.inputIcon} />
+                            <TextInput
+                                value={fullName}
+                                onChangeText={setFullName}
+                                style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+                                placeholder="Full name"
+                                placeholderTextColor={colors.textSecondary + '80'}
+                            />
+                        </View>
+                    </Field>
 
-                {/* DANGER ZONE */}
-                <Group title="Danger Zone" danger>
-                    <Input
-                        label="Confirm Password to Delete"
-                        value={deletePassword}
-                        onChangeText={setDeletePassword}
-                        secureTextEntry
-                        placeholder="Enter your password"
-                    />
+                    <Field label="Email">
+                        <View style={[styles.inputWrapper, styles.readOnly]}>
+                            <Ionicons name="mail-outline" size={20} color={colors.primary} style={styles.inputIcon} />
+                            <Text style={{ color: colors.textSecondary }}>{email}</Text>
+                        </View>
+                    </Field>
+
+                    <Button title="Save changes" loading={savingName} onPress={saveName} fullWidth />
+                </AnimatedCard>
+
+                {/* Security */}
+                <AnimatedCard entering={FadeInDown.delay(80).duration(350).springify()} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <SectionTitle title="Security" />
+
+                    <PasswordField label="Current password" value={currentPassword} onChange={setCurrentPassword} show={show.current} toggle={() => setShow({ ...show, current: !show.current })} />
+                    <PasswordField label="New password" value={newPassword} onChange={setNewPassword} show={show.new} toggle={() => setShow({ ...show, new: !show.new })} />
+                    <PasswordField label="Confirm password" value={confirmPassword} onChange={setConfirmPassword} show={show.confirm} toggle={() => setShow({ ...show, confirm: !show.confirm })} />
+
+                    <Button title="Update password" loading={savingPassword} onPress={updatePassword} fullWidth />
+                </AnimatedCard>
+
+                {/* Danger Zone */}
+                <AnimatedCard entering={FadeInDown.delay(160).duration(350).springify()} style={[styles.card, { backgroundColor: colors.card, borderColor: '#ff3b30' }]}>
+                    <SectionTitle title="Danger Zone" />
+
+                    <Field label="Confirm password to delete account">
+                        <View style={styles.inputWrapper}>
+                            <Ionicons name="lock-closed-outline" size={20} color={colors.primary} style={styles.inputIcon} />
+                            <TextInput
+                                value={deletePassword}
+                                onChangeText={setDeletePassword}
+                                secureTextEntry={!show.delete}
+                                style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+                                placeholder="••••••••"
+                                placeholderTextColor={colors.textSecondary + '80'}
+                            />
+                            <TouchableOpacity onPress={() => setShow({ ...show, delete: !show.delete })} style={styles.eye}>
+                                <Ionicons name={show.delete ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textSecondary} />
+                            </TouchableOpacity>
+                        </View>
+                    </Field>
+
                     <Button
                         title="Delete Account"
                         variant="danger"
@@ -231,140 +240,103 @@ export default function AccountSettings() {
                         onPress={deleteAccount}
                         fullWidth
                     />
-                    <Text style={[styles.dangerHint, { color: colors.textSecondary }]}>
-                        This action is permanent and cannot be undone.
-                    </Text>
-                </Group>
+                </AnimatedCard>
             </ScrollView>
         </SafeAreaView>
     );
 }
 
-/* ──────────────────────────────────────────────── */
-/*               Reusable Components               */
-/* ──────────────────────────────────────────────── */
+/* ---------- Components ---------- */
 
-const Group = ({ title, children, danger = false }: any) => {
+const SectionTitle = ({ title }: { title: string }) => {
+    const { colors } = useThemeContext();
+    return <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>;
+};
+
+const Field = ({ label, children }: any) => {
     const { colors } = useThemeContext();
     return (
-        <View
-            style={[
-                styles.group,
-                {
-                    backgroundColor: colors.card,
-                    borderColor: danger ? '#ff3b30' : colors.border,
-                },
-            ]}
-        >
-            <Text style={[styles.groupTitle, danger && { color: '#ff3b30' }]}>
-                {title}
-            </Text>
+        <View style={{ marginBottom: 20 }}>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>{label}</Text>
             {children}
         </View>
     );
 };
 
-const Input = ({ label, ...props }: any) => {
+const PasswordField = ({ label, value, onChange, show, toggle }: any) => {
     const { colors } = useThemeContext();
     return (
-        <View style={styles.field}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>{label}</Text>
-            <TextInput
-                {...props}
-                style={[
-                    styles.input,
-                    { borderColor: colors.border, color: colors.text },
-                ]}
-                placeholderTextColor={colors.textSecondary + '80'}
-            />
-        </View>
-    );
-};
-
-const ReadOnly = ({ label, value }: any) => {
-    const { colors } = useThemeContext();
-    return (
-        <View style={styles.field}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>{label}</Text>
-            <View style={[styles.input, styles.readOnly, { backgroundColor: colors.background }]}>
-                <Text style={{ color: colors.textSecondary }}>{value}</Text>
+        <Field label={label}>
+            <View style={styles.inputWrapper}>
+                <Ionicons name="lock-closed-outline" size={20} color={colors.primary} style={styles.inputIcon} />
+                <TextInput
+                    value={value}
+                    onChangeText={onChange}
+                    secureTextEntry={!show}
+                    style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+                    placeholder="••••••••"
+                    placeholderTextColor={colors.textSecondary + '80'}
+                />
+                <TouchableOpacity onPress={toggle} style={styles.eye}>
+                    <Ionicons name={show ? 'eye-off-outline' : 'eye-outline'} size={20} color={colors.textSecondary} />
+                </TouchableOpacity>
             </View>
-        </View>
+        </Field>
     );
 };
 
-const Row = ({ label, value }: any) => {
-    const { colors } = useThemeContext();
-    return (
-        <View style={styles.row}>
-            <Text style={{ color: colors.text, fontSize: 16 }}>{label}</Text>
-            <Text style={{ color: value.includes('Enabled') ? colors.primary : colors.textSecondary, fontWeight: '600' }}>
-                {value}
-            </Text>
-        </View>
-    );
-};
-
-/* ──────────────────────────────────────────────── */
-/*                   Styles                        */
-/* ──────────────────────────────────────────────── */
+/* ---------- Styles (only changed paddingHorizontal to 16 for better icon fit) ---------- */
 
 const styles = StyleSheet.create({
     container: {
-        padding: 24,
+        padding: 20,
         paddingBottom: 40,
-        maxWidth: 420,
+        maxWidth: 440,
         alignSelf: 'center',
         width: '100%',
     },
-    group: {
-        borderRadius: 20,
+    card: {
+        borderRadius: 22,
         padding: 24,
         borderWidth: 1,
         marginBottom: 28,
     },
-    groupTitle: {
-        fontSize: 14,
-        fontWeight: '700',
-        letterSpacing: 0.5,
-        marginBottom: 20,
-        textTransform: 'uppercase',
-    },
-    field: {
-        marginBottom: 20,
+    sectionTitle: {
+        fontSize: 17,
+        fontWeight: '600',
+        marginBottom: 18,
     },
     label: {
-        fontSize: 14,
-        fontWeight: '500',
-        marginBottom: 8,
+        fontSize: 13,
+        marginBottom: 6,
+    },
+    inputWrapper: {
+        position: 'relative',
     },
     input: {
-        height: 54,
-        borderWidth: 1.5,
+        height: 52,
         borderRadius: 14,
-        paddingHorizontal: 16,
+        borderWidth: 1,
+        paddingLeft: 52,          // space for left icon
+        paddingRight: 52,         // space for right eye icon
         fontSize: 16,
     },
     readOnly: {
-        height: 54,
+        height: 52,
         borderRadius: 14,
-        paddingHorizontal: 16,
+        borderWidth: 1,
         justifyContent: 'center',
-        borderWidth: 1.5,
+        paddingHorizontal: 52,
     },
-    row: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingVertical: 14,
-        borderBottomWidth: 1,
-        borderBottomColor: 'rgba(0,0,0,0.05)',
+    inputIcon: {
+        position: 'absolute',
+        left: 16,
+        top: 16,
     },
-    dangerHint: {
-        fontSize: 13,
-        marginTop: 12,
-        textAlign: 'center',
-        fontStyle: 'italic',
+    eye: {
+        position: 'absolute',
+        right: 16,
+        top: 16,
     },
     center: {
         flex: 1,
