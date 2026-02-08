@@ -13,11 +13,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 
 import Header from '../../src/components/Header';
 import Loader from '../../src/components/Loader';
 import { useThemeContext } from '@/src/context/ThemeContext';
 import { supabase } from '@/src/services/supabase';
+import { router } from 'expo-router';
 
 type RobotStatus = {
     batteryLevel: number;
@@ -52,21 +54,21 @@ export default function DashboardScreen() {
             if (error && error.code !== 'PGRST116') throw error; // PGRST116 = no rows
 
             setStatus({
-                batteryLevel: data?.battery_level ?? 85,
+                batteryLevel: data?.battery_level ?? 0,
                 isCleaning: data?.is_cleaning ?? false,
-                lastCleaned: data?.last_cleaned ?? new Date().toISOString(),
+                lastCleaned: data?.last_cleaned ?? 'Never',
                 errors: data?.errors ?? [],
                 status: data?.status ?? 'Offline',
-                connectionType: 'wifi', // update dynamically from your connection logic
+                connectionType: 'none', // Will be updated from real connection logic (Wi-Fi/BLE)
             });
         } catch (err) {
             console.error('Failed to fetch robot status:', err);
-            Alert.alert('Connection Issue', 'Unable to load robot status. Showing last known data.');
-            // Graceful fallback so UI never breaks
+            Alert.alert('Connection Issue', 'Unable to load latest robot status. Showing last known data.');
+            // Graceful fallback – no hardcoded mock values beyond defaults
             setStatus({
-                batteryLevel: 85,
+                batteryLevel: 0,
                 isCleaning: false,
-                lastCleaned: new Date().toISOString(),
+                lastCleaned: 'Never',
                 errors: [],
                 status: 'Offline',
                 connectionType: 'none',
@@ -77,9 +79,9 @@ export default function DashboardScreen() {
         }
 
         // === C++ INTEGRATION POINT: Fetch real-time robot status here ===
-        // Replace or merge with the Supabase fetch above
+        // Replace or merge with Supabase fetch above
         // - Connect via Bluetooth, Wi-Fi, Serial, HTTP API, etc.
-        // - Get live data from robot firmware (battery, status, errors, last clean)
+        // - Get live data from robot firmware (battery, status, errors, last clean, connection type)
         // - Format as RobotStatus object
         // Example pseudo-code:
         // const realRobotStatus = await RobotBridge.getLiveStatus(); // your C++ bridge call
@@ -98,6 +100,11 @@ export default function DashboardScreen() {
     const onRefresh = useCallback(() => {
         fetchStatus();
     }, [fetchStatus]);
+
+    const goToConnectionSetup = () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        router.push('./settings/connection');
+    };
 
     // Battery helpers
     const getBatteryColor = (level: number) => {
@@ -138,7 +145,7 @@ export default function DashboardScreen() {
                 showsVerticalScrollIndicator={false}
             >
                 {/* Hero Status Card */}
-                <View style={[styles.card, styles.heroCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={[styles.heroCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <View style={styles.heroHeader}>
                         <View style={styles.robotInfo}>
                             <View
@@ -183,16 +190,29 @@ export default function DashboardScreen() {
                         </TouchableOpacity>
                     </View>
 
-                    {/* Connection Status */}
-                    <View style={styles.connectionRow}>
-                        <Ionicons
-                            name={connectionType === 'wifi' ? 'wifi' : connectionType === 'ble' ? 'bluetooth' : 'wifi-off'}
-                            size={18}
-                            color={connectionType !== 'none' ? colors.primary : '#ef4444'}
-                        />
-                        <Text style={[styles.connectionText, { color: colors.textSecondary }]}>
-                            {connectionType === 'none' ? 'Disconnected' : `Connected via ${connectionType === 'wifi' ? 'Wi-Fi' : 'Bluetooth'}`}
-                        </Text>
+                    {/* Connection Status + Connect Button */}
+                    <View style={styles.connectionSection}>
+                        <View style={styles.connectionRow}>
+                            <Ionicons
+                                name={connectionType === 'wifi' ? 'wifi' : connectionType === 'ble' ? 'bluetooth' : 'wifi-off'}
+                                size={18}
+                                color={connectionType !== 'none' ? colors.primary : '#ef4444'}
+                            />
+                            <Text style={[styles.connectionText, { color: colors.textSecondary }]}>
+                                {connectionType === 'none' ? 'Disconnected' : `Connected via ${connectionType === 'wifi' ? 'Wi-Fi' : 'Bluetooth'}`}
+                            </Text>
+                        </View>
+
+                        <TouchableOpacity
+                            style={[styles.connectButton, { backgroundColor: colors.primary }]}
+                            onPress={goToConnectionSetup}
+                            activeOpacity={0.85}
+                        >
+                            <Ionicons name="link-outline" size={20} color="#fff" />
+                            <Text style={styles.connectButtonText}>
+                                {connectionType === 'none' ? 'Connect Robot' : 'Change Connection'}
+                            </Text>
+                        </TouchableOpacity>
                     </View>
 
                     {/* Battery Section */}
@@ -206,12 +226,7 @@ export default function DashboardScreen() {
                                 />
                                 <Text style={[styles.batteryTitle, { color: colors.text }]}>Battery</Text>
                             </View>
-                            <Text
-                                style={[
-                                    styles.batteryPercent,
-                                    { color: getBatteryColor(batteryLevel) },
-                                ]}
-                            >
+                            <Text style={[styles.batteryPercent, { color: getBatteryColor(batteryLevel) }]}>
                                 {batteryLevel}%
                             </Text>
                         </View>
@@ -358,15 +373,10 @@ const styles = StyleSheet.create({
         paddingTop: 12,
     },
 
-    card: {
-        borderRadius: 20,
-        padding: 20,
-        borderWidth: 1,
-        marginBottom: 20,
-    },
     heroCard: {
         borderRadius: 24,
         padding: 24,
+        borderWidth: 1,
         marginBottom: 24,
     },
     heroHeader: {
@@ -413,15 +423,37 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
+
+    connectionSection: {
+        marginBottom: 20,
+        gap: 12,
+    },
     connectionRow: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
-        marginBottom: 16,
     },
     connectionText: {
         fontSize: 14,
         fontWeight: '500',
+    },
+    connectButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 14,
+        borderRadius: 12,
+        gap: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.25,
+        shadowRadius: 6,
+        elevation: 4,
+    },
+    connectButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '600',
     },
 
     batteryBlock: { gap: 12 },
@@ -484,6 +516,12 @@ const styles = StyleSheet.create({
         fontWeight: '500',
     },
 
+    card: {
+        borderRadius: 20,
+        padding: 20,
+        borderWidth: 1,
+        marginBottom: 20,
+    },
     cardHeader: {
         flexDirection: 'row',
         alignItems: 'center',
