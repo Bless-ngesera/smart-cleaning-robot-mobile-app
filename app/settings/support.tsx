@@ -11,8 +11,13 @@ export default function HelpSupport() {
 
     const openLink = async (url) => {
         try {
-            await Linking.openURL(url);
-        } catch {
+            const supported = await Linking.canOpenURL(url);
+            if (supported) {
+                await Linking.openURL(url);
+            } else {
+                Alert.alert('Error', 'Cannot open this link');
+            }
+        } catch (err) {
             Alert.alert('Error', 'Could not open link');
         }
     };
@@ -22,22 +27,48 @@ export default function HelpSupport() {
             <Header title="Help & Support" subtitle="We're here to help" />
 
             <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
+                {/* Frequently Asked Questions */}
                 <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>Frequently Asked Questions</Text>
 
-                    <TouchableOpacity style={styles.row} onPress={() => openLink('https://example.com/faq')}>
-                        <Ionicons name="help-circle-outline" size={24} color={colors.primary} />
-                        <Text style={[styles.rowText, { color: colors.text }]}>How do I connect my robot?</Text>
+                    <TouchableOpacity style={styles.row} onPress={() => openLink('https://example.com/faq#connect')}>
+                        <Ionicons name="bluetooth-outline" size={24} color={colors.primary} />
+                        <Text style={[styles.rowText, { color: colors.text }]}>How do I connect my robot via Bluetooth or Wi-Fi?</Text>
                         <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
                     </TouchableOpacity>
 
-                    <TouchableOpacity style={styles.row} onPress={() => openLink('https://example.com/faq')}>
-                        <Ionicons name="help-circle-outline" size={24} color={colors.primary} />
-                        <Text style={[styles.rowText, { color: colors.text }]}>Why is my robot not cleaning properly?</Text>
+                    <TouchableOpacity style={styles.row} onPress={() => openLink('https://example.com/faq#cleaning')}>
+                        <Ionicons name="sparkles-outline" size={24} color={colors.primary} />
+                        <Text style={[styles.rowText, { color: colors.text }]}>Why is my robot not cleaning properly or missing spots?</Text>
                         <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
                     </TouchableOpacity>
+
+                    <TouchableOpacity style={styles.row} onPress={() => openLink('https://example.com/faq#battery')}>
+                        <Ionicons name="battery-half-outline" size={24} color={colors.primary} />
+                        <Text style={[styles.rowText, { color: colors.text }]}>How do I improve battery life or fix low battery warnings?</Text>
+                        <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={styles.row} onPress={() => openLink('https://example.com/faq#map')}>
+                        <Ionicons name="map-outline" size={24} color={colors.primary} />
+                        <Text style={[styles.rowText, { color: colors.text }]}>Why is the map not accurate or robot getting stuck?</Text>
+                        <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+                    </TouchableOpacity>
+
+                    {/* === C++ INTEGRATION POINT: Add robot-specific troubleshooting ===
+              If you want to include direct robot diagnostics or firmware-related FAQs:
+              - Add rows like "How to reset robot firmware" or "Run robot self-diagnostic"
+              - On press: either open link or trigger C++ command via bridge
+              Example:
+              <TouchableOpacity style={styles.row} onPress={() => RobotBridge.runDiagnostic()}>
+                <Ionicons name="cog-outline" size={24} color={colors.primary} />
+                <Text style={styles.rowText}>Run robot self-diagnostic</Text>
+                <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+          */}
                 </View>
 
+                {/* Contact Us */}
                 <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
                     <Text style={[styles.sectionTitle, { color: colors.text }]}>Contact Us</Text>
 
@@ -49,7 +80,7 @@ export default function HelpSupport() {
 
                     <TouchableOpacity style={styles.row} onPress={() => openLink('tel:+256700123456')}>
                         <Ionicons name="call-outline" size={24} color={colors.primary} />
-                        <Text style={[styles.rowText, { color: colors.text }]}>Call Support</Text>
+                        <Text style={[styles.rowText, { color: colors.text }]}>Call Support (+256 700 123 456)</Text>
                         <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
                     </TouchableOpacity>
 
@@ -58,10 +89,21 @@ export default function HelpSupport() {
                         <Text style={[styles.rowText, { color: colors.text }]}>WhatsApp Support</Text>
                         <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
                     </TouchableOpacity>
+
+                    {/* === C++ INTEGRATION POINT: Add robot-specific contact ===
+              If you want a button to send robot logs/diagnostics directly to support:
+              - On press: collect logs via C++ bridge → attach to email or send via API
+              Example:
+              <TouchableOpacity style={styles.row} onPress={() => sendRobotLogsToSupport()}>
+                <Ionicons name="document-text-outline" size={24} color={colors.primary} />
+                <Text style={styles.rowText}>Send robot diagnostic logs to support</Text>
+                <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+              </TouchableOpacity>
+          */}
                 </View>
 
                 <Text style={[styles.footer, { color: colors.textSecondary }]}>
-                    Response time: usually within 1–2 hours during business hours
+                    Response time: usually within 1–2 hours during business hours (8 AM – 8 PM EAT)
                 </Text>
             </ScrollView>
         </SafeAreaView>
