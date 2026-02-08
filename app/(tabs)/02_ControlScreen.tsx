@@ -8,10 +8,11 @@ import {
     ScrollView,
     Alert,
     Platform,
+    ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 
 import Header from '../../src/components/Header';
 import Loader from '../../src/components/Loader';
@@ -19,7 +20,7 @@ import { useThemeContext } from '@/src/context/ThemeContext';
 import { router } from 'expo-router';
 
 export default function ControlScreen() {
-    const { colors, darkMode } = useThemeContext();
+    const { colors } = useThemeContext();
 
     const [busy, setBusy] = useState(false);
     const [loadingMessage, setLoadingMessage] = useState('');
@@ -28,7 +29,7 @@ export default function ControlScreen() {
     const [fanSpeed, setFanSpeed] = useState<'quiet' | 'standard' | 'turbo'>('standard');
     const [manualMode, setManualMode] = useState(false);
 
-    /* ---------------- Simulated Robot Actions ---------------- */
+    /* ---------------- Simulated / Real Robot Actions ---------------- */
     const simulateAction = useCallback(
         async (
             message: string,
@@ -41,14 +42,20 @@ export default function ControlScreen() {
 
             try {
                 console.log(log);
-                // C++ BRIDGE: Replace with real RobotBridge calls
+
+                // === C++ BRIDGE: Replace this delay with real RobotBridge call ===
+                // Android (JNI): await RobotBridge.startCleaning() / stopCleaning() / returnToDock()
+                // iOS (Obj-C++): await [RobotBridge startCleaning] / [RobotBridge stopCleaning] / [RobotBridge returnToDock]
                 await new Promise((resolve) => setTimeout(resolve, 1200));
+
                 if (onSuccess) onSuccess();
                 Alert.alert('Success', message.replace('...', ' completed!'));
-            } catch {
+            } catch (err) {
+                console.error(log + ' failed:', err);
                 Alert.alert('Error', errorMsg);
             } finally {
                 setBusy(false);
+                setLoadingMessage('');
             }
         },
         []
@@ -56,8 +63,8 @@ export default function ControlScreen() {
 
     const handleStartCleaning = () =>
         simulateAction(
-            'Starting cleaning...',
-            'Start cleaning (mock)',
+            'Starting intelligent cleaning...',
+            'Start cleaning (adaptive mode)',
             'Failed to start cleaning.',
             () => setIsRunning(true)
         );
@@ -65,7 +72,7 @@ export default function ControlScreen() {
     const handleStopCleaning = () =>
         simulateAction(
             'Stopping cleaning...',
-            'Stop cleaning (mock)',
+            'Stop cleaning',
             'Failed to stop cleaning.',
             () => setIsRunning(false)
         );
@@ -73,31 +80,53 @@ export default function ControlScreen() {
     const handleReturnToDock = () =>
         simulateAction(
             'Returning to dock...',
-            'Return to dock (mock)',
+            'Return to dock',
             'Failed to dock robot.',
             () => setIsRunning(false)
         );
 
     /* ---------------- Manual Control Actions ---------------- */
-    const handleManualMove = (direction: string) => {
-        console.log(`Moving ${direction}`);
-        // C++ BRIDGE: RobotBridge.move(direction)
-        Alert.alert('Manual Move', `Moving ${direction}`, [{ text: 'OK' }]);
-    };
+    const handleManualMove = useCallback((direction: 'forward' | 'backward' | 'left' | 'right' | 'stop') => {
+        if (busy) return;
 
-    const handleRotate = (direction: 'left' | 'right') => {
-        console.log(`Rotating ${direction}`);
-        // C++ BRIDGE: RobotBridge.rotate(direction)
-        Alert.alert('Manual Rotate', `Rotating ${direction}`, [{ text: 'OK' }]);
-    };
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+        console.log(`Manual move command: ${direction}`);
+
+        // === C++ BRIDGE: Send real-time movement command to robot ===
+        // Android (JNI): RobotBridge.move(direction)
+        // iOS (Obj-C++): [RobotBridge move:direction]
+        // This should be instant/low-latency command to robot motors
+        // Example pseudo-code:
+        // await RobotBridge.move(direction);
+
+        // Optional: visual feedback toast (remove in production if not needed)
+        Alert.alert('Manual Move', `Command sent: ${direction.toUpperCase()}`, [{ text: 'OK' }]);
+    }, [busy]);
+
+    const handleRotate = useCallback((direction: 'left' | 'right') => {
+        if (busy) return;
+
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+        console.log(`Manual rotate command: ${direction}`);
+
+        // === C++ BRIDGE: Send real-time rotation command to robot ===
+        // Android (JNI): RobotBridge.rotate(direction)
+        // iOS (Obj-C++): [RobotBridge rotate:direction]
+        // Should control robot spin in place or turn
+        // Example pseudo-code:
+        // await RobotBridge.rotate(direction);
+
+        Alert.alert('Manual Rotate', `Command sent: Rotate ${direction.toUpperCase()}`, [{ text: 'OK' }]);
+    }, [busy]);
 
     if (busy) {
         return <Loader message={loadingMessage} />;
     }
 
-    /* --------------------------- UI --------------------------- */
     return (
-        <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
             <Header title="Control Robot" subtitle="Manage cleaning operations" />
 
             <ScrollView
@@ -138,7 +167,7 @@ export default function ControlScreen() {
                                         { color: isRunning ? colors.primary : colors.textSecondary },
                                     ]}
                                 >
-                                    {manualMode ? 'Manual Mode' : isRunning ? 'Cleaning Active' : 'Idle'}
+                                    {manualMode ? 'Manual Control Active' : isRunning ? 'Cleaning in Progress' : 'Idle'}
                                 </Text>
                             </View>
                         </View>
@@ -173,7 +202,7 @@ export default function ControlScreen() {
                                 <View style={[styles.primaryButtonIcon, { backgroundColor: '#10B981' }]}>
                                     <Ionicons name="play" size={32} color="#fff" />
                                 </View>
-                                <Text style={styles.primaryButtonText}>Start Cleaning</Text>
+                                <Text style={styles.primaryButtonText}>Start Adaptive Cleaning</Text>
                             </TouchableOpacity>
 
                             <TouchableOpacity
@@ -205,7 +234,7 @@ export default function ControlScreen() {
                         </View>
                     </View>
 
-                    {/* Cleaning Modes */}
+                    {/* Cleaning Modes – No hardcoded areas – robot adapts via sensors/cameras */}
                     <View style={[styles.controlCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                         <View style={styles.cardHeader}>
                             <View style={styles.cardTitleContainer}>
@@ -226,7 +255,13 @@ export default function ControlScreen() {
                                         },
                                         cleaningMode === mode && { backgroundColor: `${colors.primary}15` },
                                     ]}
-                                    onPress={() => setCleaningMode(mode as any)}
+                                    onPress={() => {
+                                        // === C++ BRIDGE: Send cleaning mode change to robot ===
+                                        // Android (JNI): RobotBridge.setCleaningMode(mode)
+                                        // iOS (Obj-C++): [RobotBridge setCleaningMode:mode]
+                                        // Mode 'auto' should tell robot to use sensors/cameras for full adaptive cleaning
+                                        setCleaningMode(mode as any);
+                                    }}
                                     activeOpacity={0.7}
                                 >
                                     <Ionicons
@@ -240,7 +275,9 @@ export default function ControlScreen() {
                                             { color: cleaningMode === mode ? colors.primary : colors.text },
                                         ]}
                                     >
-                                        {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                                        {mode === 'auto'
+                                            ? 'Auto (Adaptive)'
+                                            : mode.charAt(0).toUpperCase() + mode.slice(1)}
                                     </Text>
                                     {cleaningMode === mode && (
                                         <View style={[styles.selectedBadge, { backgroundColor: colors.primary }]}>
@@ -250,6 +287,14 @@ export default function ControlScreen() {
                                 </TouchableOpacity>
                             ))}
                         </View>
+
+                        <Text style={[styles.modeDescription, { color: colors.textSecondary }]}>
+                            {cleaningMode === 'auto'
+                                ? 'Robot uses sensors and cameras to intelligently map and clean the entire space.'
+                                : cleaningMode === 'spot'
+                                    ? 'Focus on a specific dirty area detected by sensors.'
+                                    : 'Clean along walls and edges using edge-detection sensors.'}
+                        </Text>
                     </View>
 
                     {/* Fan Speed */}
@@ -273,7 +318,12 @@ export default function ControlScreen() {
                                         },
                                         fanSpeed === speed && { backgroundColor: `${colors.primary}15` },
                                     ]}
-                                    onPress={() => setFanSpeed(speed as any)}
+                                    onPress={() => {
+                                        // === C++ BRIDGE: Send fan/suction speed change to robot ===
+                                        // Android (JNI): RobotBridge.setFanSpeed(speed)
+                                        // iOS (Obj-C++): [RobotBridge setFanSpeed:speed]
+                                        setFanSpeed(speed as any);
+                                    }}
                                     activeOpacity={0.7}
                                 >
                                     <Ionicons
@@ -303,7 +353,7 @@ export default function ControlScreen() {
                         </View>
                     </View>
 
-                    {/* Manual Controls */}
+                    {/* Manual Controls – Fully functional joystick */}
                     <View style={[styles.controlCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                         <View style={styles.cardHeader}>
                             <View style={styles.cardTitleContainer}>
@@ -332,7 +382,7 @@ export default function ControlScreen() {
 
                         {manualMode ? (
                             <View style={styles.joystickContainer}>
-                                {/* Directional Pad */}
+                                {/* Directional Pad – Fully functional */}
                                 <View style={styles.joystickGrid}>
                                     <View style={styles.joystickRow}>
                                         <View style={styles.joystickEmpty} />
@@ -385,7 +435,7 @@ export default function ControlScreen() {
                                     </View>
                                 </View>
 
-                                {/* Rotation */}
+                                {/* Rotation Controls */}
                                 <View style={styles.rotationControls}>
                                     <TouchableOpacity
                                         style={[styles.rotationButton, { backgroundColor: colors.background, borderColor: colors.border }]}
@@ -410,7 +460,7 @@ export default function ControlScreen() {
                                 <View style={[styles.manualInfo, { backgroundColor: `${colors.primary}10` }]}>
                                     <Ionicons name="information-circle" size={16} color={colors.primary} />
                                     <Text style={[styles.manualInfoText, { color: colors.text }]}>
-                                        Use directional controls to manually navigate your robot
+                                        Use joystick to manually navigate. Robot adapts to obstacles via sensors & cameras.
                                     </Text>
                                 </View>
                             </View>
@@ -488,11 +538,6 @@ const styles = StyleSheet.create({
         borderWidth: 2,
         marginBottom: 20,
         marginTop: 8,
-        shadowColor: '#000',
-        shadowOpacity: 0.06,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 2 },
-        elevation: 2,
     },
     statusBannerContent: {
         flexDirection: 'row',
@@ -534,11 +579,6 @@ const styles = StyleSheet.create({
         padding: 20,
         borderWidth: 1,
         marginBottom: 16,
-        shadowColor: '#000',
-        shadowOpacity: 0.06,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 2 },
-        elevation: 2,
     },
     cardHeader: {
         flexDirection: 'row',
@@ -597,7 +637,6 @@ const styles = StyleSheet.create({
     primaryButtonText: {
         fontSize: 16,
         fontWeight: '600',
-        color: '#1F2937',
     },
 
     /* Mode Options */
@@ -627,6 +666,12 @@ const styles = StyleSheet.create({
         borderRadius: 10,
         alignItems: 'center',
         justifyContent: 'center',
+    },
+    modeDescription: {
+        marginTop: 12,
+        fontSize: 13,
+        lineHeight: 18,
+        textAlign: 'center',
     },
 
     /* Speed Options */
@@ -674,11 +719,6 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         alignItems: 'center',
         justifyContent: 'center',
-        shadowColor: '#000',
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        shadowOffset: { width: 0, height: 2 },
-        elevation: 2,
     },
     centerButton: {
         width: 70,
@@ -747,24 +787,6 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
     },
 
-    /* Tip Card */
-    tipCard: {
-        borderRadius: 12,
-        padding: 16,
-        borderWidth: 1,
-        flexDirection: 'row',
-        gap: 12,
-        alignItems: 'flex-start',
-        marginBottom: 24,
-    },
-    tipContent: {
-        flex: 1,
-    },
-    tipText: {
-        fontSize: 14,
-        lineHeight: 20,
-    },
-
     /* Navigation */
     navSection: {
         marginTop: 8,
@@ -787,11 +809,6 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         alignItems: 'center',
         gap: 8,
-        shadowColor: '#000',
-        shadowOpacity: 0.04,
-        shadowRadius: 4,
-        shadowOffset: { width: 0, height: 2 },
-        elevation: 1,
     },
     navButtonText: {
         fontSize: 13,

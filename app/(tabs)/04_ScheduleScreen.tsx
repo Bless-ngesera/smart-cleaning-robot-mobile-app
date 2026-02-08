@@ -9,9 +9,11 @@ import {
     StyleSheet,
     TouchableOpacity,
     ScrollView,
+    ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 
 import Header from '../../src/components/Header';
 import Loader from '../../src/components/Loader';
@@ -50,37 +52,57 @@ export default function ScheduleScreen() {
             enabled: true,
         };
 
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
         setSchedule([...schedule, newEntry]);
         setDay('');
         setTime('');
 
-        Alert.alert('Success', 'Routine added successfully!');
-        // C++ BRIDGE: RobotBridge.addSchedule(day, time)
+        // === C++ BRIDGE: Send new schedule entry to robot ===
+        // Android (JNI): RobotBridge.addSchedule(newEntry.day, newEntry.time)
+        // iOS (Obj-C++): [RobotBridge addScheduleWithDay:newEntry.day time:newEntry.time]
+        // Robot should store it and trigger cleaning at the specified time using sensors/cameras to adapt to current environment
+
+        Alert.alert('Success', 'Routine added — robot will adapt to the environment using sensors & cameras!');
+
     }, [schedule, day, time, isValidInput]);
 
     /* ---------------- Toggle Routine ---------------- */
     const toggleRoutine = useCallback((id: string) => {
+        Haptics.selectionAsync();
+
         setSchedule(
             schedule.map((item) =>
                 item.id === id ? { ...item, enabled: !item.enabled } : item
             )
         );
+
+        // === C++ BRIDGE: Toggle schedule enabled state on robot ===
+        // Android (JNI): RobotBridge.toggleSchedule(id, newEnabled)
+        // iOS (Obj-C++): [RobotBridge toggleScheduleWithId:id enabled:newEnabled]
     }, [schedule]);
 
     /* ---------------- Delete Single Routine ---------------- */
     const deleteRoutine = useCallback((id: string) => {
-        Alert.alert('Delete Routine', 'Are you sure you want to delete this routine?', [
+        const itemToDelete = schedule.find((item) => item.id === id);
+        if (!itemToDelete) return;
+
+        Alert.alert('Delete Routine', 'Remove this scheduled time?', [
             { text: 'Cancel', style: 'cancel' },
             {
                 text: 'Delete',
                 style: 'destructive',
                 onPress: () => {
-                    const itemToDelete = schedule.find((item) => item.id === id);
-                    if (itemToDelete) {
-                        setHistory([...history, { ...itemToDelete, enabled: false }]);
-                    }
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+                    setHistory([...history, { ...itemToDelete, enabled: false }]);
                     setSchedule(schedule.filter((item) => item.id !== id));
-                    Alert.alert('Success', 'Routine deleted successfully!');
+
+                    // === C++ BRIDGE: Delete schedule entry from robot ===
+                    // Android (JNI): RobotBridge.deleteSchedule(id)
+                    // iOS (Obj-C++): [RobotBridge deleteScheduleWithId:id]
+
+                    Alert.alert('Success', 'Routine deleted');
                 },
             },
         ]);
@@ -92,11 +114,24 @@ export default function ScheduleScreen() {
         setLoadingMessage('Syncing schedule from robot...');
 
         try {
-            // C++ BRIDGE: RobotBridge.getSchedule()
+            // === C++ BRIDGE: Fetch current schedule from robot ===
+            // Android (JNI): await RobotBridge.getSchedule()
+            // iOS (Obj-C++): await [RobotBridge getSchedule]
+            // Robot should return time-based routines — no room/area info needed (adapts via sensors/cameras)
             await new Promise((resolve) => setTimeout(resolve, 1500));
-            Alert.alert('Success', 'Schedule synced successfully!');
-        } catch {
-            Alert.alert('Error', 'Failed to sync schedule from robot.');
+
+            // Mock response (replace with real C++ data)
+            const synced = [
+                { id: 's1', day: 'Monday', time: '09:00 AM', enabled: true },
+                { id: 's2', day: 'Wednesday', time: '06:30 PM', enabled: false },
+            ];
+
+            setSchedule(synced);
+
+            Alert.alert('Success', 'Schedule synced — robot will adapt to current environment!');
+        } catch (err) {
+            console.error('Sync failed:', err);
+            Alert.alert('Error', 'Failed to sync schedule. Check robot connection.');
         } finally {
             setBusy(false);
         }
@@ -106,16 +141,22 @@ export default function ScheduleScreen() {
     const clearAllSchedules = useCallback(() => {
         if (schedule.length === 0) return;
 
-        Alert.alert('Confirm Reset', 'Clear all routines?', [
+        Alert.alert('Reset All', 'Clear every scheduled routine?', [
             { text: 'Cancel', style: 'cancel' },
             {
-                text: 'Clear',
+                text: 'Clear All',
                 style: 'destructive',
                 onPress: () => {
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+
                     setHistory([...history, ...schedule.map((s) => ({ ...s, enabled: false }))]);
                     setSchedule([]);
-                    Alert.alert('Success', 'All routines cleared.');
-                    // C++ BRIDGE: RobotBridge.clearSchedules()
+
+                    // === C++ BRIDGE: Clear all schedules on robot ===
+                    // Android (JNI): RobotBridge.clearAllSchedules()
+                    // iOS (Obj-C++): [RobotBridge clearAllSchedules]
+
+                    Alert.alert('Success', 'All routines cleared');
                 },
             },
         ]);
@@ -132,7 +173,7 @@ export default function ScheduleScreen() {
         () => ({
             total: schedule.length,
             active: schedule.filter((s) => s.enabled).length,
-            completed: history.length,
+            history: history.length,
         }),
         [schedule, history]
     );
@@ -142,14 +183,10 @@ export default function ScheduleScreen() {
     }
 
     return (
-        <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-            <Header title="Cleaning Schedule" subtitle="Manage your automated routines" />
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+            <Header title="Cleaning Schedule" subtitle="Time-based adaptive routines" />
 
-            <ScrollView
-                style={styles.scrollView}
-                contentContainerStyle={styles.scrollContent}
-                showsVerticalScrollIndicator={false}
-            >
+            <ScrollView contentContainerStyle={styles.scrollContent}>
                 {/* Statistics Cards */}
                 <View style={styles.statsContainer}>
                     <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -172,19 +209,19 @@ export default function ScheduleScreen() {
                         <View style={[styles.statIconContainer, { backgroundColor: '#8B5CF620' }]}>
                             <Ionicons name="time" size={24} color="#8B5CF6" />
                         </View>
-                        <Text style={[styles.statValue, { color: '#8B5CF6' }]}>{stats.completed}</Text>
+                        <Text style={[styles.statValue, { color: '#8B5CF6' }]}>{stats.history}</Text>
                         <Text style={[styles.statLabel, { color: colors.textSecondary }]}>History</Text>
                     </View>
                 </View>
 
-                {/* Next Routine Card */}
+                {/* Next Routine */}
                 {nextRoutine && (
                     <View style={[styles.nextRoutineCard, { backgroundColor: `${colors.primary}15`, borderColor: colors.primary }]}>
                         <View style={styles.nextRoutineHeader}>
                             <View style={[styles.pulseIcon, { backgroundColor: colors.primary }]}>
                                 <Ionicons name="flash" size={20} color="#fff" />
                             </View>
-                            <Text style={[styles.nextRoutineTitle, { color: colors.primary }]}>Next Scheduled Routine</Text>
+                            <Text style={[styles.nextRoutineTitle, { color: colors.primary }]}>Next Routine</Text>
                         </View>
 
                         <View style={styles.nextRoutineContent}>
@@ -197,18 +234,21 @@ export default function ScheduleScreen() {
                                 <Text style={[styles.nextRoutineTime, { color: colors.text }]}>{nextRoutine.time}</Text>
                             </View>
                         </View>
+
+                        <Text style={styles.nextRoutineNote}>
+                            Robot will adapt to the current environment using sensors & cameras
+                        </Text>
                     </View>
                 )}
 
                 {/* Sync Button */}
-                <View style={styles.syncBox}>
-                    <Button
-                        title="Sync from Robot"
-                        icon="sync-outline"
-                        onPress={syncFromRobot}
-                        variant="secondary"
-                    />
-                </View>
+                <Button
+                    title="Sync from Robot"
+                    icon="sync-outline"
+                    onPress={syncFromRobot}
+                    variant="outline"
+                    style={styles.syncButton}
+                />
 
                 {/* Active Schedule List */}
                 <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -220,7 +260,7 @@ export default function ScheduleScreen() {
 
                         {schedule.length > 0 && (
                             <TouchableOpacity onPress={clearAllSchedules}>
-                                <Text style={[styles.clearAllText, { color: colors.error }]}>Clear All</Text>
+                                <Text style={[styles.clearAllText, { color: '#EF4444' }]}>Clear All</Text>
                             </TouchableOpacity>
                         )}
                     </View>
@@ -228,9 +268,9 @@ export default function ScheduleScreen() {
                     {schedule.length === 0 ? (
                         <View style={styles.emptyState}>
                             <Ionicons name="calendar-outline" size={48} color={colors.textSecondary} opacity={0.3} />
-                            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No routines scheduled yet</Text>
+                            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No routines yet</Text>
                             <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
-                                Add your first routine below
+                                Add a time-based routine — robot adapts automatically
                             </Text>
                         </View>
                     ) : (
@@ -242,16 +282,12 @@ export default function ScheduleScreen() {
                                 <View
                                     style={[
                                         styles.routineItem,
-                                        index < schedule.length - 1 && {
-                                            borderBottomWidth: 1,
-                                            borderBottomColor: colors.border,
-                                        },
+                                        index < schedule.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border },
                                     ]}
                                 >
                                     <TouchableOpacity
                                         onPress={() => toggleRoutine(item.id)}
                                         style={styles.routineToggle}
-                                        activeOpacity={0.7}
                                     >
                                         <View
                                             style={[
@@ -293,9 +329,8 @@ export default function ScheduleScreen() {
                                     <TouchableOpacity
                                         onPress={() => deleteRoutine(item.id)}
                                         style={styles.deleteButton}
-                                        activeOpacity={0.7}
                                     >
-                                        <Ionicons name="trash-outline" size={20} color={colors.error} />
+                                        <Ionicons name="trash-outline" size={20} color="#EF4444" />
                                     </TouchableOpacity>
                                 </View>
                             )}
@@ -347,7 +382,7 @@ export default function ScheduleScreen() {
                     </View>
 
                     <Button
-                        title="Add Schedule"
+                        title="Add Routine"
                         icon="add-outline"
                         onPress={addSchedule}
                         disabled={!isValidInput}
@@ -355,16 +390,16 @@ export default function ScheduleScreen() {
                     />
                 </View>
 
-                {/* History Section */}
+                {/* History */}
                 {history.length > 0 && (
                     <View style={[styles.sectionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                         <View style={styles.sectionHeader}>
                             <View style={styles.sectionTitleContainer}>
                                 <Ionicons name="archive" size={20} color={colors.primary} />
-                                <Text style={[styles.sectionTitle, { color: colors.text }]}>Completed History</Text>
+                                <Text style={[styles.sectionTitle, { color: colors.text }]}>History</Text>
                             </View>
                             <Text style={[styles.historyCount, { color: colors.textSecondary }]}>
-                                {history.length} total
+                                {history.length} entries
                             </Text>
                         </View>
 
@@ -385,11 +420,11 @@ export default function ScheduleScreen() {
                     </View>
                 )}
 
-                {/* Helpful Tip */}
+                {/* Tip */}
                 <View style={[styles.tipBox, { backgroundColor: `${colors.primary}10`, borderColor: `${colors.primary}30` }]}>
                     <Ionicons name="bulb" size={20} color={colors.primary} />
                     <Text style={[styles.tipText, { color: colors.text }]}>
-                        Tip: Keep routines short and avoid overlapping times to reduce battery strain.
+                        Routines are time-based only — robot uses sensors & cameras to intelligently adapt to any environment.
                     </Text>
                 </View>
 
@@ -400,7 +435,6 @@ export default function ScheduleScreen() {
                         <TouchableOpacity
                             style={[styles.navButton, { backgroundColor: colors.card, borderColor: colors.border }]}
                             onPress={() => router.push('/(tabs)/01_DashboardScreen')}
-                            activeOpacity={0.7}
                         >
                             <Ionicons name="grid" size={24} color={colors.primary} />
                             <Text style={[styles.navButtonText, { color: colors.text }]}>Dashboard</Text>
@@ -409,7 +443,6 @@ export default function ScheduleScreen() {
                         <TouchableOpacity
                             style={[styles.navButton, { backgroundColor: colors.card, borderColor: colors.border }]}
                             onPress={() => router.push('/(tabs)/02_ControlScreen')}
-                            activeOpacity={0.7}
                         >
                             <Ionicons name="game-controller" size={24} color={colors.primary} />
                             <Text style={[styles.navButtonText, { color: colors.text }]}>Control</Text>
@@ -418,7 +451,6 @@ export default function ScheduleScreen() {
                         <TouchableOpacity
                             style={[styles.navButton, { backgroundColor: colors.card, borderColor: colors.border }]}
                             onPress={() => router.push('/(tabs)/03_MapScreen')}
-                            activeOpacity={0.7}
                         >
                             <Ionicons name="map" size={24} color={colors.primary} />
                             <Text style={[styles.navButtonText, { color: colors.text }]}>Map</Text>
@@ -451,11 +483,6 @@ const styles = StyleSheet.create({
         padding: 16,
         borderWidth: 1,
         alignItems: 'center',
-        shadowColor: '#000',
-        shadowOpacity: 0.06,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 2 },
-        elevation: 2,
     },
     statIconContainer: {
         width: 48,
@@ -480,11 +507,6 @@ const styles = StyleSheet.create({
         padding: 20,
         borderWidth: 2,
         marginBottom: 20,
-        shadowColor: '#000',
-        shadowOpacity: 0.08,
-        shadowRadius: 12,
-        shadowOffset: { width: 0, height: 4 },
-        elevation: 3,
     },
     nextRoutineHeader: {
         flexDirection: 'row',
@@ -519,8 +541,14 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '500',
     },
+    nextRoutineNote: {
+        marginTop: 12,
+        fontSize: 13,
+        color: '#6B7280',
+        textAlign: 'center',
+    },
 
-    syncBox: {
+    syncButton: {
         marginBottom: 20,
     },
 
@@ -529,11 +557,6 @@ const styles = StyleSheet.create({
         padding: 20,
         borderWidth: 1,
         marginBottom: 16,
-        shadowColor: '#000',
-        shadowOpacity: 0.06,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 2 },
-        elevation: 2,
     },
     sectionHeader: {
         flexDirection: 'row',
@@ -553,6 +576,7 @@ const styles = StyleSheet.create({
     clearAllText: {
         fontSize: 14,
         fontWeight: '600',
+        color: '#EF4444',
     },
 
     emptyState: {
@@ -661,8 +685,8 @@ const styles = StyleSheet.create({
         marginBottom: 24,
     },
     tipText: {
-        fontSize: 14,
         flex: 1,
+        fontSize: 14,
         lineHeight: 20,
     },
 
@@ -687,11 +711,6 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         alignItems: 'center',
         gap: 8,
-        shadowColor: '#000',
-        shadowOpacity: 0.04,
-        shadowRadius: 4,
-        shadowOffset: { width: 0, height: 2 },
-        elevation: 1,
     },
     navButtonText: {
         fontSize: 13,

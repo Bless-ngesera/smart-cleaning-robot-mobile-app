@@ -1,129 +1,167 @@
-// app/settings/notifications.tsx
+// app/settings/history.tsx
 import React, { useState, useEffect } from 'react';
-import { View, Text, Switch, StyleSheet, ScrollView } from 'react-native';
+import {
+    View,
+    Text,
+    FlatList,
+    StyleSheet,
+    ActivityIndicator,
+    RefreshControl,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useThemeContext } from '@/src/context/ThemeContext';
 import Header from '../../src/components/Header';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase } from '@/src/services/supabase';
 
-export default function NotificationsSettings() {
+export default function CleaningHistory() {
     const { colors } = useThemeContext();
 
-    const [pushEnabled, setPushEnabled] = useState(true);
-    const [emailEnabled, setEmailEnabled] = useState(true);
-    const [lowBattery, setLowBattery] = useState(true);
-    const [cleaningDone, setCleaningDone] = useState(true);
+    const [history, setHistory] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [error, setError] = useState(null);
+
+    const fetchHistory = async () => {
+        try {
+            setError(null);
+
+            // === PLACEHOLDER: Fetch real cleaning history from Supabase ===
+            // This assumes you have a table called 'cleaning_sessions'
+            // Columns: id, date, time, duration, area, status, user_id
+            const { data, error } = await supabase
+                .from('cleaning_sessions')
+                .select('id, date, time, duration, area, status')
+                .eq('user_id', (await supabase.auth.getUser()).data.user?.id)
+                .order('date', { ascending: false })
+                .limit(50); // last 50 sessions – adjust as needed
+
+            if (error) throw error;
+
+            setHistory(data || []);
+
+            // === C++ INTEGRATION POINT: Sync real robot history here ===
+            // If you want to pull live or recent sessions directly from the robot:
+            // - Connect via Bluetooth, Wi-Fi, Serial, HTTP API, etc.
+            // - Fetch cleaning logs from robot firmware
+            // - Format as array of objects: { id, date, time, duration, area, status }
+            // - Then merge or replace Supabase data:
+            // const realRobotHistory = await RobotBridge.getCleaningLogs(); // your C++ bridge call
+            // setHistory([...realRobotHistory, ...data]); // or prioritize robot data
+        } catch (err) {
+            console.error('Failed to fetch history:', err);
+            setError('Could not load cleaning history');
+        }
+    };
 
     useEffect(() => {
-        // Load saved preferences
-        const loadPrefs = async () => {
-            try {
-                const push = await AsyncStorage.getItem('pushEnabled');
-                const email = await AsyncStorage.getItem('emailEnabled');
-                const battery = await AsyncStorage.getItem('lowBattery');
-                const done = await AsyncStorage.getItem('cleaningDone');
-
-                setPushEnabled(push !== 'false');
-                setEmailEnabled(email !== 'false');
-                setLowBattery(battery !== 'false');
-                setCleaningDone(done !== 'false');
-            } catch (e) {}
+        const load = async () => {
+            setLoading(true);
+            await fetchHistory();
+            setLoading(false);
         };
-        loadPrefs();
+        load();
+
+        // Optional: Auto-refresh every 60 seconds
+        // const interval = setInterval(fetchHistory, 60000);
+        // return () => clearInterval(interval);
     }, []);
 
-    const toggleSetting = async (key, value) => {
-        await AsyncStorage.setItem(key, value.toString());
+    const onRefresh = async () => {
+        setRefreshing(true);
+        await fetchHistory();
+        setRefreshing(false);
     };
+
+    const renderItem = ({ item }) => (
+        <View style={[styles.item, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View>
+                <Text style={[styles.date, { color: colors.text }]}>{item.date} • {item.time}</Text>
+                <Text style={[styles.details, { color: colors.textSecondary }]}>
+                    {item.duration} • {item.area}
+                </Text>
+            </View>
+            <Text
+                style={[
+                    styles.status,
+                    { color: item.status === 'Completed' ? colors.primary : '#ef4444' },
+                ]}
+            >
+                {item.status}
+            </Text>
+        </View>
+    );
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-            <Header title="Notifications" subtitle="Manage your alerts" />
+            <Header title="Cleaning History" subtitle="Past cleaning sessions" />
 
-            <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-                <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <View style={styles.toggleRow}>
-                        <Text style={[styles.label, { color: colors.text }]}>Push Notifications</Text>
-                        <Switch
-                            value={pushEnabled}
-                            onValueChange={(v) => {
-                                setPushEnabled(v);
-                                toggleSetting('pushEnabled', v);
-                            }}
-                            trackColor={{ false: colors.border, true: colors.primary }}
-                            thumbColor={pushEnabled ? '#fff' : colors.textSecondary}
-                        />
-                    </View>
-
-                    <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-                    <View style={styles.toggleRow}>
-                        <Text style={[styles.label, { color: colors.text }]}>Email Notifications</Text>
-                        <Switch
-                            value={emailEnabled}
-                            onValueChange={(v) => {
-                                setEmailEnabled(v);
-                                toggleSetting('emailEnabled', v);
-                            }}
-                            trackColor={{ false: colors.border, true: colors.primary }}
-                            thumbColor={emailEnabled ? '#fff' : colors.textSecondary}
-                        />
-                    </View>
+            {loading && !refreshing ? (
+                <View style={styles.center}>
+                    <ActivityIndicator size="large" color={colors.primary} />
                 </View>
-
-                <Text style={[styles.sectionTitle, { color: colors.textSecondary, marginTop: 24 }]}>
-                    Specific Alerts
-                </Text>
-
-                <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <View style={styles.toggleRow}>
-                        <Text style={[styles.label, { color: colors.text }]}>Low Battery Warning</Text>
-                        <Switch
-                            value={lowBattery}
-                            onValueChange={(v) => {
-                                setLowBattery(v);
-                                toggleSetting('lowBattery', v);
-                            }}
-                            trackColor={{ false: colors.border, true: colors.primary }}
-                            thumbColor={lowBattery ? '#fff' : colors.textSecondary}
-                        />
-                    </View>
-
-                    <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-                    <View style={styles.toggleRow}>
-                        <Text style={[styles.label, { color: colors.text }]}>Cleaning Completed</Text>
-                        <Switch
-                            value={cleaningDone}
-                            onValueChange={(v) => {
-                                setCleaningDone(v);
-                                toggleSetting('cleaningDone', v);
-                            }}
-                            trackColor={{ false: colors.border, true: colors.primary }}
-                            thumbColor={cleaningDone ? '#fff' : colors.textSecondary}
-                        />
-                    </View>
+            ) : error ? (
+                <View style={styles.center}>
+                    <Text style={{ color: '#ef4444', fontSize: 16, textAlign: 'center' }}>{error}</Text>
                 </View>
-            </ScrollView>
+            ) : (
+                <FlatList
+                    data={history}
+                    keyExtractor={(item) => item.id.toString()}
+                    renderItem={renderItem}
+                    contentContainerStyle={styles.list}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={onRefresh}
+                            colors={[colors.primary]}
+                            tintColor={colors.primary}
+                        />
+                    }
+                    ListEmptyComponent={
+                        <Text style={[styles.empty, { color: colors.textSecondary }]}>
+                            No cleaning sessions recorded yet
+                        </Text>
+                    }
+                />
+            )}
         </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
-    scroll: { flex: 1 },
-    content: { padding: 24, paddingBottom: 40 },
-    card: {
-        borderRadius: 16,
-        padding: 16,
-        borderWidth: 1,
+    list: {
+        padding: 24,
+        paddingBottom: 40,
     },
-    toggleRow: {
+    item: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingVertical: 12,
+        padding: 16,
+        borderRadius: 16,
+        borderWidth: 1,
+        marginBottom: 12,
     },
-    label: { fontSize: 16, fontWeight: '500' },
-    divider: { height: 1, marginVertical: 4 },
-    sectionTitle: { fontSize: 14, fontWeight: '500', marginBottom: 12 },
+    date: {
+        fontSize: 16,
+        fontWeight: '600',
+        marginBottom: 4,
+    },
+    details: {
+        fontSize: 14,
+    },
+    status: {
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    empty: {
+        textAlign: 'center',
+        fontSize: 16,
+        marginTop: 40,
+    },
+    center: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
 });
