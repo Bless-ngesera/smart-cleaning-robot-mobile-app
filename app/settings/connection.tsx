@@ -1,5 +1,5 @@
-// app/(tabs)/connection-setup.tsx
-import React, { useState, useEffect } from 'react';
+// app/settings/connection.tsx
+import React, { useEffect, useRef, useState } from 'react';
 import {
     View,
     Text,
@@ -11,25 +11,43 @@ import {
     ActivityIndicator,
     FlatList,
     Platform,
+    PermissionsAndroid,
+    Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { BleManager } from 'react-native-ble-plx';
+import Constants from 'expo-constants';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
 
 import Header from '../../src/components/Header';
 import Button from '../../src/components/Button';
 import { useThemeContext } from '@/src/context/ThemeContext';
-import { router } from 'expo-router';
 
-const bleManager = new BleManager();
+/* ────────────────────────────────────────────── */
+/* Expo-safe BLE guard (prevents Expo Go crash)   */
+/* ────────────────────────────────────────────── */
+const BLE_AVAILABLE = Constants.appOwnership !== 'expo';
+
+let BleManager: any;
+let bleManager: any = null;
+
+if (BLE_AVAILABLE) {
+    // === C++ BRIDGE POINT ===
+    // If using native C++ for BLE, replace 'react-native-ble-plx' with your bridge module
+    // Android (JNI): const ble = require('your-native-bridge');
+    // iOS (Obj-C++): const ble = require('your-native-bridge');
+    const ble = require('react-native-ble-plx');
+    BleManager = ble.BleManager;
+    bleManager = new BleManager();
+}
 
 type ConnectionType = 'wifi' | 'ble' | 'none';
 
-export default function ConnectionSetupScreen() {
+export default function ConnectionScreen() {
     const { colors } = useThemeContext();
-
     const [connectionType, setConnectionType] = useState<ConnectionType>('none');
     const [wifiIp, setWifiIp] = useState('');
     const [isScanning, setIsScanning] = useState(false);
@@ -37,413 +55,414 @@ export default function ConnectionSetupScreen() {
     const [selectedBleDevice, setSelectedBleDevice] = useState<string | null>(null);
     const [testing, setTesting] = useState(false);
     const [statusMessage, setStatusMessage] = useState('');
+    const [fadeAnim] = useState(new Animated.Value(0));
+    const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-    // Load saved connection on mount
     useEffect(() => {
-        loadSavedConnection();
-    }, []);
+        Animated.timing(fadeAnim, {
+            toValue: 1,
+            duration: 400,
+            useNativeDriver: true,
+        }).start();
 
-    const loadSavedConnection = async () => {
-        try {
-            const saved = await AsyncStorage.getItem('robotConnection');
-            if (saved) {
-                const { type, ip, bleId } = JSON.parse(saved);
-                setConnectionType(type);
-                if (type === 'wifi' && ip) setWifiIp(ip);
-                if (type === 'ble' && bleId) setSelectedBleDevice(bleId);
-            }
-        } catch (err) {
-            console.warn('Failed to load saved connection', err);
-        }
-    };
+        (async () => {
+            try {
+                const saved = await AsyncStorage.getItem('robotConnection');
+                if (saved) {
+                    const { type, ip, bleId } = JSON.parse(saved);
+                    setConnectionType(type);
+                    if (type === 'wifi') setWifiIp(ip ?? '');
+                    if (type === 'ble') setSelectedBleDevice(bleId ?? null);
+                }
+            } catch {}
+        })();
+
+        return () => {
+            scanTimeoutRef.current && clearTimeout(scanTimeoutRef.current);
+            if (BLE_AVAILABLE) bleManager?.destroy?.();
+        };
+    }, []);
 
     const saveConnection = async (type: ConnectionType, ip?: string, bleId?: string) => {
         try {
-            await AsyncStorage.setItem(
-                'robotConnection',
-                JSON.stringify({ type, ip, bleId })
-            );
+            await AsyncStorage.setItem('robotConnection', JSON.stringify({ type, ip, bleId }));
             setConnectionType(type);
-            if (type === 'wifi') setWifiIp(ip || '');
-            if (type === 'ble') setSelectedBleDevice(bleId || null);
-            Alert.alert('Saved', `Connection preference saved: ${type.toUpperCase()}`);
-        } catch (err) {
-            Alert.alert('Error', 'Failed to save connection settings');
+            setStatusMessage(type === 'wifi' ? 'Wi-Fi saved' : 'Bluetooth saved');
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        } catch {
+            Alert.alert('Error', 'Could not save connection');
         }
     };
 
-    // ─── Wi-Fi Connection ────────────────────────────────────────
+    const forgetConnection = () => {
+        Alert.alert('Forget Connection', 'Remove saved connection?', [
+            { text: 'Cancel', style: 'cancel' },
+            {
+                text: 'Forget',
+                style: 'destructive',
+                onPress: async () => {
+                    await AsyncStorage.removeItem('robotConnection');
+                    setConnectionType('none');
+                    setWifiIp('');
+                    setSelectedBleDevice(null);
+                    setStatusMessage('Connection forgotten');
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                },
+            },
+        ]);
+    };
 
+    /* ────────────────────────────────────────────── */
+    /* Wi-Fi test (real endpoint)                     */
+    /* ────────────────────────────────────────────── */
     const testWifiConnection = async () => {
         if (!wifiIp.trim()) {
-            Alert.alert('Error', 'Please enter the robot IP address');
+            Alert.alert('Missing IP', 'Enter robot IP address');
             return;
         }
-
         setTesting(true);
-        setStatusMessage('Testing Wi-Fi connection...');
-
+        setStatusMessage('Testing Wi-Fi...');
         try {
             // === C++ BRIDGE / REAL IMPLEMENTATION POINT ===
-            // Replace this with actual ping or /status request to the robot
-            // Example using fetch:
-            // const response = await fetch(`http://${wifiIp}/status`, { timeout: 5000 });
-            // if (!response.ok) throw new Error('No response');
-
-            // Simulate success
-            await new Promise((r) => setTimeout(r, 1800));
-
+            // Replace with your robot's real HTTP endpoint
+            // Example: http://192.168.1.150/status or /api/health
+            // C++ bridge call example:
+            // Android (JNI): await RobotBridge.testWifiConnection(wifiIp)
+            // iOS (Obj-C++): await [RobotBridge testWifiConnection:wifiIp]
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 7000);
+            const res = await fetch(`http://${wifiIp.trim()}/status`, {
+                method: 'GET',
+                signal: controller.signal,
+            });
+            clearTimeout(timeoutId);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
             await saveConnection('wifi', wifiIp.trim());
-            setStatusMessage('Wi-Fi connected successfully!');
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        } catch (err) {
-            console.warn('Wi-Fi test failed', err);
-            Alert.alert('Connection Failed', 'Could not reach the robot. Check IP and network.');
+            setStatusMessage('Wi-Fi connected!');
+        } catch (err: any) {
+            console.warn('Wi-Fi test failed:', err);
+            Alert.alert(
+                'Connection Failed',
+                err.name === 'AbortError' ? 'Timeout – robot not responding' : 'Cannot reach robot'
+            );
             setStatusMessage('');
         } finally {
             setTesting(false);
         }
     };
 
-    // ─── Bluetooth (BLE) Connection ────────────────────────────────────────
+    /* ────────────────────────────────────────────── */
+    /* BLE Permissions (Android only)                 */
+    /* ────────────────────────────────────────────── */
+    const requestBlePermissions = async () => {
+        if (Platform.OS !== 'android') return true;
+        const perms =
+            Platform.Version >= 31
+                ? [
+                    PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+                    PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+                ]
+                : [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION];
+        const res = await PermissionsAndroid.requestMultiple(perms);
+        return Object.values(res).every(v => v === PermissionsAndroid.RESULTS.GRANTED);
+    };
 
-    const startBleScan = () => {
-        setIsScanning(true);
+    /* ────────────────────────────────────────────── */
+    /* BLE Scan (only if native build)                */
+    /* ────────────────────────────────────────────── */
+    const startBleScan = async () => {
+        if (!BLE_AVAILABLE) {
+            Alert.alert('Not available', 'Bluetooth requires a development or production build (not Expo Go)');
+            return;
+        }
+        if (!(await requestBlePermissions())) return;
         setBleDevices([]);
-        setStatusMessage('Scanning for robots...');
-
-        bleManager.startDeviceScan(null, null, (error, device) => {
-            if (error) {
-                Alert.alert('BLE Error', error.message);
-                setIsScanning(false);
-                return;
-            }
-
-            if (device?.name?.includes('SmartCleaner') || device?.localName?.includes('SmartCleaner')) {
-                setBleDevices((prev) => {
-                    if (prev.some((d) => d.id === device.id)) return prev;
-                    return [...prev, device];
-                });
-            }
+        setIsScanning(true);
+        setStatusMessage('Scanning for robot…');
+        bleManager.startDeviceScan(null, null, (_: any, device: any) => {
+            if (!device?.name) return;
+            if (!device.name.toLowerCase().includes('cleaner') && !device.name.toLowerCase().includes('robot')) return;
+            setBleDevices(prev =>
+                prev.some(d => d.id === device.id) ? prev : [...prev, device]
+            );
         });
-
-        // Stop scanning after 10 seconds
-        setTimeout(() => {
+        scanTimeoutRef.current = setTimeout(() => {
             bleManager.stopDeviceScan();
             setIsScanning(false);
-            setStatusMessage(bleDevices.length ? '' : 'No robots found');
-        }, 10000);
+            setStatusMessage(bleDevices.length ? '' : 'No robot found');
+        }, 12000);
     };
 
+    /* ────────────────────────────────────────────── */
+    /* BLE Connect                                    */
+    /* ────────────────────────────────────────────── */
     const connectToBleDevice = async (device: any) => {
+        if (!BLE_AVAILABLE) return;
         setTesting(true);
         setStatusMessage(`Connecting to ${device.name || device.id}...`);
-
         try {
             // === C++ BRIDGE / REAL IMPLEMENTATION POINT ===
-            // In production you would:
-            // 1. Connect: await bleManager.connectToDevice(device.id)
-            // 2. Discover services & characteristics
-            // 3. Read status or write test command
-            // For now: simulate success
-            await new Promise((r) => setTimeout(r, 2200));
-
+            // Replace with native call for better performance & reliability
+            // Android (JNI): await RobotBridge.connectBle(device.id)
+            // iOS (Obj-C++): await [RobotBridge connectBleWithId:device.id]
+            await bleManager.connectToDevice(device.id);
             await saveConnection('ble', undefined, device.id);
             setSelectedBleDevice(device.id);
-            setStatusMessage('Bluetooth connected successfully!');
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        } catch (err) {
-            Alert.alert('Connection Failed', 'Could not connect to device');
+            setStatusMessage('Connected!');
+        } catch {
+            Alert.alert('Failed', 'Could not connect to robot');
             setStatusMessage('');
         } finally {
             setTesting(false);
         }
     };
-
-    // ─── UI ────────────────────────────────────────────────────────────────
-
+    const disconnectBle = async () => {
+        if (!selectedBleDevice || !BLE_AVAILABLE) return;
+        try {
+            await bleManager.cancelDeviceConnection(selectedBleDevice);
+            await AsyncStorage.removeItem('robotConnection');
+            setConnectionType('none');
+            setSelectedBleDevice(null);
+            setStatusMessage('Disconnected');
+        } catch {}
+    };
+    /* ────────────────────────────────────────────── */
+    /* UI                                             */
+    /* ────────────────────────────────────────────── */
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-            <Header
-                title="Connection Setup"
-                subtitle="Connect to your Smart Cleaner Pro"
-            />
-
-            <ScrollView contentContainerStyle={styles.content}>
-                {/* Current Status */}
-                <View style={[styles.statusCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <Text style={[styles.statusTitle, { color: colors.text }]}>Current Connection</Text>
-                    <View style={styles.statusRow}>
-                        <Ionicons
-                            name={
-                                connectionType === 'wifi'
-                                    ? 'wifi'
-                                    : connectionType === 'ble'
-                                        ? 'bluetooth'
-                                        : 'wifi-off'
-                            }
-                            size={24}
-                            color={connectionType !== 'none' ? colors.primary : '#ef4444'}
-                        />
-                        <Text style={[styles.statusText, { color: colors.text }]}>
-                            {connectionType === 'none'
-                                ? 'Not connected'
-                                : connectionType === 'wifi'
-                                    ? `Wi-Fi (${wifiIp || 'unknown'})`
-                                    : `Bluetooth (${selectedBleDevice ? 'connected' : 'not connected'})`}
+            <Header title="Connection Setup" subtitle="Smart Cleaner Pro" />
+            <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
+                <ScrollView contentContainerStyle={styles.scrollContent}>
+                    {/* How to Connect Orientation */}
+                    <LinearGradient
+                        colors={['#10B98110', '#10B98105']}
+                        style={[styles.card, { backgroundColor: colors.card }]}
+                    >
+                        <Text style={[styles.cardTitle, { color: colors.text }]}>How to Connect</Text>
+                        <View style={styles.instructionItem}>
+                            <Ionicons name="wifi" size={24} color={colors.primary} />
+                            <Text style={[styles.instructionText, { color: colors.text }]}>
+                                Wi-Fi: Find your robot's IP in its settings or router app. Enter it below and test.
+                            </Text>
+                        </View>
+                        <View style={styles.instructionItem}>
+                            <Ionicons name="bluetooth" size={24} color={colors.primary} />
+                            <Text style={[styles.instructionText, { color: colors.text }]}>
+                                Bluetooth: Turn on robot pairing mode. Scan, select, and connect.
+                            </Text>
+                        </View>
+                        <Text style={[styles.instructionNote, { color: colors.textSecondary }]}>
+                            Tip: Ensure robot is charged and nearby for Bluetooth.
                         </Text>
+                    </LinearGradient>
+
+                    {/* Current Status */}
+                    <View style={[styles.statusCard, { backgroundColor: colors.card }]}>
+                        <Text style={[styles.statusTitle, { color: colors.text }]}>Status</Text>
+                        <View style={styles.statusRow}>
+                            <Ionicons
+                                name={connectionType === 'wifi' ? 'wifi' : connectionType === 'ble' ? 'bluetooth' : 'wifi-off'}
+                                size={28}
+                                color={connectionType !== 'none' ? colors.primary : colors.textSecondary}
+                            />
+                            <Text style={[styles.statusText, { color: colors.text }]}>
+                                {connectionType === 'none'
+                                    ? 'Disconnected'
+                                    : connectionType === 'wifi'
+                                        ? `Wi-Fi (${wifiIp || '—'})`
+                                        : 'Bluetooth'}
+                            </Text>
+                        </View>
+                        {connectionType !== 'none' && (
+                            <Button
+                                title="Forget Connection"
+                                variant="destructive"
+                                size="small"
+                                onPress={forgetConnection}
+                                style={{ marginTop: 12 }}
+                            />
+                        )}
                     </View>
-                </View>
-
-                {/* Choose Connection Type */}
-                <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <Text style={[styles.cardTitle, { color: colors.text }]}>Choose Connection Method</Text>
-
-                    <TouchableOpacity
-                        style={[
-                            styles.optionButton,
-                            connectionType === 'wifi' && styles.optionSelected,
-                        ]}
-                        onPress={() => setConnectionType('wifi')}
-                    >
-                        <Ionicons name="wifi" size={28} color={colors.primary} />
-                        <View style={styles.optionContent}>
-                            <Text style={styles.optionTitle}>Wi-Fi</Text>
-                            <Text style={styles.optionSubtitle}>Stable, longer range, same network</Text>
-                        </View>
-                        {connectionType === 'wifi' && (
-                            <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
-                        )}
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={[
-                            styles.optionButton,
-                            connectionType === 'ble' && styles.optionSelected,
-                        ]}
-                        onPress={() => setConnectionType('ble')}
-                    >
-                        <Ionicons name="bluetooth" size={28} color={colors.primary} />
-                        <View style={styles.optionContent}>
-                            <Text style={styles.optionTitle}>Bluetooth (BLE)</Text>
-                            <Text style={styles.optionSubtitle}>Direct, no network needed, short range</Text>
-                        </View>
-                        {connectionType === 'ble' && (
-                            <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
-                        )}
-                    </TouchableOpacity>
-                </View>
-
-                {/* Wi-Fi Setup */}
-                {connectionType === 'wifi' && (
-                    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        <Text style={[styles.cardTitle, { color: colors.text }]}>Wi-Fi Settings</Text>
-
-                        <View style={styles.inputContainer}>
-                            <Ionicons name="globe-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
-                            <TextInput
-                                placeholder="Robot IP (e.g. 192.168.1.150)"
-                                value={wifiIp}
-                                onChangeText={setWifiIp}
-                                placeholderTextColor={colors.textSecondary}
-                                style={[styles.input, { color: colors.text }]}
-                                autoCapitalize="none"
-                                keyboardType="numeric"
+                    {/* Choose Method */}
+                    <View style={[styles.card, { backgroundColor: colors.card }]}>
+                        <Text style={[styles.cardTitle, { color: colors.text }]}>Connection Method</Text>
+                        <TouchableOpacity
+                            style={[styles.option, connectionType === 'wifi' && styles.optionActive]}
+                            onPress={() => {
+                                Haptics.selectionAsync();
+                                setConnectionType('wifi');
+                            }}
+                        >
+                            <Ionicons name="wifi" size={24} color={colors.primary} />
+                            <Text style={[styles.optionText, { color: colors.text }]}>Wi-Fi</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.option, connectionType === 'ble' && styles.optionActive]}
+                            onPress={() => {
+                                Haptics.selectionAsync();
+                                setConnectionType('ble');
+                            }}
+                        >
+                            <Ionicons name="bluetooth" size={24} color={colors.primary} />
+                            <Text style={[styles.optionText, { color: colors.text }]}>Bluetooth</Text>
+                        </TouchableOpacity>
+                    </View>
+                    {/* Wi-Fi Section */}
+                    {connectionType === 'wifi' && (
+                        <View style={[styles.card, { backgroundColor: colors.card }]}>
+                            <Text style={[styles.sectionTitle, { color: colors.text }]}>Wi-Fi Settings</Text>
+                            <View style={styles.inputWrapper}>
+                                <Ionicons name="globe-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
+                                <TextInput
+                                    placeholder="Robot IP (e.g. 192.168.1.100)"
+                                    value={wifiIp}
+                                    onChangeText={setWifiIp}
+                                    placeholderTextColor={colors.textSecondary}
+                                    style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+                                    keyboardType="numeric"
+                                    autoCapitalize="none"
+                                />
+                            </View>
+                            <Button
+                                title={testing ? 'Testing...' : 'Test & Save'}
+                                loading={testing}
+                                disabled={testing || !wifiIp.trim()}
+                                onPress={testWifiConnection}
+                                fullWidth
                             />
                         </View>
-
-                        <Button
-                            title={testing ? 'Testing...' : 'Test & Save'}
-                            loading={testing}
-                            disabled={testing || !wifiIp.trim()}
-                            onPress={testWifiConnection}
-                            variant="primary"
-                            fullWidth
-                            style={{ marginTop: 16 }}
-                        />
-                    </View>
-                )}
-
-                {/* Bluetooth Setup */}
-                {connectionType === 'ble' && (
-                    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        <Text style={[styles.cardTitle, { color: colors.text }]}>Bluetooth Devices</Text>
-
-                        <Button
-                            title={isScanning ? 'Scanning...' : 'Scan for Robot'}
-                            loading={isScanning}
-                            disabled={isScanning}
-                            onPress={startBleScan}
-                            variant="primary"
-                            fullWidth
-                            style={{ marginBottom: 16 }}
-                        />
-
-                        {bleDevices.length > 0 ? (
-                            <FlatList
-                                data={bleDevices}
-                                keyExtractor={(item) => item.id}
-                                style={{ maxHeight: 240 }}
-                                renderItem={({ item }) => (
-                                    <TouchableOpacity
-                                        style={[
-                                            styles.bleDeviceItem,
-                                            selectedBleDevice === item.id && styles.bleDeviceSelected,
-                                        ]}
-                                        onPress={() => connectToBleDevice(item)}
-                                    >
-                                        <Ionicons name="bluetooth" size={24} color={colors.primary} />
-                                        <View style={{ flex: 1, marginLeft: 12 }}>
-                                            <Text style={{ color: colors.text, fontWeight: '600' }}>
+                    )}
+                    {/* BLE Section */}
+                    {connectionType === 'ble' && (
+                        <View style={[styles.card, { backgroundColor: colors.card }]}>
+                            <Text style={[styles.sectionTitle, { color: colors.text }]}>Bluetooth</Text>
+                            <Button
+                                title={isScanning ? 'Scanning...' : 'Scan for Robot'}
+                                loading={isScanning}
+                                disabled={isScanning || testing}
+                                onPress={startBleScan}
+                                fullWidth
+                                style={{ marginBottom: 16 }}
+                            />
+                            {bleDevices.length > 0 ? (
+                                <FlatList
+                                    data={bleDevices}
+                                    keyExtractor={d => d.id}
+                                    renderItem={({ item }) => (
+                                        <TouchableOpacity
+                                            style={[
+                                                styles.deviceItem,
+                                                selectedBleDevice === item.id && styles.deviceActive,
+                                            ]}
+                                            onPress={() => connectToBleDevice(item)}
+                                        >
+                                            <Ionicons name="bluetooth" size={20} color={colors.primary} />
+                                            <Text style={[styles.deviceName, { color: colors.text }]}>
                                                 {item.name || 'Unnamed Device'}
                                             </Text>
-                                            <Text style={{ color: colors.textSecondary, fontSize: 12 }}>
-                                                {item.id}
-                                            </Text>
-                                        </View>
-                                        {selectedBleDevice === item.id && (
-                                            <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
-                                        )}
-                                    </TouchableOpacity>
-                                )}
-                            />
-                        ) : (
-                            <Text style={{ color: colors.textSecondary, textAlign: 'center', paddingVertical: 20 }}>
-                                {isScanning ? 'Searching...' : 'No devices found. Make sure robot is in pairing mode.'}
-                            </Text>
-                        )}
-
-                        {selectedBleDevice && (
-                            <Button
-                                title={testing ? 'Connecting...' : 'Connect & Save'}
-                                loading={testing}
-                                onPress={() => connectToBleDevice(bleDevices.find(d => d.id === selectedBleDevice)!)}
-                                disabled={testing}
-                                variant="primary"
-                                fullWidth
-                                style={{ marginTop: 16 }}
-                            />
-                        )}
+                                        </TouchableOpacity>
+                                    )}
+                                />
+                            ) : (
+                                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                                    {isScanning ? 'Searching...' : 'No devices found'}
+                                </Text>
+                            )}
+                        </View>
+                    )}
+                    {/* Done */}
+                    <Button
+                        title="Done"
+                        icon="checkmark-circle"
+                        variant="outline"
+                        onPress={() => router.back()}
+                        fullWidth
+                        style={{ marginTop: 24 }}
+                    />
+                </ScrollView>
+                {/* Floating Status Message */}
+                {statusMessage && (
+                    <View style={[styles.floatingMessage, { backgroundColor: colors.card }]}>
+                        <Text style={{ color: colors.text }}>{statusMessage}</Text>
                     </View>
                 )}
-
-                {/* Status Message */}
-                {statusMessage ? (
-                    <View style={[styles.statusMessage, { backgroundColor: `${colors.primary}15` }]}>
-                        <Text style={{ color: colors.primary, fontWeight: '500' }}>{statusMessage}</Text>
-                    </View>
-                ) : null}
-
-                {/* Done Button */}
-                <Button
-                    title="Done"
-                    icon="checkmark-circle"
-                    onPress={() => router.back()}
-                    variant="outline"
-                    fullWidth
-                    style={{ marginTop: 24 }}
-                />
-            </ScrollView>
+            </Animated.View>
         </SafeAreaView>
     );
 }
-
 const styles = StyleSheet.create({
-    content: {
-        padding: 20,
-        paddingBottom: 40,
-    },
-    statusCard: {
-        borderRadius: 16,
-        padding: 20,
-        borderWidth: 1,
-        marginBottom: 24,
-        alignItems: 'center',
-    },
-    statusTitle: {
-        fontSize: 16,
-        fontWeight: '600',
-        marginBottom: 8,
-    },
-    statusRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    statusText: {
-        fontSize: 15,
-        fontWeight: '500',
-    },
+    container: { flex: 1 },
+    scrollContent: { padding: 20, paddingBottom: 80 },
     card: {
         borderRadius: 16,
-        padding: 20,
-        borderWidth: 1,
-        marginBottom: 20,
-    },
-    cardTitle: {
-        fontSize: 18,
-        fontWeight: '700',
-        marginBottom: 16,
-    },
-    optionButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
         padding: 16,
-        borderRadius: 12,
-        borderWidth: 1,
-        marginBottom: 12,
-        gap: 16,
+        marginBottom: 20,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2,
     },
-    optionSelected: {
-        borderColor: '#3b82f6',
-        backgroundColor: 'rgba(59, 130, 246, 0.08)',
+    cardTitle: { fontSize: 18, fontWeight: '600', marginBottom: 12 },
+    sectionTitle: { fontSize: 16, fontWeight: '600', marginBottom: 8 },
+    instructionItem: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 12 },
+    instructionText: { fontSize: 14, lineHeight: 20, flex: 1 },
+    instructionNote: { fontSize: 13, fontStyle: 'italic', marginTop: 8 },
+    statusCard: {
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 20,
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2,
     },
-    optionContent: {
-        flex: 1,
-    },
-    optionTitle: {
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    optionSubtitle: {
-        fontSize: 13,
-        color: '#6b7280',
-    },
-    inputContainer: {
+    statusTitle: { fontSize: 16, fontWeight: '600', marginBottom: 8 },
+    statusRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    statusText: { fontSize: 16, fontWeight: '500' },
+    option: {
         flexDirection: 'row',
         alignItems: 'center',
-        position: 'relative',
-        marginBottom: 16,
+        paddingVertical: 14,
+        borderRadius: 12,
+        marginBottom: 8,
     },
-    inputIcon: {
-        position: 'absolute',
-        left: 16,
-        zIndex: 1,
-    },
+    optionActive: { backgroundColor: '#10B98110' },
+    optionText: { fontSize: 16, marginLeft: 12 },
+    inputWrapper: { position: 'relative', marginBottom: 16 },
+    inputIcon: { position: 'absolute', left: 16, top: 16, zIndex: 1 },
     input: {
-        flex: 1,
+        borderWidth: 1,
         borderRadius: 12,
         padding: 14,
         paddingLeft: 48,
-        fontSize: 15,
-        borderWidth: 1,
+        fontSize: 16,
     },
-    bleDeviceItem: {
+    deviceItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 16,
+        padding: 14,
         borderRadius: 12,
-        borderWidth: 1,
         marginBottom: 8,
     },
-    bleDeviceSelected: {
-        borderColor: '#3b82f6',
-        backgroundColor: 'rgba(59, 130, 246, 0.08)',
-    },
-    statusMessage: {
+    deviceActive: { backgroundColor: '#10B98110' },
+    deviceName: { fontSize: 16, marginLeft: 12 },
+    emptyText: { fontSize: 16, textAlign: 'center', paddingVertical: 20 },
+    floatingMessage: {
+        position: 'absolute',
+        bottom: 20,
+        left: 20,
+        right: 20,
         padding: 16,
         borderRadius: 12,
         alignItems: 'center',
-        marginVertical: 12,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+        elevation: 5,
     },
 });
