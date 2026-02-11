@@ -15,6 +15,7 @@ const tabIcons: Record<string, IoniconName> = {
     map: 'map-outline',
     schedule: 'calendar-outline',
     profile: 'person-outline',
+    connection: 'person-outline',
 };
 
 export default function TabLayout() {

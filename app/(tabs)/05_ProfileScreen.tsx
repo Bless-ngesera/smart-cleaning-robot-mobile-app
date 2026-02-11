@@ -119,6 +119,13 @@ export default function ProfileScreen() {
             icon: 'help-circle-outline',
             route: '../settings/support',
         },
+        {
+            id: 6,
+            title: 'Connection',
+            subtitle: 'connect to the robot',
+            icon: 'help-circle-outline',
+            route: '/connectionScreen',
+        },
     ];
 
     if (loading) {

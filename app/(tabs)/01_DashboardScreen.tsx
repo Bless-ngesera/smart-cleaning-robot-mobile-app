@@ -8,7 +8,6 @@ import {
     Alert,
     StyleSheet,
     TouchableOpacity,
-    ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -41,8 +40,7 @@ export default function DashboardScreen() {
         setLoading(true);
         setRefreshing(true);
         try {
-            // === PLACEHOLDER: Fetch real robot status from Supabase ===
-            // Assumes table 'robot_status' with columns: battery_level, is_cleaning, last_cleaned, errors (jsonb), status, user_id
+            // Fetch real robot status from Supabase
             const { data, error } = await supabase
                 .from('robot_status')
                 .select('battery_level, is_cleaning, last_cleaned, errors, status')
@@ -51,7 +49,7 @@ export default function DashboardScreen() {
                 .limit(1)
                 .single();
 
-            if (error && error.code !== 'PGRST116') throw error; // PGRST116 = no rows
+            if (error && error.code !== 'PGRST116') throw error; // PGRST116 = no rows found
 
             setStatus({
                 batteryLevel: data?.battery_level ?? 0,
@@ -59,12 +57,11 @@ export default function DashboardScreen() {
                 lastCleaned: data?.last_cleaned ?? 'Never',
                 errors: data?.errors ?? [],
                 status: data?.status ?? 'Offline',
-                connectionType: 'none', // Will be updated from real connection logic (Wi-Fi/BLE)
+                connectionType: 'none', // Updated dynamically from connection logic
             });
-        } catch (err) {
+        } catch (err: any) {
             console.error('Failed to fetch robot status:', err);
-            Alert.alert('Connection Issue', 'Unable to load latest robot status. Showing last known data.');
-            // Graceful fallback – no hardcoded mock values beyond defaults
+            Alert.alert('Connection Issue', 'Unable to load latest robot status.');
             setStatus({
                 batteryLevel: 0,
                 isCleaning: false,
@@ -91,8 +88,7 @@ export default function DashboardScreen() {
 
     useEffect(() => {
         fetchStatus();
-
-        // Optional: Poll every 30 seconds for real-time updates
+        // Optional real-time polling
         // const interval = setInterval(fetchStatus, 30000);
         // return () => clearInterval(interval);
     }, [fetchStatus]);
@@ -103,7 +99,7 @@ export default function DashboardScreen() {
 
     const goToConnectionSetup = () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        router.push('./settings/connection');
+        router.push('../settings/connection'); // Correct absolute route
     };
 
     // Battery helpers
@@ -127,6 +123,7 @@ export default function DashboardScreen() {
     const batteryLevel = status?.batteryLevel ?? 0;
     const isCleaning = status?.isCleaning ?? false;
     const connectionType = status?.connectionType ?? 'none';
+    const isConnected = connectionType !== 'none';
 
     return (
         <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
@@ -190,27 +187,40 @@ export default function DashboardScreen() {
                         </TouchableOpacity>
                     </View>
 
-                    {/* Connection Status + Connect Button */}
+                    {/* Connection Status + Premium Connect Button */}
                     <View style={styles.connectionSection}>
                         <View style={styles.connectionRow}>
-                            <Ionicons
-                                name={connectionType === 'wifi' ? 'wifi' : connectionType === 'ble' ? 'bluetooth' : 'wifi-off'}
-                                size={18}
-                                color={connectionType !== 'none' ? colors.primary : '#ef4444'}
+                            <View
+                                style={[
+                                    styles.connectionBadge,
+                                    { backgroundColor: isConnected ? '#10B981' : '#ef4444' },
+                                ]}
                             />
                             <Text style={[styles.connectionText, { color: colors.textSecondary }]}>
-                                {connectionType === 'none' ? 'Disconnected' : `Connected via ${connectionType === 'wifi' ? 'Wi-Fi' : 'Bluetooth'}`}
+                                {isConnected
+                                    ? `Connected via ${connectionType === 'wifi' ? 'Wi-Fi' : 'Bluetooth'}`
+                                    : 'Disconnected'}
                             </Text>
                         </View>
 
                         <TouchableOpacity
-                            style={[styles.connectButton, { backgroundColor: colors.primary }]}
+                            style={[
+                                styles.connectButton,
+                                {
+                                    backgroundColor: isConnected ? '#10B981' : colors.primary,
+                                    borderColor: isConnected ? '#10B981' : colors.primary,
+                                },
+                            ]}
                             onPress={goToConnectionSetup}
                             activeOpacity={0.85}
                         >
-                            <Ionicons name="link-outline" size={20} color="#fff" />
+                            <Ionicons
+                                name={isConnected ? 'link' : 'link-outline'}
+                                size={20}
+                                color="#fff"
+                            />
                             <Text style={styles.connectButtonText}>
-                                {connectionType === 'none' ? 'Connect Robot' : 'Change Connection'}
+                                {isConnected ? 'Manage Connection' : 'Connect Robot'}
                             </Text>
                         </TouchableOpacity>
                     </View>
@@ -425,13 +435,18 @@ const styles = StyleSheet.create({
     },
 
     connectionSection: {
-        marginBottom: 20,
+        marginBottom: 24,
         gap: 12,
     },
     connectionRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
+        gap: 10,
+    },
+    connectionBadge: {
+        width: 12,
+        height: 12,
+        borderRadius: 6,
     },
     connectionText: {
         fontSize: 14,
@@ -442,7 +457,9 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         paddingVertical: 14,
+        paddingHorizontal: 20,
         borderRadius: 12,
+        borderWidth: 1,
         gap: 8,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 3 },
