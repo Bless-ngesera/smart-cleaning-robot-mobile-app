@@ -124,7 +124,7 @@ export default function ProfileScreen() {
             title: 'Connection',
             subtitle: 'connect to the robot',
             icon: 'link',
-            route: '/connectionScreen',
+            route: '../settings/connection',
         },
     ];
 
