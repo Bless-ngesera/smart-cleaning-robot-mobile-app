@@ -123,7 +123,7 @@ export default function ProfileScreen() {
             id: 6,
             title: 'Connection',
             subtitle: 'connect to the robot',
-            icon: 'help-circle-outline',
+            icon: 'link',
             route: '/connectionScreen',
         },
     ];
