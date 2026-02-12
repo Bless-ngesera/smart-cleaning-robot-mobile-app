@@ -62,7 +62,7 @@ export default function HelpSupport() {
               Example:
               <TouchableOpacity style={styles.row} onPress={() => RobotBridge.runDiagnostic()}>
                 <Ionicons name="cog-outline" size={24} color={colors.primary} />
-                <Text style={styles.rowText}>Run robot self-diagnostic</Text>
+                <AppText style={styles.rowText}>Run robot self-diagnostic</AppText>
                 <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
               </TouchableOpacity>
           */}
@@ -96,7 +96,7 @@ export default function HelpSupport() {
               Example:
               <TouchableOpacity style={styles.row} onPress={() => sendRobotLogsToSupport()}>
                 <Ionicons name="document-text-outline" size={24} color={colors.primary} />
-                <Text style={styles.rowText}>Send robot diagnostic logs to support</Text>
+                <AppText style={styles.rowText}>Send robot diagnostic logs to support</AppText>
                 <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
               </TouchableOpacity>
           */}

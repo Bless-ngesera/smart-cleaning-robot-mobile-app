@@ -2,24 +2,23 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
-    Text,
     TextInput,
     TouchableOpacity,
-    KeyboardAvoidingView,
-    Platform,
-    Alert,
     StyleSheet,
     ScrollView,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
     Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
-import Button from '../src/components/Button';
 import Header from '../src/components/Header';
 import Loader from '../src/components/Loader';
+import Button from '../src/components/Button';
+import AppText from '../src/components/AppText';
 import { useThemeContext } from '@/src/context/ThemeContext';
 import { supabase } from '@/src/services/supabase';
 
@@ -34,320 +33,324 @@ export default function LoginScreen() {
     const [emailError, setEmailError] = useState('');
     const [passwordError, setPasswordError] = useState('');
 
-    // Floating label animations
-    const emailAnim = useRef(new Animated.Value(0)).current;
-    const passAnim = useRef(new Animated.Value(0)).current;
+    // Shake animation refs for error feedback
+    const emailShake = useRef(new Animated.Value(0)).current;
+    const passwordShake = useRef(new Animated.Value(0)).current;
 
-    // Ref for focus chaining
     const passwordRef = useRef<TextInput>(null);
 
-    // Auto-redirect if already logged in + listen for auth changes
+    // Auto-redirect if already logged in
     useEffect(() => {
-        // Check current session
-        supabase.auth.getSession().then(({ data: { session } }) => {
+        const checkSession = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) {
+                router.replace('/(tabs)/01_DashboardScreen');
+            }
+        };
+        checkSession();
+
+        const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
             if (session) {
                 router.replace('/(tabs)/01_DashboardScreen');
             }
         });
 
-        // Listen for future auth changes (login/logout)
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-            if (session) {
-                router.replace('/(tabs)/01_DashboardScreen');
-            } else {
-                // Optional: stay on login if logged out
-            }
-        });
-
-        // Cleanup listener
-        return () => subscription.unsubscribe();
+        return () => listener.subscription.unsubscribe();
     }, []);
 
-    const validateForm = () => {
-        let valid = true;
+    // Subtle shake on error
+    const shakeField = (anim: Animated.Value) => {
+        Animated.sequence([
+            Animated.timing(anim, { toValue: 8, duration: 60, useNativeDriver: true }),
+            Animated.timing(anim, { toValue: -8, duration: 60, useNativeDriver: true }),
+            Animated.timing(anim, { toValue: 4, duration: 50, useNativeDriver: true }),
+            Animated.timing(anim, { toValue: -4, duration: 50, useNativeDriver: true }),
+            Animated.timing(anim, { toValue: 0, duration: 60, useNativeDriver: true }),
+        ]).start();
+    };
+
+    const validateAndLogin = async () => {
         setEmailError('');
         setPasswordError('');
 
+        let isValid = true;
+
         if (!email.trim()) {
             setEmailError('Email is required');
-            valid = false;
+            shakeField(emailShake);
+            isValid = false;
         } else if (!/\S+@\S+\.\S+/.test(email.trim())) {
-            setEmailError('Invalid email format');
-            valid = false;
+            setEmailError('Please enter a valid email');
+            shakeField(emailShake);
+            isValid = false;
         }
 
         if (!password.trim()) {
             setPasswordError('Password is required');
-            valid = false;
+            shakeField(passwordShake);
+            isValid = false;
+        } else if (password.length < 6) {
+            setPasswordError('Password must be at least 6 characters');
+            shakeField(passwordShake);
+            isValid = false;
         }
 
-        return valid;
-    };
-
-    const handleLogin = async () => {
-        if (!validateForm()) return;
+        if (!isValid) return;
 
         setLoading(true);
         try {
-            const { data, error } = await supabase.auth.signInWithPassword({
+            // === C++ BRIDGE / REAL IMPLEMENTATION POINT (Optional) ===
+            // For maximum security, encrypt or hash password natively before sending
+            // Android (JNI): const safeCreds = await RobotBridge.prepareLoginCredentials(email.trim(), password);
+            // iOS (Obj-C++): const safeCreds = await [RobotBridge prepareLoginCredentialsWithEmail:email.trim() password:password];
+
+            const { error } = await supabase.auth.signInWithPassword({
                 email: email.trim(),
                 password,
             });
 
             if (error) throw error;
 
-            // Success: Supabase auto-saves session to AsyncStorage
-            // No need for manual token storage
-            router.replace('/(tabs)/01_DashboardScreen');
+            // Success → auto-redirect via auth listener
         } catch (err: any) {
-            let message = 'Invalid credentials';
+            let message = 'Unable to sign in. Please try again.';
             if (err.message.includes('Invalid login credentials')) {
                 message = 'Incorrect email or password';
+                setEmailError('Invalid credentials');
+                setPasswordError('Invalid credentials');
+                shakeField(emailShake);
+                shakeField(passwordShake);
             } else if (err.message.includes('Email not confirmed')) {
                 message = 'Please confirm your email before signing in';
-            } else {
-                message = err.message;
             }
-            Alert.alert('Login Failed', message);
+            Alert.alert('Sign In Failed', message);
         } finally {
             setLoading(false);
         }
     };
 
-    const animateLabel = (anim: Animated.Value, toValue: number) => {
-        Animated.timing(anim, {
-            toValue,
-            duration: 200,
-            useNativeDriver: false,
-        }).start();
-    };
-
     if (loading) {
-        return <Loader message="Signing in..." />;
+        return <Loader message="Signing you in..." />;
     }
 
     return (
-        <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-            <LinearGradient
-                colors={[colors.background, colors.card]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 0, y: 1 }}
-                style={styles.gradient}
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={{ flex: 1 }}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
             >
-                <KeyboardAvoidingView
-                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                    style={styles.keyboardAvoid}
-                    keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 20}
+                <ScrollView
+                    contentContainerStyle={styles.scrollContent}
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={false}
                 >
-                    <ScrollView
-                        contentContainerStyle={styles.scrollContent}
-                        keyboardShouldPersistTaps="handled"
-                        showsVerticalScrollIndicator={false}
-                    >
-                        <Header
-                            title="Welcome Back"
-                            subtitle="Sign in to manage your Smart Cleaner"
-                        />
+                    {/* Header */}
+                    <Header
+                        title="Welcome Back"
+                        subtitle="Sign in to control your Smart Cleaner Pro"
+                    />
 
-                        <View style={styles.form}>
-                            {/* Email */}
-                            <View style={styles.field}>
-                                <Animated.Text
-                                    style={[
-                                        styles.label,
-                                        {
-                                            top: emailAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 8] }),
-                                            fontSize: emailAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 12] }),
-                                            color: emailAnim.interpolate({
-                                                inputRange: [0, 1],
-                                                outputRange: [colors.textSecondary, colors.primary],
-                                            }),
-                                        },
-                                    ]}
-                                >
-                                    Email
-                                </Animated.Text>
+                    {/* Main Form */}
+                    <View style={styles.form}>
+                        <AppText variant="title" className="text-center mb-10">
+                            Sign In
+                        </AppText>
 
-                                <TextInput
-                                    style={[
-                                        styles.input,
-                                        { borderColor: emailError ? colors.error : colors.border, color: colors.text },
-                                    ]}
-                                    value={email}
-                                    onChangeText={(text) => {
-                                        setEmail(text);
-                                        animateLabel(emailAnim, text.length > 0 ? 1 : 0);
-                                    }}
-                                    keyboardType="email-address"
-                                    autoCapitalize="none"
-                                    autoCorrect={false}
-                                    placeholder=""
-                                    returnKeyType="next"
-                                    onSubmitEditing={() => passwordRef.current?.focus()}
-                                    onFocus={() => animateLabel(emailAnim, 1)}
-                                    onBlur={() => animateLabel(emailAnim, email ? 1 : 0)}
-                                    accessibilityLabel="Email input"
-                                />
+                        {/* Email */}
+                        <View style={styles.field}>
+                            <AppText className="text-sm font-medium text-textSecondary mb-2">
+                                Email Address
+                            </AppText>
 
-                                <Ionicons
-                                    name="mail-outline"
-                                    size={20}
-                                    color={colors.primary}
-                                    style={styles.inputIcon}
-                                />
-
-                                {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
-                            </View>
-
-                            {/* Password */}
-                            <View style={styles.field}>
-                                <Animated.Text
-                                    style={[
-                                        styles.label,
-                                        {
-                                            top: passAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 8] }),
-                                            fontSize: passAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 12] }),
-                                            color: passAnim.interpolate({
-                                                inputRange: [0, 1],
-                                                outputRange: [colors.textSecondary, colors.primary],
-                                            }),
-                                        },
-                                    ]}
-                                >
-                                    Password
-                                </Animated.Text>
-
-                                <TextInput
-                                    ref={passwordRef}
-                                    style={[
-                                        styles.input,
-                                        { borderColor: passwordError ? colors.error : colors.border, color: colors.text },
-                                    ]}
-                                    value={password}
-                                    onChangeText={(text) => {
-                                        setPassword(text);
-                                        animateLabel(passAnim, text.length > 0 ? 1 : 0);
-                                    }}
-                                    secureTextEntry={!showPassword}
-                                    autoCapitalize="none"
-                                    placeholder=""
-                                    returnKeyType="done"
-                                    onFocus={() => animateLabel(passAnim, 1)}
-                                    onBlur={() => animateLabel(passAnim, password ? 1 : 0)}
-                                    accessibilityLabel="Password input"
-                                />
-
-                                <Ionicons
-                                    name="lock-closed-outline"
-                                    size={20}
-                                    color={colors.primary}
-                                    style={styles.inputIcon}
-                                />
-
-                                <TouchableOpacity
-                                    style={styles.eyeIcon}
-                                    onPress={() => setShowPassword(!showPassword)}
-                                    hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                                >
+                            <Animated.View style={{ transform: [{ translateX: emailShake }] }}>
+                                <View style={styles.inputWrapper}>
                                     <Ionicons
-                                        name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                                        name="mail-outline"
                                         size={20}
-                                        color={colors.textSecondary}
+                                        color={emailError ? '#ef4444' : colors.textSecondary}
+                                        style={styles.inputIconLeft}
                                     />
-                                </TouchableOpacity>
 
-                                {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
-                            </View>
+                                    <TextInput
+                                        style={[
+                                            styles.input,
+                                            {
+                                                borderColor: emailError ? '#ef4444' : colors.border,
+                                                color: colors.text,
+                                            },
+                                        ]}
+                                        value={email}
+                                        onChangeText={(text) => {
+                                            setEmail(text);
+                                            if (emailError) setEmailError('');
+                                        }}
+                                        keyboardType="email-address"
+                                        autoCapitalize="none"
+                                        autoCorrect={false}
+                                        returnKeyType="next"
+                                        onSubmitEditing={() => passwordRef.current?.focus()}
+                                        accessibilityLabel="Email address"
+                                    />
 
-                            {/* Forgot Password */}
-                            <TouchableOpacity
-                                style={styles.forgotLink}
-                                onPress={() => router.push('/ForgotPasswordScreen')}
-                                activeOpacity={0.7}
-                            >
-                                <Text style={[styles.linkText, { color: colors.primary }]}>
-                                    Forgot password?
-                                </Text>
-                            </TouchableOpacity>
-
-                            {/* Buttons */}
-                            <View style={styles.buttons}>
-                                <Button
-                                    title="Sign In"
-                                    icon="log-in-outline"
-                                    onPress={handleLogin}
-                                    variant="primary"
-                                    fullWidth
-                                    size="large"
-                                    loading={loading}
-                                    disabled={loading}
-                                />
-
-                                <View style={styles.orRow}>
-                                    <View style={[styles.orLine, { backgroundColor: colors.border }]} />
-                                    <Text style={[styles.orText, { color: colors.textSecondary }]}>OR</Text>
-                                    <View style={[styles.orLine, { backgroundColor: colors.border }]} />
+                                    {emailError && (
+                                        <Ionicons
+                                            name="alert-circle"
+                                            size={20}
+                                            color="#ef4444"
+                                            style={styles.inputIconRight}
+                                        />
+                                    )}
                                 </View>
+                            </Animated.View>
 
-                                <Button
-                                    title="Create New Account"
-                                    icon="person-add-outline"
-                                    onPress={() => router.push('/SignupScreen')}
-                                    variant="outline"
-                                    fullWidth
-                                    size="large"
-                                />
-                            </View>
+                            {emailError && (
+                                <AppText className="text-error text-sm mt-2">{emailError}</AppText>
+                            )}
                         </View>
 
-                        <Text style={[styles.version, { color: colors.textSecondary }]}>
-                            Version 1.0.0 • Smart Cleaner Pro
-                        </Text>
-                    </ScrollView>
-                </KeyboardAvoidingView>
-            </LinearGradient>
+                        {/* Password */}
+                        <View style={styles.field}>
+                            <AppText className="text-sm font-medium text-textSecondary mb-2">
+                                Password
+                            </AppText>
+
+                            <Animated.View style={{ transform: [{ translateX: passwordShake }] }}>
+                                <View style={styles.inputWrapper}>
+                                    <Ionicons
+                                        name="lock-closed-outline"
+                                        size={20}
+                                        color={passwordError ? '#ef4444' : colors.textSecondary}
+                                        style={styles.inputIconLeft}
+                                    />
+
+                                    <TextInput
+                                        ref={passwordRef}
+                                        style={[
+                                            styles.input,
+                                            {
+                                                borderColor: passwordError ? '#ef4444' : colors.border,
+                                                color: colors.text,
+                                            },
+                                        ]}
+                                        value={password}
+                                        onChangeText={(text) => {
+                                            setPassword(text);
+                                            if (passwordError) setPasswordError('');
+                                        }}
+                                        secureTextEntry={!showPassword}
+                                        autoCapitalize="none"
+                                        returnKeyType="done"
+                                        onSubmitEditing={validateAndLogin}
+                                        accessibilityLabel="Password"
+                                    />
+
+                                    <TouchableOpacity
+                                        style={styles.eyeIcon}
+                                        onPress={() => setShowPassword(!showPassword)}
+                                        accessibilityLabel="Toggle password visibility"
+                                    >
+                                        <Ionicons
+                                            name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                                            size={20}
+                                            color={colors.textSecondary}
+                                        />
+                                    </TouchableOpacity>
+                                </View>
+                            </Animated.View>
+
+                            {passwordError && (
+                                <AppText className="text-error text-sm mt-2">{passwordError}</AppText>
+                            )}
+                        </View>
+
+                        {/* Forgot Password */}
+                        <TouchableOpacity
+                            style={styles.forgotLink}
+                            onPress={() => router.push('/ForgotPasswordScreen')}
+                        >
+                            <AppText className="text-primary font-medium text-right">
+                                Forgot password?
+                            </AppText>
+                        </TouchableOpacity>
+
+                        {/* Sign In Button */}
+                        <Button
+                            title="Sign In"
+                            icon="log-in-outline"
+                            onPress={validateAndLogin}
+                            variant="primary"
+                            fullWidth
+                            loading={loading}
+                            disabled={loading}
+                            style={{ marginTop: 32 }}
+                        />
+
+                        {/* OR Divider */}
+                        <View style={styles.orContainer}>
+                            <View style={[styles.orLine, { backgroundColor: colors.border }]} />
+                            <AppText className="text-textSecondary px-4 text-sm">OR</AppText>
+                            <View style={[styles.orLine, { backgroundColor: colors.border }]} />
+                        </View>
+
+                        {/* Create New Account – now looks almost identical to Sign In (just outline) */}
+                        <Button
+                            title="Create New Account"
+                            icon="person-add-outline"
+                            onPress={() => router.push('/SignupScreen')}
+                            variant="outline"
+                            fullWidth
+                            style={{ marginTop: 10 }} // reduced margin as requested
+                        />
+                    </View>
+
+                    {/* Footer */}
+                    <AppText className="text-textSecondary text-center mt-12 text-xs opacity-70">
+                        Version 1.0.0 • Smart Cleaner Pro © 2026
+                    </AppText>
+                </ScrollView>
+            </KeyboardAvoidingView>
         </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
-    safeArea: {
-        flex: 1,
-    },
-    gradient: {
-        flex: 1,
-    },
-    keyboardAvoid: {
-        flex: 1,
-    },
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
         paddingTop: 40,
-        paddingBottom: 40,
+        paddingBottom: 60,
         justifyContent: 'center',
     },
     form: {
         width: '100%',
-        maxWidth: 420,
+        maxWidth: 400,
         alignSelf: 'center',
-        marginVertical: 32,
+        marginTop: 40,
     },
     field: {
-        marginBottom: 24,
+        marginBottom: 10, // reduced as requested
+    },
+    inputWrapper: {
         position: 'relative',
     },
     input: {
         height: 56,
         borderWidth: 1.5,
         borderRadius: 16,
-        paddingHorizontal: 48,
+        paddingLeft: 48,
+        paddingRight: 48,
         fontSize: 16,
-        backgroundColor: 'transparent',
     },
-    inputIcon: {
+    inputIconLeft: {
         position: 'absolute',
         left: 16,
+        top: 18,
+        zIndex: 1,
+    },
+    inputIconRight: {
+        position: 'absolute',
+        right: 16,
         top: 18,
         zIndex: 1,
     },
@@ -358,51 +361,18 @@ const styles = StyleSheet.create({
         zIndex: 1,
         padding: 8,
     },
-    label: {
-        position: 'absolute',
-        left: 48,
-        zIndex: 1,
-        backgroundColor: 'transparent',
-        paddingHorizontal: 4,
-        pointerEvents: 'none',
-    },
-    errorText: {
-        color: '#ef4444',
-        fontSize: 12,
-        marginTop: 6,
-        marginLeft: 4,
-    },
     forgotLink: {
         alignSelf: 'flex-end',
-        marginBottom: 32,
+        marginBottom: 10,
         paddingVertical: 8,
     },
-    linkText: {
-        fontSize: 15,
-        fontWeight: '600',
-    },
-    buttons: {
-        gap: 16,
-    },
-    orRow: {
+    orContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginVertical: 8,
+        marginVertical: 10, // reduced as requested
     },
     orLine: {
         flex: 1,
         height: 1,
-        opacity: 0.3,
-    },
-    orText: {
-        marginHorizontal: 16,
-        fontSize: 13,
-        fontWeight: '500',
-    },
-    version: {
-        textAlign: 'center',
-        fontSize: 12,
-        marginTop: 32,
-        opacity: 0.7,
     },
 });
