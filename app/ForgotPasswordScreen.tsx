@@ -1,5 +1,5 @@
 // app/ForgotPasswordScreen.tsx
-import React, { useState, useRef } from 'react';
+import React, {useState, useRef, JSX} from 'react';
 import {
     View,
     TextInput,
@@ -10,6 +10,7 @@ import {
     KeyboardAvoidingView,
     Platform,
     Animated,
+    Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,20 +23,20 @@ import AppText from '../src/components/AppText';
 import { useThemeContext } from '@/src/context/ThemeContext';
 import { supabase } from '@/src/services/supabase';
 
+const { width } = Dimensions.get('window');
+const isLargeScreen = width >= 768;
+
 export default function ForgotPasswordScreen() {
-    const { colors } = useThemeContext();
+    const { colors, darkMode } = useThemeContext();
 
     const [email, setEmail] = useState('');
     const [loading, setLoading] = useState(false);
     const [sent, setSent] = useState(false);
     const [emailError, setEmailError] = useState('');
 
-    // Shake animation ref for error feedback
     const emailShake = useRef(new Animated.Value(0)).current;
-
     const emailRef = useRef<TextInput>(null);
 
-    // Subtle shake on error
     const shakeField = () => {
         Animated.sequence([
             Animated.timing(emailShake, { toValue: 8, duration: 60, useNativeDriver: true }),
@@ -56,20 +57,16 @@ export default function ForgotPasswordScreen() {
         }
 
         if (!/\S+@\S+\.\S+/.test(email.trim())) {
-            setEmailError('Please enter a valid email');
+            setEmailError('Enter a valid email address');
             shakeField();
             return;
         }
 
         setLoading(true);
-        try {
-            // === C++ BRIDGE / REAL IMPLEMENTATION POINT (Optional) ===
-            // For extra security or custom email logic, handle email validation/sending natively
-            // Android (JNI): await RobotBridge.sendResetEmail(email.trim())
-            // iOS (Obj-C++): await [RobotBridge sendResetEmailWithEmail:email.trim()]
 
+        try {
             const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-                redirectTo: 'yourapp://reset-password', // optional deep link for your app
+                redirectTo: 'yourapp://reset-password', // change to your deep link if needed
             });
 
             if (error) throw error;
@@ -81,9 +78,9 @@ export default function ForgotPasswordScreen() {
             );
         } catch (err: any) {
             let message = 'Failed to send reset link. Please try again.';
-            if (err.message.includes('rate limit')) {
+            if (err.message?.includes('rate limit')) {
                 message = 'Too many requests — please wait a few minutes';
-            } else if (err.message.includes('not found')) {
+            } else if (err.message?.includes('not found')) {
                 message = 'No account found with this email';
                 setEmailError('Email not found');
                 shakeField();
@@ -99,197 +96,313 @@ export default function ForgotPasswordScreen() {
     }
 
     return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={{ flex: 1 }}
                 keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
             >
                 <ScrollView
-                    contentContainerStyle={styles.scrollContent}
+                    contentContainerStyle={[
+                        styles.scrollContent,
+                        isLargeScreen && { alignItems: 'center' },
+                    ]}
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={false}
                 >
-                    {/* Header */}
-                    <Header
-                        title="Reset Password"
-                        subtitle="We'll send you a link to reset your password"
-                    />
+                    <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
+                        <Header
+                            title="Reset Password"
+                            subtitle="We'll send you a link to reset your password"
+                        />
 
-                    {sent ? (
-                        // Success State – wrapped properly in parentheses
-                        <View style={styles.successContainer}>
-                            <Ionicons name="checkmark-circle" size={64} color={colors.primary} />
-                            <AppText variant="title" className="text-center mt-6 mb-4">
-                                Check Your Email
-                            </AppText>
-                            <AppText className="text-textSecondary text-center text-base leading-6">
-                                We sent a password reset link to{'\n'}
-                                <AppText className="text-primary font-medium">{email}</AppText>
-                            </AppText>
-                            <AppText className="text-textSecondary text-center text-sm mt-4 opacity-80">
-                                Check your inbox and spam folder.
-                            </AppText>
+                        <View
+                            style={[
+                                styles.card,
+                                {
+                                    backgroundColor: darkMode ? colors.card : '#ffffff',
+                                    borderColor: darkMode ? 'rgba(255,255,255,0.12)' : colors.border,
+                                },
+                            ]}
+                        >
+                            {sent ? (
+                                <View style={styles.successContainer}>
+                                    <Ionicons name="checkmark-circle" size={64} color={colors.primary} />
+                                    <AppText
+                                        variant="title"
+                                        style={{ color: darkMode ? '#ffffff' : colors.text, textAlign: 'center' }}
+                                        className="mt-6 mb-4"
+                                    >
+                                        Check Your Email
+                                    </AppText>
+                                    <AppText
+                                        style={{
+                                            color: darkMode ? 'rgba(255,255,255,0.8)' : colors.textSecondary,
+                                            textAlign: 'center',
+                                            fontSize: 16,
+                                            lineHeight: 24,
+                                        }}
+                                    >
+                                        We sent a password reset link to{'\n'}
+                                        <AppText style={{ color: colors.primary, fontWeight: '600' }}>{email}</AppText>
+                                    </AppText>
+                                    <AppText
+                                        style={{
+                                            color: darkMode ? 'rgba(255,255,255,0.6)' : colors.textSecondary,
+                                            textAlign: 'center',
+                                            fontSize: 14,
+                                            marginTop: 12,
+                                        }}
+                                    >
+                                        Check your inbox and spam folder.
+                                    </AppText>
 
-                            <Button
-                                title="Back to Login"
-                                icon="arrow-back-outline"
-                                onPress={() => router.push('/LoginScreen')}
-                                variant="outline"
-                                fullWidth
-                                style={{ marginTop: 32 }}
-                            />
-                        </View>
-                    ) : (
-                        <View style={styles.form}>
-                            <AppText variant="title" className="text-center mb-10">
-                                Reset Password
-                            </AppText>
+                                    <Button
+                                        title="Back to Login"
+                                        icon="arrow-back-outline"
+                                        onPress={() => router.replace('/LoginScreen')}
+                                        variant="outline"
+                                        fullWidth
+                                        style={{ marginTop: 32 }}
+                                    />
+                                </View>
+                            ) : (
+                                <View style={styles.form}>
+                                    <Field
+                                        label="Email Address"
+                                        value={email}
+                                        onChangeText={(t: string) => {
+                                            setEmail(t);
+                                            if (emailError) setEmailError('');
+                                        }}
+                                        error={emailError}
+                                        icon="mail-outline"
+                                        colors={colors}
+                                        darkMode={darkMode}
+                                        shake={emailShake}
+                                        keyboardType="email-address"
+                                        autoCapitalize="none"
+                                        autoCorrect={false}
+                                        returnKeyType="done"
+                                        onSubmitEditing={validateAndReset}
+                                        refInput={emailRef}
+                                    />
 
-                            {/* Email Field */}
-                            <View style={styles.field}>
-                                <AppText className="text-sm font-medium text-textSecondary mb-2">
-                                    Email Address
-                                </AppText>
+                                    <AppText
+                                        style={{
+                                            color: darkMode ? 'rgba(255,255,255,0.7)' : colors.textSecondary,
+                                            fontSize: 14,
+                                            textAlign: 'center',
+                                            marginVertical: 24,
+                                            lineHeight: 20,
+                                        }}
+                                    >
+                                        Enter the email associated with your account and we'll send you a reset link.
+                                    </AppText>
 
-                                <Animated.View style={{ transform: [{ translateX: emailShake }] }}>
-                                    <View style={styles.inputWrapper}>
-                                        <Ionicons
-                                            name="mail-outline"
-                                            size={20}
-                                            color={emailError ? '#ef4444' : colors.textSecondary}
-                                            style={styles.inputIconLeft}
-                                        />
+                                    <Button
+                                        title="Send Reset Link"
+                                        icon="mail-outline"
+                                        onPress={validateAndReset}
+                                        variant="primary"
+                                        fullWidth
+                                        loading={loading}
+                                        disabled={loading}
+                                    />
 
-                                        <TextInput
-                                            ref={emailRef}
-                                            style={[
-                                                styles.input,
-                                                {
-                                                    borderColor: emailError ? '#ef4444' : colors.border,
-                                                    color: colors.text,
-                                                },
-                                            ]}
-                                            value={email}
-                                            onChangeText={(text) => {
-                                                setEmail(text);
-                                                if (emailError) setEmailError('');
+                                    <TouchableOpacity
+                                        style={styles.backLink}
+                                        onPress={() => router.back()}
+                                    >
+                                        <Ionicons name="arrow-back-outline" size={18} color={colors.primary} />
+                                        <AppText
+                                            style={{
+                                                color: colors.primary,
+                                                fontWeight: '500',
+                                                marginLeft: 8,
                                             }}
-                                            keyboardType="email-address"
-                                            autoCapitalize="none"
-                                            autoCorrect={false}
-                                            returnKeyType="done"
-                                            onSubmitEditing={validateAndReset}
-                                            accessibilityLabel="Email address"
-                                        />
-
-                                        {emailError && (
-                                            <Ionicons
-                                                name="alert-circle"
-                                                size={20}
-                                                color="#ef4444"
-                                                style={styles.inputIconRight}
-                                            />
-                                        )}
-                                    </View>
-                                </Animated.View>
-
-                                {emailError && (
-                                    <AppText className="text-error text-sm mt-2">{emailError}</AppText>
-                                )}
-                            </View>
-
-                            {/* Info Text */}
-                            <AppText className="text-textSecondary text-sm text-center mb-8 leading-6">
-                                Enter the email associated with your account and we'll send you a reset link.
-                            </AppText>
-
-                            {/* Send Reset Link Button */}
-                            <Button
-                                title="Send Reset Link"
-                                icon="mail-outline"
-                                onPress={validateAndReset}
-                                variant="primary"
-                                fullWidth
-                                loading={loading}
-                                disabled={loading}
-                            />
-
-                            {/* Back to Login */}
-                            <TouchableOpacity
-                                style={styles.backLink}
-                                onPress={() => router.back()}
-                            >
-                                <Ionicons name="arrow-back-outline" size={18} color={colors.primary} />
-                                <AppText className="text-primary font-medium ml-2">
-                                    Back to Login
-                                </AppText>
-                            </TouchableOpacity>
+                                        >
+                                            Back to Login
+                                        </AppText>
+                                    </TouchableOpacity>
+                                </View>
+                            )}
                         </View>
-                    )}
 
-                    {/* Footer */}
-                    <AppText className="text-textSecondary text-center mt-12 text-xs opacity-70">
-                        Version 1.0.0 • Smart Cleaner Pro © 2026
-                    </AppText>
+                        <AppText
+                            style={{
+                                textAlign: 'center',
+                                marginTop: 32,
+                                fontSize: 12,
+                                color: darkMode ? '#ffffff80' : colors.textSecondary,
+                                opacity: 0.7,
+                            }}
+                        >
+                            Version 1.0.0 • Smart Cleaner Pro © 2026
+                        </AppText>
+                    </View>
                 </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>
     );
 }
 
+// ─── Reusable Field Component (same as Login/Signup) ──────────────────────────
+type FieldProps = {
+    label: string;
+    value: string;
+    onChangeText: (text: string) => void;
+    error?: string;
+    icon: keyof typeof Ionicons.glyphMap;
+    colors: any;
+    darkMode: boolean;
+    shake: Animated.Value;
+    secureTextEntry?: boolean;
+    rightIcon?: JSX.Element;
+    refInput?: React.RefObject<TextInput>;
+    [key: string]: any;
+};
+
+function Field({
+                   label,
+                   value,
+                   onChangeText,
+                   error,
+                   icon,
+                   colors,
+                   darkMode,
+                   shake,
+                   secureTextEntry = false,
+                   rightIcon,
+                   refInput,
+                   ...rest
+               }: FieldProps) {
+    return (
+        <View style={styles.field}>
+            <AppText style={[styles.label, { color: darkMode ? 'rgba(255,255,255,0.7)' : colors.textSecondary }]}>
+                {label}
+            </AppText>
+
+            <Animated.View style={{ transform: [{ translateX: shake }] }}>
+                <View style={styles.inputWrapper}>
+                    <Ionicons
+                        name={icon}
+                        size={20}
+                        color={error ? '#ef4444' : darkMode ? 'rgba(255,255,255,0.6)' : colors.textSecondary}
+                        style={styles.inputIconLeft}
+                    />
+
+                    <TextInput
+                        ref={refInput}
+                        value={value}
+                        onChangeText={onChangeText}
+                        secureTextEntry={secureTextEntry}
+                        style={[
+                            styles.input,
+                            {
+                                borderColor: error ? '#ef4444' : darkMode ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
+                                color: darkMode ? '#ffffff' : colors.text,
+                            },
+                        ]}
+                        placeholderTextColor={darkMode ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'}
+                        {...rest}
+                    />
+
+                    {rightIcon && <View style={styles.rightIcon}>{rightIcon}</View>}
+                </View>
+            </Animated.View>
+
+            {error && <AppText style={styles.errorText}>{error}</AppText>}
+        </View>
+    );
+}
+
+// ─── Styles ─────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
+    container: { flex: 1 },
+
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
         paddingTop: 40,
-        paddingBottom: 60,
+        paddingBottom: 80,
         justifyContent: 'center',
     },
+
+    wrapper: { width: '100%' },
+
+    largeWrapper: { maxWidth: 480 },
+
+    card: {
+        borderRadius: 24,
+        padding: 28,
+        borderWidth: 1,
+    },
+
     form: {
         width: '100%',
-        maxWidth: 400,
-        alignSelf: 'center',
-        marginTop: 40,
     },
+
     field: {
-        marginBottom: 10,
+        marginBottom: 26,
     },
-    inputWrapper: {
-        position: 'relative',
+
+    label: {
+        marginBottom: 6,
+        fontSize: 14,
     },
+
+    inputWrapper: { position: 'relative' },
+
     input: {
         height: 56,
-        borderWidth: 1.5,
-        borderRadius: 16,
-        paddingLeft: 48,
+        borderWidth: 1.2,
+        borderRadius: 14,
+        paddingLeft: 46,
         paddingRight: 48,
         fontSize: 16,
     },
+
     inputIconLeft: {
         position: 'absolute',
-        left: 16,
+        left: 14,
         top: 18,
         zIndex: 1,
     },
-    inputIconRight: {
+
+    rightIcon: {
         position: 'absolute',
-        right: 16,
+        right: 14,
         top: 18,
         zIndex: 1,
     },
+
+    errorText: {
+        color: '#ef4444',
+        marginTop: 6,
+        fontSize: 13,
+    },
+
+    successContainer: {
+        alignItems: 'center',
+    },
+
     backLink: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        marginTop: 32,
+        marginTop: 24,
         paddingVertical: 12,
     },
-    successContainer: {
-        width: '100%',
-        maxWidth: 400,
-        alignSelf: 'center',
+
+    divider: {
+        flexDirection: 'row',
         alignItems: 'center',
-        marginTop: 40,
+        marginVertical: 28,
+    },
+
+    line: {
+        flex: 1,
+        height: 1,
     },
 });

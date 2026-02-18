@@ -1,3 +1,4 @@
+// app/LoginScreen.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
@@ -38,9 +39,10 @@ export default function LoginScreen() {
 
     const emailShake = useRef(new Animated.Value(0)).current;
     const passwordShake = useRef(new Animated.Value(0)).current;
+
     const passwordRef = useRef<TextInput>(null);
 
-    /* ================= SESSION CHECK ================= */
+    // Auto-redirect if logged in
     useEffect(() => {
         let mounted = true;
 
@@ -53,12 +55,11 @@ export default function LoginScreen() {
 
         checkSession();
 
-        const { data: listener } =
-            supabase.auth.onAuthStateChange((_event, session) => {
-                if (mounted && session) {
-                    router.replace('/(tabs)/01_DashboardScreen');
-                }
-            });
+        const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+            if (mounted && session) {
+                router.replace('/(tabs)/01_DashboardScreen');
+            }
+        });
 
         return () => {
             mounted = false;
@@ -66,7 +67,7 @@ export default function LoginScreen() {
         };
     }, []);
 
-    /* ================= SHAKE ================= */
+    // Subtle shake on error
     const shake = (anim: Animated.Value) => {
         Animated.sequence([
             Animated.timing(anim, { toValue: 8, duration: 60, useNativeDriver: true }),
@@ -77,7 +78,6 @@ export default function LoginScreen() {
         ]).start();
     };
 
-    /* ================= LOGIN ================= */
     const handleLogin = async () => {
         if (loading) return;
 
@@ -131,9 +131,7 @@ export default function LoginScreen() {
     if (loading) return <Loader message="Signing you in..." />;
 
     return (
-        <SafeAreaView
-            style={[styles.container, { backgroundColor: colors.background }]}
-        >
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={{ flex: 1 }}
@@ -152,118 +150,145 @@ export default function LoginScreen() {
                             subtitle="Sign in to control your Smart Cleaner Pro"
                         />
 
-                        {/* Email */}
-                        <Field
-                            label="Email Address"
-                            value={email}
-                            onChangeText={(t: string) => {
-                                setEmail(t);
-                                if (emailError) setEmailError('');
-                            }}
-                            error={emailError}
-                            icon="mail-outline"
-                            colors={colors}
-                            darkMode={darkMode}
-                            shake={emailShake}
-                            keyboardType="email-address"
-                            returnKeyType="next"
-                            onSubmitEditing={() => passwordRef.current?.focus()}
-                        />
-
-                        {/* Password */}
-                        <Field
-                            refInput={passwordRef}
-                            label="Password"
-                            value={password}
-                            onChangeText={(t: string) => {
-                                setPassword(t);
-                                if (passwordError) setPasswordError('');
-                            }}
-                            error={passwordError}
-                            icon="lock-closed-outline"
-                            colors={colors}
-                            darkMode={darkMode}
-                            shake={passwordShake}
-                            secureTextEntry={!showPassword}
-                            rightIcon={
-                                <TouchableOpacity
-                                    onPress={() => setShowPassword(!showPassword)}
-                                >
-                                    <Ionicons
-                                        name={
-                                            showPassword
-                                                ? 'eye-off-outline'
-                                                : 'eye-outline'
-                                        }
-                                        size={20}
-                                        color={
-                                            darkMode
-                                                ? 'rgba(255,255,255,0.7)'
-                                                : colors.textSecondary
-                                        }
-                                    />
-                                </TouchableOpacity>
-                            }
-                            returnKeyType="done"
-                            onSubmitEditing={handleLogin}
-                        />
-
-                        <TouchableOpacity
-                            style={styles.forgot}
-                            onPress={() => router.push('/ForgotPasswordScreen')}
+                        {/* Flat card – no shadow, no glow */}
+                        <View
+                            style={[
+                                styles.card,
+                                {
+                                    backgroundColor: darkMode ? colors.card : '#ffffff',
+                                    borderColor: darkMode ? 'rgba(255,255,255,0.12)' : colors.border,
+                                },
+                            ]}
                         >
-                            <AppText style={{ color: colors.primary }}>
-                                Forgot password?
-                            </AppText>
-                        </TouchableOpacity>
-
-                        <Button
-                            title="Sign In"
-                            icon="log-in-outline"
-                            onPress={handleLogin}
-                            fullWidth
-                            variant="primary"
-                            style={{ marginTop: 16 }}
-                        />
-
-                        <View style={styles.divider}>
-                            <View
-                                style={[
-                                    styles.line,
-                                    {
-                                        backgroundColor: darkMode
-                                            ? 'rgba(255,255,255,0.1)'
-                                            : 'rgba(0,0,0,0.1)',
-                                    },
-                                ]}
-                            />
-                            <AppText
-                                style={{
-                                    marginHorizontal: 12,
-                                    color: colors.textSecondary,
+                            {/* Email */}
+                            <Field
+                                label="Email Address"
+                                value={email}
+                                onChangeText={(t: string) => {
+                                    setEmail(t);
+                                    if (emailError) setEmailError('');
                                 }}
+                                error={emailError}
+                                icon="mail-outline"
+                                colors={colors}
+                                darkMode={darkMode}
+                                shake={emailShake}
+                                keyboardType="email-address"
+                                returnKeyType="next"
+                                onSubmitEditing={() => passwordRef.current?.focus()}
+                            />
+
+                            {/* Password */}
+                            <Field
+                                refInput={passwordRef}
+                                label="Password"
+                                value={password}
+                                onChangeText={(t: string) => {
+                                    setPassword(t);
+                                    if (passwordError) setPasswordError('');
+                                }}
+                                error={passwordError}
+                                icon="lock-closed-outline"
+                                colors={colors}
+                                darkMode={darkMode}
+                                shake={passwordShake}
+                                secureTextEntry={!showPassword}
+                                rightIcon={
+                                    <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                                        <Ionicons
+                                            name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                                            size={20}
+                                            color={darkMode ? '#ffffff' : colors.textSecondary}
+                                        />
+                                    </TouchableOpacity>
+                                }
+                                returnKeyType="done"
+                                onSubmitEditing={handleLogin}
+                            />
+
+                            <TouchableOpacity
+                                style={styles.forgot}
+                                onPress={() => router.push('/ForgotPasswordScreen')}
                             >
-                                OR
-                            </AppText>
-                            <View
+                                <AppText
+                                    style={{
+                                        color: colors.primary,
+                                        textDecorationLine: 'underline', // ← Underlined
+                                        fontWeight: '500',
+                                    }}
+                                >
+                                    Forgot password?
+                                </AppText>
+                            </TouchableOpacity>
+
+                            <Button
+                                title="Sign In"
+                                icon="log-in-outline"
+                                onPress={handleLogin}
+                                fullWidth
+                                variant="primary"
+                                style={{ marginTop: 16 }}
+                            />
+
+                            <View style={styles.divider}>
+                                <View
+                                    style={[
+                                        styles.line,
+                                        {
+                                            backgroundColor: darkMode
+                                                ? 'rgba(255,255,255,0.1)'
+                                                : 'rgba(0,0,0,0.1)',
+                                        },
+                                    ]}
+                                />
+                                <AppText
+                                    style={{
+                                        marginHorizontal: 12,
+                                        color: darkMode ? '#ffffff' : colors.textSecondary,
+                                    }}
+                                >
+                                    OR
+                                </AppText>
+                                <View
+                                    style={[
+                                        styles.line,
+                                        {
+                                            backgroundColor: darkMode
+                                                ? 'rgba(255,255,255,0.1)'
+                                                : 'rgba(0,0,0,0.1)',
+                                        },
+                                    ]}
+                                />
+                            </View>
+
+                            {/* Create New Account – improved style, no border, filled accent */}
+                            <TouchableOpacity
                                 style={[
-                                    styles.line,
+                                    styles.createAccountButton,
                                     {
                                         backgroundColor: darkMode
-                                            ? 'rgba(255,255,255,0.1)'
-                                            : 'rgba(0,0,0,0.1)',
+                                            ? 'rgba(59, 130, 246, 0.15)' // blue-500 with transparency
+                                            : 'rgba(37, 99, 235, 0.12)', // blue-600 with transparency
                                     },
                                 ]}
-                            />
+                                onPress={() => router.push('/SignupScreen')}
+                            >
+                                <Ionicons
+                                    name="person-add-outline"
+                                    size={20}
+                                    color={darkMode ? '#ffffff' : colors.primary}
+                                    style={{ marginRight: 12 }}
+                                />
+                                <AppText
+                                    style={{
+                                        color: darkMode ? '#ffffff' : colors.primary,
+                                        fontWeight: '500',
+                                    }}
+                                >
+                                    Create New Account
+                                </AppText>
+                            </TouchableOpacity>
                         </View>
-
-                        <Button
-                            title="Create New Account"
-                            icon="person-add-outline"
-                            onPress={() => router.push('/SignupScreen')}
-                            fullWidth
-                            variant="outline"
-                        />
                     </View>
                 </ScrollView>
             </KeyboardAvoidingView>
@@ -292,9 +317,7 @@ function Field({
             <AppText
                 style={{
                     marginBottom: 6,
-                    color: darkMode
-                        ? 'rgba(255,255,255,0.7)'
-                        : colors.textSecondary,
+                    color: darkMode ? 'rgba(255,255,255,0.7)' : colors.textSecondary,
                 }}
             >
                 {label}
@@ -339,15 +362,13 @@ function Field({
                         {...rest}
                     />
 
-                    {rightIcon && (
-                        <View style={styles.rightIcon}>{rightIcon}</View>
-                    )}
+                    {rightIcon && <View style={styles.rightIcon}>{rightIcon}</View>}
                 </View>
             </Animated.View>
 
-            {error ? (
+            {error && (
                 <AppText style={styles.errorText}>{error}</AppText>
-            ) : null}
+            )}
         </View>
     );
 }
@@ -372,6 +393,13 @@ const styles = StyleSheet.create({
         maxWidth: 480,
     },
 
+    card: {
+        borderRadius: 24,
+        padding: 28,
+        borderWidth: 1,
+        // NO shadow, no glow, no elevation – flat and clean
+    },
+
     field: {
         marginBottom: 26,
     },
@@ -382,7 +410,7 @@ const styles = StyleSheet.create({
 
     input: {
         height: 56,
-        borderWidth: 1,
+        borderWidth: 1.2,
         borderRadius: 14,
         paddingLeft: 46,
         paddingRight: 46,
@@ -423,5 +451,15 @@ const styles = StyleSheet.create({
         color: '#ef4444',
         marginTop: 6,
         fontSize: 13,
+    },
+
+    // Improved Create New Account button – no border, filled accent
+    createAccountButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: 56,
+        borderRadius: 14,
+        marginTop: 16,
     },
 });
