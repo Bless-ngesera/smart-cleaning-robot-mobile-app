@@ -7,9 +7,11 @@ import React, {
     ReactNode,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useColorScheme } from 'react-native'; // ← Built-in hook for system theme
+import { StatusBarStyle } from 'expo-status-bar';
 
 // ────────────────────────────────────────────────
-// Theme color palette – always string, no undefined allowed
+// Theme color palette – strict, no undefined allowed
 export interface ThemeColors {
     primary: string;
     error: string;
@@ -19,18 +21,18 @@ export interface ThemeColors {
     border: string;
     text: string;
     subtitle: string;
-    muted: string;              // for disabled states, subtle backgrounds
-    gradientStart: string;      // for full-screen gradients (Login, Signup, etc.)
+    muted: string; // disabled states, subtle backgrounds
+    gradientStart: string;
     gradientMiddle: string;
     gradientEnd: string;
-    statusBarStyle: 'light' | 'dark'; // for expo-status-bar
+    statusBarStyle: StatusBarStyle; // 'light' | 'dark'
 }
 
 // ────────────────────────────────────────────────
 // Full context shape
 export interface ThemeContextType {
     darkMode: boolean;
-    toggleTheme: () => void;
+    toggleTheme: () => Promise<void>;
     colors: ThemeColors;
 }
 
@@ -45,7 +47,7 @@ const lightTheme: ThemeColors = {
     border: '#e5e7eb',
     text: '#111827',
     subtitle: '#6b7280',
-    muted: '#f3f4f6',           // light gray for disabled / subtle bg
+    muted: '#f3f4f6',
     gradientStart: '#f8fafc',
     gradientMiddle: '#e2e8f0',
     gradientEnd: '#f8fafc',
@@ -55,15 +57,15 @@ const lightTheme: ThemeColors = {
 // ────────────────────────────────────────────────
 // Dark theme – deep, elegant, readable
 const darkTheme: ThemeColors = {
-    primary: '#3b82f6',         // blue-500 (slightly brighter for visibility)
+    primary: '#3b82f6',         // blue-500 (brighter for visibility)
     error: '#f87171',           // red-400
     textSecondary: '#9ca3af',   // gray-400
-    background: '#0f172a',      // slate-950 (deep dark)
+    background: '#0f172a',      // slate-950
     card: '#1f2937',            // slate-800
     border: '#374151',          // slate-700
     text: '#f3f4f6',            // gray-100
-    subtitle: '#9ca3af',        // gray-400
-    muted: '#374151',           // slate-700 for disabled / subtle bg
+    subtitle: '#9ca3af',
+    muted: '#374151',
     gradientStart: '#0f172a',
     gradientMiddle: '#1e293b',
     gradientEnd: '#0f172a',
@@ -71,15 +73,16 @@ const darkTheme: ThemeColors = {
 };
 
 // ────────────────────────────────────────────────
-// Context – private, do NOT export or import directly
+// Context – private
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 // ────────────────────────────────────────────────
-// Provider – wrap your entire app with this (in app/_layout.tsx)
+// Provider – wrap your entire app in app/_layout.tsx
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
-    const [darkMode, setDarkMode] = useState<boolean>(false);
+    const systemColorScheme = useColorScheme(); // 'light' | 'dark' | null
+    const [darkMode, setDarkMode] = useState<boolean>(systemColorScheme === 'dark');
 
-    // Load saved preference on mount (runs once)
+    // Load saved preference on mount (overrides system if saved)
     useEffect(() => {
         (async () => {
             try {
@@ -93,7 +96,7 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
         })();
     }, []);
 
-    // Toggle theme & persist to storage
+    // Toggle theme & persist
     const toggleTheme = async () => {
         const newValue = !darkMode;
         setDarkMode(newValue);
@@ -122,7 +125,7 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
 };
 
 // ────────────────────────────────────────────────
-// Custom hook – THIS is what you MUST use in all components/screens
+// Custom hook – use this in all components/screens
 export const useThemeContext = (): ThemeContextType => {
     const context = useContext(ThemeContext);
 
