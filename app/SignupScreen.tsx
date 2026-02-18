@@ -10,6 +10,7 @@ import {
     KeyboardAvoidingView,
     Platform,
     Animated,
+    Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,10 +23,13 @@ import AppText from '../src/components/AppText';
 import { useThemeContext } from '@/src/context/ThemeContext';
 import { supabase } from '@/src/services/supabase';
 
-export default function SignupScreen() {
-    const { colors } = useThemeContext();
+const { width } = Dimensions.get('window');
+const isLargeScreen = width >= 768;
 
-    const [name, setName] = useState('');
+export default function SignupScreen() {
+    const { colors, darkMode } = useThemeContext();
+
+    const [fullName, setFullName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -38,37 +42,40 @@ export default function SignupScreen() {
     const [passwordError, setPasswordError] = useState('');
     const [confirmError, setConfirmError] = useState('');
 
-    // Shake animation refs for error feedback
     const nameShake = useRef(new Animated.Value(0)).current;
     const emailShake = useRef(new Animated.Value(0)).current;
     const passwordShake = useRef(new Animated.Value(0)).current;
     const confirmShake = useRef(new Animated.Value(0)).current;
 
-    // Refs for focus chaining
     const emailRef = useRef<TextInput>(null);
     const passRef = useRef<TextInput>(null);
     const confirmRef = useRef<TextInput>(null);
 
     // Auto-redirect if already logged in
     useEffect(() => {
+        let mounted = true;
+
         const checkSession = async () => {
             const { data: { session } } = await supabase.auth.getSession();
-            if (session) {
+            if (mounted && session) {
                 router.replace('/(tabs)/01_DashboardScreen');
             }
         };
+
         checkSession();
 
         const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-            if (session) {
+            if (mounted && session) {
                 router.replace('/(tabs)/01_DashboardScreen');
             }
         });
 
-        return () => listener.subscription.unsubscribe();
+        return () => {
+            mounted = false;
+            listener.subscription.unsubscribe();
+        };
     }, []);
 
-    // Subtle shake on error
     const shakeField = (anim: Animated.Value) => {
         Animated.sequence([
             Animated.timing(anim, { toValue: 8, duration: 60, useNativeDriver: true }),
@@ -87,11 +94,11 @@ export default function SignupScreen() {
 
         let isValid = true;
 
-        if (!name.trim()) {
+        if (!fullName.trim()) {
             setNameError('Full name is required');
             shakeField(nameShake);
             isValid = false;
-        } else if (name.trim().length < 2) {
+        } else if (fullName.trim().length < 2) {
             setNameError('Name must be at least 2 characters');
             shakeField(nameShake);
             isValid = false;
@@ -102,7 +109,7 @@ export default function SignupScreen() {
             shakeField(emailShake);
             isValid = false;
         } else if (!/\S+@\S+\.\S+/.test(email.trim())) {
-            setEmailError('Please enter a valid email');
+            setEmailError('Enter a valid email address');
             shakeField(emailShake);
             isValid = false;
         }
@@ -130,18 +137,14 @@ export default function SignupScreen() {
         if (!isValid) return;
 
         setLoading(true);
-        try {
-            // === C++ BRIDGE / REAL IMPLEMENTATION POINT (Optional) ===
-            // For maximum security, encrypt or hash password natively before sending
-            // Android (JNI): const safeCreds = await RobotBridge.prepareLoginCredentials(email.trim(), password);
-            // iOS (Obj-C++): const safeCreds = await [RobotBridge prepareLoginCredentialsWithEmail:email.trim() password:password];
 
+        try {
             const { data, error } = await supabase.auth.signUp({
                 email: email.trim(),
                 password,
                 options: {
                     data: {
-                        full_name: name.trim(),
+                        full_name: fullName.trim(),
                     },
                 },
             });
@@ -153,19 +156,19 @@ export default function SignupScreen() {
                     'Account Created',
                     'Please check your email to confirm your account before signing in.'
                 );
-                router.push('/LoginScreen');
+                router.replace('/LoginScreen');
             } else {
                 throw new Error('No user returned');
             }
         } catch (err: any) {
             let message = 'Unable to create account. Please try again.';
-            if (err.message.includes('User already registered')) {
+            if (err.message?.includes('User already registered')) {
                 message = 'This email is already registered';
-                setEmailError('Email already in use');
+                setEmailError(message);
                 shakeField(emailShake);
-            } else if (err.message.includes('Password should be at least')) {
+            } else if (err.message?.includes('Password should be at least')) {
                 message = 'Password is too weak';
-                setPasswordError('Password too weak');
+                setPasswordError(message);
                 shakeField(passwordShake);
             }
             Alert.alert('Signup Failed', message);
@@ -179,346 +182,351 @@ export default function SignupScreen() {
     }
 
     return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={{ flex: 1 }}
                 keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
             >
                 <ScrollView
-                    contentContainerStyle={styles.scrollContent}
+                    contentContainerStyle={[
+                        styles.scrollContent,
+                        isLargeScreen && { alignItems: 'center' },
+                    ]}
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={false}
                 >
-                    {/* Header */}
-                    <Header
-                        title="Create Account"
-                        subtitle="Join Smart Cleaner Pro today"
-                    />
+                    <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
+                        <Header
+                            title="Create Account"
+                            subtitle="Join Smart Cleaner Pro today"
+                        />
 
-                    {/* Main Form */}
-                    <View style={styles.form}>
-                        <AppText variant="title" className="text-center mb-10">
-                            Create Account
-                        </AppText>
+                        <View
+                            style={[
+                                styles.card,
+                                {
+                                    backgroundColor: darkMode ? colors.card : '#ffffff',
+                                    borderColor: darkMode ? 'rgba(255,255,255,0.12)' : colors.border,
+                                },
+                            ]}
+                        >
+                            <Field
+                                label="Full Name"
+                                value={fullName}
+                                onChangeText={(t: string) => {
+                                    setFullName(t);
+                                    if (nameError) setNameError('');
+                                }}
+                                error={nameError}
+                                icon="person-outline"
+                                colors={colors}
+                                darkMode={darkMode}
+                                shake={nameShake}
+                                returnKeyType="next"
+                                onSubmitEditing={() => emailRef.current?.focus()}
+                                autoCapitalize="words"
+                            />
 
-                        {/* Full Name */}
-                        <View style={styles.field}>
-                            <AppText className="text-sm font-medium text-textSecondary mb-2">
-                                Full Name
-                            </AppText>
+                            <Field
+                                label="Email Address"
+                                value={email}
+                                onChangeText={(t: string) => {
+                                    setEmail(t);
+                                    if (emailError) setEmailError('');
+                                }}
+                                error={emailError}
+                                icon="mail-outline"
+                                colors={colors}
+                                darkMode={darkMode}
+                                shake={emailShake}
+                                keyboardType="email-address"
+                                autoCapitalize="none"
+                                returnKeyType="next"
+                                onSubmitEditing={() => passRef.current?.focus()}
+                                refInput={emailRef}
+                            />
 
-                            <Animated.View style={{ transform: [{ translateX: nameShake }] }}>
-                                <View style={styles.inputWrapper}>
-                                    <Ionicons
-                                        name="person-outline"
-                                        size={20}
-                                        color={nameError ? '#ef4444' : colors.textSecondary}
-                                        style={styles.inputIconLeft}
-                                    />
-
-                                    <TextInput
-                                        style={[
-                                            styles.input,
-                                            {
-                                                borderColor: nameError ? '#ef4444' : colors.border,
-                                                color: colors.text,
-                                            },
-                                        ]}
-                                        value={name}
-                                        onChangeText={(text) => {
-                                            setName(text);
-                                            if (nameError) setNameError('');
-                                        }}
-                                        autoCapitalize="words"
-                                        returnKeyType="next"
-                                        onSubmitEditing={() => emailRef.current?.focus()}
-                                        accessibilityLabel="Full name"
-                                    />
-
-                                    {nameError && (
-                                        <Ionicons
-                                            name="alert-circle"
-                                            size={20}
-                                            color="#ef4444"
-                                            style={styles.inputIconRight}
-                                        />
-                                    )}
-                                </View>
-                            </Animated.View>
-
-                            {nameError && (
-                                <AppText className="text-error text-sm mt-2">{nameError}</AppText>
-                            )}
-                        </View>
-
-                        {/* Email */}
-                        <View style={styles.field}>
-                            <AppText className="text-sm font-medium text-textSecondary mb-2">
-                                Email Address
-                            </AppText>
-
-                            <Animated.View style={{ transform: [{ translateX: emailShake }] }}>
-                                <View style={styles.inputWrapper}>
-                                    <Ionicons
-                                        name="mail-outline"
-                                        size={20}
-                                        color={emailError ? '#ef4444' : colors.textSecondary}
-                                        style={styles.inputIconLeft}
-                                    />
-
-                                    <TextInput
-                                        ref={emailRef}
-                                        style={[
-                                            styles.input,
-                                            {
-                                                borderColor: emailError ? '#ef4444' : colors.border,
-                                                color: colors.text,
-                                            },
-                                        ]}
-                                        value={email}
-                                        onChangeText={(text) => {
-                                            setEmail(text);
-                                            if (emailError) setEmailError('');
-                                        }}
-                                        keyboardType="email-address"
-                                        autoCapitalize="none"
-                                        autoCorrect={false}
-                                        returnKeyType="next"
-                                        onSubmitEditing={() => passRef.current?.focus()}
-                                        accessibilityLabel="Email address"
-                                    />
-
-                                    {emailError && (
-                                        <Ionicons
-                                            name="alert-circle"
-                                            size={20}
-                                            color="#ef4444"
-                                            style={styles.inputIconRight}
-                                        />
-                                    )}
-                                </View>
-                            </Animated.View>
-
-                            {emailError && (
-                                <AppText className="text-error text-sm mt-2">{emailError}</AppText>
-                            )}
-                        </View>
-
-                        {/* Password */}
-                        <View style={styles.field}>
-                            <AppText className="text-sm font-medium text-textSecondary mb-2">
-                                Password
-                            </AppText>
-
-                            <Animated.View style={{ transform: [{ translateX: passwordShake }] }}>
-                                <View style={styles.inputWrapper}>
-                                    <Ionicons
-                                        name="lock-closed-outline"
-                                        size={20}
-                                        color={passwordError ? '#ef4444' : colors.textSecondary}
-                                        style={styles.inputIconLeft}
-                                    />
-
-                                    <TextInput
-                                        ref={passRef}
-                                        style={[
-                                            styles.input,
-                                            {
-                                                borderColor: passwordError ? '#ef4444' : colors.border,
-                                                color: colors.text,
-                                            },
-                                        ]}
-                                        value={password}
-                                        onChangeText={(text) => {
-                                            setPassword(text);
-                                            if (passwordError) setPasswordError('');
-                                        }}
-                                        secureTextEntry={!showPassword}
-                                        autoCapitalize="none"
-                                        returnKeyType="next"
-                                        onSubmitEditing={() => confirmRef.current?.focus()}
-                                        accessibilityLabel="Password"
-                                    />
-
-                                    <TouchableOpacity
-                                        style={styles.eyeIcon}
-                                        onPress={() => setShowPassword(!showPassword)}
-                                        accessibilityLabel="Toggle password visibility"
-                                    >
+                            <Field
+                                label="Password"
+                                value={password}
+                                onChangeText={(t: string) => {
+                                    setPassword(t);
+                                    if (passwordError) setPasswordError('');
+                                }}
+                                error={passwordError}
+                                icon="lock-closed-outline"
+                                colors={colors}
+                                darkMode={darkMode}
+                                shake={passwordShake}
+                                secureTextEntry={!showPassword}
+                                rightIcon={
+                                    <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
                                         <Ionicons
                                             name={showPassword ? 'eye-off-outline' : 'eye-outline'}
                                             size={20}
-                                            color={colors.textSecondary}
+                                            color={darkMode ? '#ffffff' : colors.textSecondary}
                                         />
                                     </TouchableOpacity>
-                                </View>
-                            </Animated.View>
+                                }
+                                returnKeyType="next"
+                                onSubmitEditing={() => confirmRef.current?.focus()}
+                                refInput={passRef}
+                            />
 
-                            {passwordError && (
-                                <AppText className="text-error text-sm mt-2">{passwordError}</AppText>
-                            )}
-                        </View>
-
-                        {/* Confirm Password */}
-                        <View style={styles.field}>
-                            <AppText className="text-sm font-medium text-textSecondary mb-2">
-                                Confirm Password
-                            </AppText>
-
-                            <Animated.View style={{ transform: [{ translateX: confirmShake }] }}>
-                                <View style={styles.inputWrapper}>
-                                    <Ionicons
-                                        name="lock-closed-outline"
-                                        size={20}
-                                        color={confirmError ? '#ef4444' : colors.textSecondary}
-                                        style={styles.inputIconLeft}
-                                    />
-
-                                    <TextInput
-                                        ref={confirmRef}
-                                        style={[
-                                            styles.input,
-                                            {
-                                                borderColor: confirmError ? '#ef4444' : colors.border,
-                                                color: colors.text,
-                                            },
-                                        ]}
-                                        value={confirmPassword}
-                                        onChangeText={(text) => {
-                                            setConfirmPassword(text);
-                                            if (confirmError) setConfirmError('');
-                                        }}
-                                        secureTextEntry={!showConfirmPassword}
-                                        autoCapitalize="none"
-                                        returnKeyType="done"
-                                        onSubmitEditing={validateAndSignup}
-                                        accessibilityLabel="Confirm password"
-                                    />
-
-                                    <TouchableOpacity
-                                        style={styles.eyeIcon}
-                                        onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                                        accessibilityLabel="Toggle confirm password visibility"
-                                    >
+                            <Field
+                                label="Confirm Password"
+                                value={confirmPassword}
+                                onChangeText={(t: string) => {
+                                    setConfirmPassword(t);
+                                    if (confirmError) setConfirmError('');
+                                }}
+                                error={confirmError}
+                                icon="lock-closed-outline"
+                                colors={colors}
+                                darkMode={darkMode}
+                                shake={confirmShake}
+                                secureTextEntry={!showConfirmPassword}
+                                rightIcon={
+                                    <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
                                         <Ionicons
                                             name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
                                             size={20}
-                                            color={colors.textSecondary}
+                                            color={darkMode ? '#ffffff' : colors.textSecondary}
                                         />
                                     </TouchableOpacity>
-                                </View>
-                            </Animated.View>
+                                }
+                                returnKeyType="done"
+                                onSubmitEditing={validateAndSignup}
+                                refInput={confirmRef}
+                            />
 
-                            {confirmError && (
-                                <AppText className="text-error text-sm mt-2">{confirmError}</AppText>
-                            )}
-                        </View>
-
-                        {/* Terms */}
-                        <AppText className="text-textSecondary text-sm text-center mb-8">
-                            By creating an account, you agree to our{' '}
-                            <AppText className="text-primary">Terms of Service</AppText> and{' '}
-                            <AppText className="text-primary">Privacy Policy</AppText>
-                        </AppText>
-
-                        {/* Create Account Button – almost identical to Sign In */}
-                        <Button
-                            title="Create Account"
-                            icon="person-add-outline"
-                            onPress={validateAndSignup}
-                            variant="primary" // same as Sign In, but you can change to outline if you prefer difference
-                            fullWidth
-                            loading={loading}
-                            disabled={loading}
-                            style={{ marginTop: 10 }} // tight spacing as requested
-                        />
-
-                        {/* OR Divider */}
-                        <View style={styles.orContainer}>
-                            <View style={[styles.orLine, { backgroundColor: colors.border }]} />
-                            <AppText className="text-textSecondary px-4 text-sm">OR</AppText>
-                            <View style={[styles.orLine, { backgroundColor: colors.border }]} />
-                        </View>
-
-                        {/* Back to Login */}
-                        <TouchableOpacity
-                            style={styles.backLink}
-                            onPress={() => router.push('/LoginScreen')}
-                        >
-                            <Ionicons name="arrow-back-outline" size={18} color={colors.primary} />
-                            <AppText className="text-primary font-medium">
-                                Already have an account? Sign in
+                            {/* Terms – forced to two clean lines */}
+                            <AppText
+                                style={{
+                                    textAlign: 'center',
+                                    color: darkMode ? '#ffffff' : colors.textSecondary,
+                                    fontSize: 14,
+                                    lineHeight: 20,
+                                    marginBottom: 32,
+                                }}
+                            >
+                                By creating an account, you agree to our{'\n'}
+                                <TouchableOpacity onPress={() => Alert.alert('Terms of Service')}>
+                                    <AppText style={{ color: colors.primary, textDecorationLine: 'underline' }}>
+                                        Terms of Service
+                                    </AppText>
+                                </TouchableOpacity>{' '}
+                                and{' '}
+                                <TouchableOpacity onPress={() => Alert.alert('Privacy Policy')}>
+                                    <AppText style={{ color: colors.primary, textDecorationLine: 'underline' }}>
+                                        Privacy Policy
+                                    </AppText>
+                                </TouchableOpacity>
                             </AppText>
-                        </TouchableOpacity>
-                    </View>
 
-                    {/* Footer */}
-                    <AppText className="text-textSecondary text-center mt-12 text-xs opacity-70">
-                        Version 1.0.0 • Smart Cleaner Pro © 2026
-                    </AppText>
+                            <Button
+                                title="Create Account"
+                                icon="person-add-outline"
+                                onPress={validateAndSignup}
+                                variant="primary"
+                                fullWidth
+                                loading={loading}
+                                disabled={loading}
+                                style={{ marginTop: 8 }}
+                            />
+
+                            <View style={styles.divider}>
+                                <View
+                                    style={[
+                                        styles.line,
+                                        { backgroundColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' },
+                                    ]}
+                                />
+                                <AppText
+                                    className="px-4 text-sm"
+                                    style={{ color: darkMode ? '#ffffff' : colors.textSecondary }}
+                                >
+                                    OR
+                                </AppText>
+                                <View
+                                    style={[
+                                        styles.line,
+                                        { backgroundColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' },
+                                    ]}
+                                />
+                            </View>
+
+                            <TouchableOpacity
+                                style={styles.backLink}
+                                onPress={() => router.push('/LoginScreen')}
+                            >
+                                <AppText
+                                    style={{
+                                        color: colors.primary,
+                                        textDecorationLine: 'underline',
+                                        fontWeight: '500',
+                                    }}
+                                >
+                                    Already have an account? Sign in
+                                </AppText>
+                            </TouchableOpacity>
+                        </View>
+
+                        <AppText
+                            className="text-center mt-12 text-xs opacity-85"
+                            style={{ color: darkMode ? '#ffffff' : colors.textSecondary }}
+                        >
+                            Version 1.0.0 • Smart Cleaner Pro © 2026
+                        </AppText>
+                    </View>
                 </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>
     );
 }
 
+// ─── Reusable Field Component ────────────────────────────────────────────────
+type FieldProps = {
+    label: string;
+    value: string;
+    onChangeText: (text: string) => void;
+    error?: string;
+    icon: keyof typeof Ionicons.glyphMap;
+    colors: any;
+    darkMode: boolean;
+    shake: Animated.Value;
+    secureTextEntry?: boolean;
+    rightIcon?: JSX.Element;
+    refInput?: React.RefObject<TextInput>;
+    [key: string]: any;
+};
+
+function Field({
+                   label,
+                   value,
+                   onChangeText,
+                   error,
+                   icon,
+                   colors,
+                   darkMode,
+                   shake,
+                   secureTextEntry = false,
+                   rightIcon,
+                   refInput,
+                   ...rest
+               }: FieldProps) {
+    return (
+        <View style={styles.field}>
+            <AppText style={[styles.label, { color: darkMode ? 'rgba(255,255,255,0.7)' : colors.textSecondary }]}>
+                {label}
+            </AppText>
+
+            <Animated.View style={{ transform: [{ translateX: shake }] }}>
+                <View style={styles.inputWrapper}>
+                    <Ionicons
+                        name={icon}
+                        size={20}
+                        color={error ? '#ef4444' : darkMode ? 'rgba(255,255,255,0.6)' : colors.textSecondary}
+                        style={styles.inputIconLeft}
+                    />
+
+                    <TextInput
+                        ref={refInput}
+                        value={value}
+                        onChangeText={onChangeText}
+                        secureTextEntry={secureTextEntry}
+                        style={[
+                            styles.input,
+                            {
+                                borderColor: error ? '#ef4444' : darkMode ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
+                                color: darkMode ? '#ffffff' : colors.text,
+                            },
+                        ]}
+                        placeholderTextColor={darkMode ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'}
+                        {...rest}
+                    />
+
+                    {rightIcon && <View style={styles.rightIcon}>{rightIcon}</View>}
+                </View>
+            </Animated.View>
+
+            {error && <AppText style={styles.errorText}>{error}</AppText>}
+        </View>
+    );
+}
+
+// ─── Styles ─────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
+    container: { flex: 1 },
+
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
         paddingTop: 40,
-        paddingBottom: 60,
+        paddingBottom: 80,
         justifyContent: 'center',
     },
-    form: {
-        width: '100%',
-        maxWidth: 400,
-        alignSelf: 'center',
-        marginTop: 40,
+
+    wrapper: { width: '100%' },
+
+    largeWrapper: { maxWidth: 480 },
+
+    card: {
+        borderRadius: 24,
+        padding: 28,
+        borderWidth: 1,
     },
-    field: {
-        marginBottom: 10, // reduced as requested
+
+    field: { marginBottom: 26 },
+
+    label: {
+        marginBottom: 6,
+        fontSize: 14,
     },
-    inputWrapper: {
-        position: 'relative',
-    },
+
+    inputWrapper: { position: 'relative' },
+
     input: {
         height: 56,
-        borderWidth: 1.5,
-        borderRadius: 16,
-        paddingLeft: 48,
+        borderWidth: 1.2,
+        borderRadius: 14,
+        paddingLeft: 46,
         paddingRight: 48,
         fontSize: 16,
     },
+
     inputIconLeft: {
         position: 'absolute',
-        left: 16,
+        left: 14,
         top: 18,
         zIndex: 1,
     },
-    inputIconRight: {
+
+    rightIcon: {
         position: 'absolute',
-        right: 16,
+        right: 14,
         top: 18,
         zIndex: 1,
     },
-    eyeIcon: {
-        position: 'absolute',
-        right: 16,
-        top: 18,
-        zIndex: 1,
-        padding: 8,
+
+    errorText: {
+        color: '#ef4444',
+        marginTop: 6,
+        fontSize: 13,
     },
-    orContainer: {
+
+    divider: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginVertical: 10, // reduced as requested
+        marginVertical: 28,
     },
-    orLine: {
+
+    line: {
         flex: 1,
         height: 1,
     },
+
     backLink: {
         flexDirection: 'row',
         alignItems: 'center',
