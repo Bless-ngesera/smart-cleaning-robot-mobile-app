@@ -10,9 +10,9 @@ import {
     TextStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useThemeContext } from '../context/ThemeContext';
+import { useThemeContext } from '@/src/context/ThemeContext';
 
-type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
+type IoniconName = keyof typeof Ionicons.glyphMap;
 
 interface ButtonProps {
     title: string;
@@ -24,11 +24,13 @@ interface ButtonProps {
     loading?: boolean;
     fullWidth?: boolean;
     style?: ViewStyle;
+    textStyle?: TextStyle;
 }
 
 /**
  * Modern, theme-aware button component.
- * Supports variants, sizes, icons, loading state, and disabled.
+ * Fully functional with variants, sizes, icons, loading, disabled states.
+ * Uses StyleSheet + theme context — no NativeWind.
  */
 export default function Button({
                                    title,
@@ -40,49 +42,47 @@ export default function Button({
                                    loading = false,
                                    fullWidth = false,
                                    style,
+                                   textStyle,
                                }: ButtonProps) {
-    const { colors } = useThemeContext();
+    const { colors, darkMode } = useThemeContext();
 
-    // Safe fallbacks – no crashes if theme is incomplete
+    // Safe fallback colors (prevents crashes if theme is incomplete)
     const primaryColor = colors.primary ?? '#2563eb';
-    const textColorBase = colors.text ?? '#111827';
-    const bgDisabled = colors.border ?? '#d1d5db';
+    const textBase = colors.text ?? (darkMode ? '#f3f4f6' : '#111827');
+    const disabledBg = colors.muted ?? (darkMode ? '#374151' : '#d1d5db');
+    const borderColor = colors.border ?? (darkMode ? '#374151' : '#e5e7eb');
 
-    // Variant styles
+    // Variant logic
     const getBackground = () => {
-        if (disabled) return bgDisabled;
-        switch (variant) {
-            case 'primary': return primaryColor;
-            case 'danger': return '#ef4444';
-            case 'secondary': return colors.card ?? '#ffffff';
-            case 'outline': return 'transparent';
-            default: return primaryColor;
-        }
+        if (disabled) return disabledBg;
+        if (variant === 'primary') return primaryColor;
+        if (variant === 'danger') return '#ef4444';
+        if (variant === 'secondary') return colors.card ?? '#ffffff';
+        return 'transparent'; // outline
     };
 
     const getBorder = () => {
-        if (disabled) return bgDisabled;
-        if (variant === 'outline') return colors.border ?? '#d1d5db';
-        if (variant === 'secondary') return colors.border ?? '#d1d5db';
+        if (disabled) return disabledBg;
+        if (variant === 'outline' || variant === 'secondary') return borderColor;
         return 'transparent';
     };
 
     const getTextColor = () => {
-        if (disabled) return '#9ca3af';
+        if (disabled) return darkMode ? '#9ca3af' : '#6b7280';
         if (variant === 'primary' || variant === 'danger') return '#ffffff';
-        return textColorBase;
+        return primaryColor;
     };
 
-    // Size styles
-    const sizeStyles = {
+    // Size config
+    const sizeConfig = {
         small: {
-            paddingVertical: 8,
+            paddingVertical: 10,
             paddingHorizontal: 16,
             fontSize: 14,
             iconSize: 18,
         },
         medium: {
-            paddingVertical: 12,
+            paddingVertical: 14,
             paddingHorizontal: 20,
             fontSize: 16,
             iconSize: 20,
@@ -95,33 +95,31 @@ export default function Button({
         },
     };
 
-    const currentSize = sizeStyles[size];
+    const currentSize = sizeConfig[size];
 
+    // Final button style
     const buttonStyle: ViewStyle = {
         width: fullWidth ? '100%' : undefined,
+        height: currentSize.paddingVertical * 2 + currentSize.fontSize + 4, // approximate height
         paddingVertical: currentSize.paddingVertical,
         paddingHorizontal: currentSize.paddingHorizontal,
-        borderRadius: 12,
+        borderRadius: 14,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: getBackground(),
         borderColor: getBorder(),
         borderWidth: variant === 'outline' || variant === 'secondary' ? 1.5 : 0,
-        opacity: disabled ? 0.6 : 1,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: variant === 'primary' ? 0.15 : 0.06,
-        shadowRadius: 6,
-        elevation: variant === 'primary' ? 4 : 2,
+        opacity: disabled || loading ? 0.6 : 1,
         ...style,
     };
 
-    const textStyle: TextStyle = {
+    const textStyleFinal: TextStyle = {
         fontSize: currentSize.fontSize,
         fontWeight: '600',
         color: getTextColor(),
         marginLeft: icon ? 8 : 0,
+        ...textStyle,
     };
 
     return (
@@ -134,9 +132,6 @@ export default function Button({
             accessibilityRole="button"
             accessibilityState={{ disabled: disabled || loading }}
         >
-            {/* C++ BRIDGE: If button triggers native robot commands,
-          connect here via RobotBridge.start(), stop(), etc. */}
-
             {loading ? (
                 <ActivityIndicator color={getTextColor()} size="small" />
             ) : (
@@ -148,7 +143,7 @@ export default function Button({
                             color={getTextColor()}
                         />
                     )}
-                    <Text style={textStyle}>{title}</Text>
+                    <Text style={textStyleFinal}>{title}</Text>
                 </View>
             )}
         </TouchableOpacity>

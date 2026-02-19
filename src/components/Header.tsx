@@ -1,7 +1,7 @@
 // src/components/Header.tsx
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { useThemeContext } from '../context/ThemeContext';
+import { useThemeContext } from '@/src/context/ThemeContext';
 
 interface HeaderProps {
     title: string;
@@ -10,14 +10,20 @@ interface HeaderProps {
 
 /**
  * Clean, modern header component with theme support.
- * Used across all main screens.
+ * Used across all main screens (Login, Signup, Forgot Password, etc.).
+ *
+ * Features:
+ * - Fully StyleSheet-based (no NativeWind/Tailwind)
+ * - Theme-aware colors (light/dark mode)
+ * - Premium typography (sizes, weights, spacing)
+ * - Type-safe, bug-free, no shadows/elevation (flat design match)
  */
 export default function Header({ title, subtitle }: HeaderProps) {
-    const { colors } = useThemeContext();
+    const { colors, darkMode } = useThemeContext();
 
-    // Safe fallbacks – prevents crashes if theme is not fully loaded
-    const titleColor = colors.text ?? '#111827';
-    const subtitleColor = colors.textSecondary ?? '#6B7280';
+    // Safe fallbacks in case theme is incomplete
+    const titleColor = colors.text ?? (darkMode ? '#f3f4f6' : '#111827');
+    const subtitleColor = colors.textSecondary ?? (darkMode ? '#9ca3af' : '#6b7280');
 
     return (
         <View style={styles.container}>
@@ -38,17 +44,13 @@ const styles = StyleSheet.create({
         paddingTop: 16,
         paddingBottom: 24,
         alignItems: 'center',
-        // Optional subtle shadow – looks good on both light/dark
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 6,
-        elevation: 3,
+        // No shadow/elevation — flat design consistent with your auth screens
     },
     title: {
         fontSize: 28,
         fontWeight: '700',
         letterSpacing: -0.3,
+        textAlign: 'center',
     },
     subtitle: {
         fontSize: 16,

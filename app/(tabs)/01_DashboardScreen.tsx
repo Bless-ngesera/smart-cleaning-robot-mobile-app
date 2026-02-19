@@ -1,5 +1,20 @@
 // app/(tabs)/01_DashboardScreen.tsx
-import React, { useState, useEffect, useCallback } from 'react';
+//
+// ============================================================
+// C++ INTEGRATION OVERVIEW
+// ------------------------------------------------------------
+// This file uses a mock data layer (MockRobotBridge) as a
+// stand-in for real hardware communication. When you're ready
+// to wire in the native C++ bridge:
+//
+//   1. Replace every call to `MockRobotBridge.*` with the
+//      corresponding `RobotBridge.*` call from your native module.
+//   2. Keep the same TypeScript types so nothing else changes.
+//   3. All C++ hooks are marked with:
+//        // === C++ INTEGRATION POINT ===
+// ============================================================
+
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     View,
     Text,
@@ -8,60 +23,235 @@ import {
     Alert,
     StyleSheet,
     TouchableOpacity,
+    Animated,
+    Dimensions,
+    Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import { router } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 
-import Header from '../../src/components/Header';
-import Loader from '../../src/components/Loader';
 import { useThemeContext } from '@/src/context/ThemeContext';
 import { supabase } from '@/src/services/supabase';
-import { router } from 'expo-router';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type ConnectionType = 'wifi' | 'ble' | 'none';
+type RobotStatusCode = 'Online' | 'Offline' | 'Charging' | 'Error';
 
 type RobotStatus = {
-    batteryLevel: number;
+    batteryLevel: number;        // 0–100
     isCleaning: boolean;
-    lastCleaned: string;
+    lastCleaned: string;         // ISO date string or 'Never'
     errors: string[];
-    status: 'Online' | 'Offline' | 'Charging' | 'Error';
-    connectionType?: 'wifi' | 'ble' | 'none';
+    status: RobotStatusCode;
+    connectionType: ConnectionType;
+    // === C++ INTEGRATION POINT ===
+    // Add extra telemetry fields returned by RobotBridge here:
+    // dustBinFull?: boolean;
+    // signalStrength?: number;   // dBm
+    // firmwareVersion?: string;
 };
 
+// ---------------------------------------------------------------------------
+// Mock data layer – DELETE when native bridge is ready
+// ---------------------------------------------------------------------------
+const MockRobotBridge = {
+    getLiveStatus: async (): Promise<Partial<RobotStatus>> => ({
+        batteryLevel: 78,
+        isCleaning: false,
+        lastCleaned: new Date(Date.now() - 3_600_000 * 5).toISOString(),
+        errors: [],
+        status: 'Online',
+        connectionType: 'wifi',
+    }),
+};
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+function formatLastCleaned(raw: string): string {
+    if (!raw || raw === 'Never') return 'Never';
+    try {
+        return new Date(raw).toLocaleString([], {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+        });
+    } catch {
+        return raw;
+    }
+}
+
+function batteryColor(level: number): string {
+    if (level >= 60) return '#22c55e';
+    if (level >= 30) return '#f59e0b';
+    return '#ef4444';
+}
+
+function batteryIcon(level: number): keyof typeof Ionicons.glyphMap {
+    if (level >= 75) return 'battery-full';
+    if (level >= 50) return 'battery-half';
+    if (level >= 20) return 'battery-dead';
+    return 'battery-dead';
+}
+
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
+
+/** Animated battery bar */
+function BatteryBar({ level, color }: { level: number; color: string }) {
+    const anim = useRef(new Animated.Value(0)).current;
+    useEffect(() => {
+        Animated.timing(anim, {
+            toValue: level / 100,
+            duration: 900,
+            useNativeDriver: false,
+        }).start();
+    }, [level]);
+    const width = anim.interpolate({
+        inputRange: [0, 1],
+        outputRange: ['0%', '100%'],
+    });
+    return (
+        <View style={batteryBarStyles.track}>
+            <Animated.View style={[batteryBarStyles.fill, { width, backgroundColor: color }]} />
+        </View>
+    );
+}
+
+const batteryBarStyles = StyleSheet.create({
+    track: {
+        height: 8,
+        borderRadius: 4,
+        backgroundColor: 'rgba(255,255,255,0.08)',
+        overflow: 'hidden',
+        marginTop: 8,
+    },
+    fill: {
+        height: '100%',
+        borderRadius: 4,
+    },
+});
+
+/** Pulsing dot shown when robot is active */
+function PulsingDot({ active }: { active: boolean }) {
+    const scale = useRef(new Animated.Value(1)).current;
+    useEffect(() => {
+        if (!active) return;
+        const loop = Animated.loop(
+            Animated.sequence([
+                Animated.timing(scale, { toValue: 1.5, duration: 600, useNativeDriver: true }),
+                Animated.timing(scale, { toValue: 1, duration: 600, useNativeDriver: true }),
+            ]),
+        );
+        loop.start();
+        return () => loop.stop();
+    }, [active]);
+    return (
+        <Animated.View
+            style={[
+                pulseStyles.dot,
+                {
+                    backgroundColor: active ? '#22c55e' : '#64748b',
+                    transform: [{ scale }],
+                },
+            ]}
+        />
+    );
+}
+
+const pulseStyles = StyleSheet.create({
+    dot: { width: 10, height: 10, borderRadius: 5 },
+});
+
+// ---------------------------------------------------------------------------
+// Main screen
+// ---------------------------------------------------------------------------
+
 export default function DashboardScreen() {
-    const { colors } = useThemeContext();
+    const { colors, darkMode } = useThemeContext();
 
     const [status, setStatus] = useState<RobotStatus | null>(null);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
+    // Entrance animation
+    const fadeAnim = useRef(new Animated.Value(0)).current;
+    const slideAnim = useRef(new Animated.Value(24)).current;
+
+    const animateIn = useCallback(() => {
+        Animated.parallel([
+            Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
+            Animated.timing(slideAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
+        ]).start();
+    }, [fadeAnim, slideAnim]);
+
+    // -----------------------------------------------------------------------
+    // Data fetching
+    // -----------------------------------------------------------------------
+
     const fetchStatus = useCallback(async () => {
-        setLoading(true);
         setRefreshing(true);
+
         try {
-            // Fetch real robot status from Supabase
-            const { data, error } = await supabase
-                .from('robot_status')
-                .select('battery_level, is_cleaning, last_cleaned, errors, status')
-                .eq('user_id', (await supabase.auth.getUser()).data.user?.id)
-                .order('created_at', { ascending: false })
-                .limit(1)
-                .single();
+            // === C++ INTEGRATION POINT ===
+            // Step 1 – fetch live hardware data.
+            // Replace MockRobotBridge with your real native module, e.g.:
+            //   import RobotBridge from '@/src/native/RobotBridge';
+            //   const liveData = await RobotBridge.getLiveStatus();
+            const liveData = await MockRobotBridge.getLiveStatus();
 
-            if (error && error.code !== 'PGRST116') throw error; // PGRST116 = no rows found
+            // Step 2 – optionally merge with Supabase for cloud-persisted fields
+            // (last_cleaned, historical errors, etc.). If your DB has no table yet
+            // the .single() will return a PGRST116 error which we safely ignore.
+            let dbData: Partial<RobotStatus> = {};
+            try {
+                const userId = (await supabase.auth.getUser()).data.user?.id;
+                if (userId) {
+                    const { data, error } = await supabase
+                        .from('robot_status') // Create this table when ready
+                        .select('battery_level, is_cleaning, last_cleaned, errors, status')
+                        .eq('user_id', userId)
+                        .order('created_at', { ascending: false })
+                        .limit(1)
+                        .single();
 
+                    if (!error || error.code === 'PGRST116') {
+                        dbData = {
+                            batteryLevel: data?.battery_level,
+                            isCleaning: data?.is_cleaning,
+                            lastCleaned: data?.last_cleaned,
+                            errors: data?.errors,
+                            status: data?.status,
+                        };
+                    }
+                }
+            } catch {
+                // DB not set up yet – silent fallback
+            }
+
+            // Live hardware data takes priority over cloud snapshot
             setStatus({
-                batteryLevel: data?.battery_level ?? 0,
-                isCleaning: data?.is_cleaning ?? false,
-                lastCleaned: data?.last_cleaned ?? 'Never',
-                errors: data?.errors ?? [],
-                status: data?.status ?? 'Offline',
-                connectionType: 'none', // Updated dynamically from connection logic
+                batteryLevel: liveData.batteryLevel ?? dbData.batteryLevel ?? 0,
+                isCleaning: liveData.isCleaning ?? dbData.isCleaning ?? false,
+                lastCleaned: liveData.lastCleaned ?? dbData.lastCleaned ?? 'Never',
+                errors: liveData.errors ?? dbData.errors ?? [],
+                status: liveData.status ?? dbData.status ?? 'Offline',
+                connectionType: liveData.connectionType ?? 'none',
             });
+
+            animateIn();
         } catch (err: any) {
-            console.error('Failed to fetch robot status:', err);
-            Alert.alert('Connection Issue', 'Unable to load latest robot status.');
+            console.error('[DashboardScreen] fetchStatus error:', err);
+            Alert.alert('Connection Issue', 'Unable to load robot status. Pull to retry.');
             setStatus({
                 batteryLevel: 0,
                 isCleaning: false,
@@ -74,63 +264,66 @@ export default function DashboardScreen() {
             setLoading(false);
             setRefreshing(false);
         }
-
-        // === C++ INTEGRATION POINT: Fetch real-time robot status here ===
-        // Replace or merge with Supabase fetch above
-        // - Connect via Bluetooth, Wi-Fi, Serial, HTTP API, etc.
-        // - Get live data from robot firmware (battery, status, errors, last clean, connection type)
-        // - Format as RobotStatus object
-        // Example pseudo-code:
-        // const realRobotStatus = await RobotBridge.getLiveStatus(); // your C++ bridge call
-        // setStatus(realRobotStatus);
-        // or merge: setStatus({ ...status, ...realRobotStatus });
-    }, []);
+    }, [animateIn]);
 
     useEffect(() => {
         fetchStatus();
-        // Optional real-time polling
-        // const interval = setInterval(fetchStatus, 30000);
+
+        // === C++ INTEGRATION POINT ===
+        // For real-time telemetry, subscribe to hardware events instead of polling:
+        //   const sub = RobotBridge.onStatusChange((data) => setStatus(prev => ({ ...prev, ...data })));
+        //   return () => sub.remove();
+        //
+        // Or use a 10-second poll as a fallback:
+        // const interval = setInterval(fetchStatus, 10_000);
         // return () => clearInterval(interval);
     }, [fetchStatus]);
 
     const onRefresh = useCallback(() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         fetchStatus();
     }, [fetchStatus]);
 
-    const goToConnectionSetup = () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        router.push('../settings/connection'); // Correct absolute route
-    };
-
-    // Battery helpers
-    const getBatteryColor = (level: number) => {
-        if (level > 60) return '#10B981';
-        if (level > 30) return '#F59E0B';
-        return '#EF4444';
-    };
-
-    const getBatteryIcon = (level: number) => {
-        if (level > 80) return 'battery-full';
-        if (level > 50) return 'battery-half';
-        if (level > 20) return 'battery-low';
-        return 'battery-dead';
-    };
-
-    if (loading && !status) {
-        return <Loader message="Fetching robot status..." />;
-    }
+    // -----------------------------------------------------------------------
+    // Derived state
+    // -----------------------------------------------------------------------
 
     const batteryLevel = status?.batteryLevel ?? 0;
     const isCleaning = status?.isCleaning ?? false;
-    const connectionType = status?.connectionType ?? 'none';
-    const isConnected = connectionType !== 'none';
+    const isConnected = status?.connectionType !== 'none';
+    const bColor = batteryColor(batteryLevel);
+
+    // Theme-aware surface colors
+    const surfaceBg = darkMode ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)';
+    const surfaceBorder = darkMode ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
+    const textPrimary = darkMode ? '#f1f5f9' : '#0f172a';
+    const textSecondary = darkMode ? '#94a3b8' : '#64748b';
+
+    // -----------------------------------------------------------------------
+    // Loading skeleton
+    // -----------------------------------------------------------------------
+
+    if (loading && !status) {
+        return (
+            <SafeAreaView style={[styles.safeArea, { backgroundColor: darkMode ? '#0a0f1e' : '#f8faff' }]}>
+                <View style={styles.loadingContainer}>
+                    <Ionicons name="hardware-chip" size={48} color={colors.primary} />
+                    <Text style={[styles.loadingText, { color: textSecondary }]}>
+                        Connecting to robot…
+                    </Text>
+                </View>
+            </SafeAreaView>
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Render
+    // -----------------------------------------------------------------------
 
     return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-            <Header title="Dashboard" subtitle="Monitor your Smart Cleaner" />
-
+        <SafeAreaView style={[styles.safeArea, { backgroundColor: darkMode ? '#0a0f1e' : '#f0f4ff' }]}>
             <ScrollView
-                contentContainerStyle={styles.content}
+                contentContainerStyle={styles.scroll}
                 refreshControl={
                     <RefreshControl
                         refreshing={refreshing}
@@ -141,510 +334,473 @@ export default function DashboardScreen() {
                 }
                 showsVerticalScrollIndicator={false}
             >
-                {/* Hero Status Card */}
-                <View style={[styles.heroCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <View style={styles.heroHeader}>
-                        <View style={styles.robotInfo}>
-                            <View
-                                style={[
-                                    styles.robotAvatar,
-                                    { backgroundColor: isCleaning ? '#10B98133' : `${colors.primary}33` },
-                                ]}
-                            >
-                                <Ionicons
-                                    name="hardware-chip"
-                                    size={40}
-                                    color={isCleaning ? '#10B981' : colors.primary}
-                                />
-                            </View>
+                <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
 
-                            <View style={styles.robotText}>
-                                <Text style={[styles.robotName, { color: colors.text }]}>Smart Cleaner Pro</Text>
-                                <View style={styles.statusBadge}>
-                                    <View
-                                        style={[
-                                            styles.statusDot,
-                                            { backgroundColor: isCleaning ? '#10B981' : '#94A3B8' },
-                                        ]}
-                                    />
-                                    <Text
-                                        style={[
-                                            styles.statusLabel,
-                                            { color: isCleaning ? '#10B981' : colors.textSecondary },
-                                        ]}
-                                    >
-                                        {isCleaning ? 'Cleaning' : 'Idle'}
+                    {/* ── PAGE HEADER ───────────────────────────────────────── */}
+                    <View style={styles.pageHeader}>
+                        <View>
+                            <Text style={[styles.pageTitle, { color: textPrimary }]}>Dashboard</Text>
+                            <Text style={[styles.pageSubtitle, { color: textSecondary }]}>
+                                Smart Cleaner Pro
+                            </Text>
+                        </View>
+                        <TouchableOpacity
+                            style={[styles.iconBtn, { backgroundColor: surfaceBg, borderColor: surfaceBorder }]}
+                            onPress={fetchStatus}
+                            accessibilityLabel="Refresh status"
+                        >
+                            <Ionicons name="refresh" size={20} color={colors.primary} />
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* ── HERO CARD ─────────────────────────────────────────── */}
+                    <LinearGradient
+                        colors={
+                            isCleaning
+                                ? ['#064e3b', '#065f46']
+                                : darkMode
+                                    ? ['#1e1b4b', '#1e3a5f']
+                                    : ['#2563eb', '#1d4ed8']
+                        }
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={styles.heroCard}
+                    >
+                        {/* Top row */}
+                        <View style={styles.heroTopRow}>
+                            <View style={styles.heroAvatarWrapper}>
+                                <Ionicons name="hardware-chip" size={32} color="#fff" />
+                            </View>
+                            <View style={styles.heroTitleBlock}>
+                                <Text style={styles.heroRobotName}>Smart Cleaner Pro</Text>
+                                <View style={styles.statusRow}>
+                                    <PulsingDot active={isCleaning} />
+                                    <Text style={styles.heroStatusText}>
+                                        {isCleaning ? 'Cleaning in progress' : status?.status ?? 'Offline'}
                                     </Text>
                                 </View>
                             </View>
                         </View>
 
-                        <TouchableOpacity
-                            style={[styles.refreshBtn, { backgroundColor: colors.background }]}
-                            onPress={fetchStatus}
-                        >
-                            <Ionicons name="refresh" size={22} color={colors.primary} />
-                        </TouchableOpacity>
-                    </View>
+                        {/* Divider */}
+                        <View style={styles.heroDivider} />
 
-                    {/* Connection Status + Premium Connect Button */}
-                    <View style={styles.connectionSection}>
-                        <View style={styles.connectionRow}>
-                            <View
-                                style={[
-                                    styles.connectionBadge,
-                                    { backgroundColor: isConnected ? '#10B981' : '#ef4444' },
-                                ]}
-                            />
-                            <Text style={[styles.connectionText, { color: colors.textSecondary }]}>
-                                {isConnected
-                                    ? `Connected via ${connectionType === 'wifi' ? 'Wi-Fi' : 'Bluetooth'}`
-                                    : 'Disconnected'}
-                            </Text>
-                        </View>
-
-                        <TouchableOpacity
-                            style={[
-                                styles.connectButton,
-                                {
-                                    backgroundColor: isConnected ? '#10B981' : colors.primary,
-                                    borderColor: isConnected ? '#10B981' : colors.primary,
-                                },
-                            ]}
-                            onPress={goToConnectionSetup}
-                            activeOpacity={0.85}
-                        >
-                            <Ionicons
-                                name={isConnected ? 'link' : 'link-outline'}
-                                size={20}
-                                color="#fff"
-                            />
-                            <Text style={styles.connectButtonText}>
-                                {isConnected ? 'Manage Connection' : 'Connect Robot'}
-                            </Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    {/* Battery Section */}
-                    <View style={styles.batteryBlock}>
-                        <View style={styles.batteryHeader}>
-                            <View style={styles.batteryLabelRow}>
-                                <Ionicons
-                                    name={getBatteryIcon(batteryLevel)}
-                                    size={28}
-                                    color={getBatteryColor(batteryLevel)}
-                                />
-                                <Text style={[styles.batteryTitle, { color: colors.text }]}>Battery</Text>
-                            </View>
-                            <Text style={[styles.batteryPercent, { color: getBatteryColor(batteryLevel) }]}>
+                        {/* Battery */}
+                        <View style={styles.heroBatteryRow}>
+                            <Ionicons name={batteryIcon(batteryLevel)} size={18} color={bColor} />
+                            <Text style={styles.heroBatteryLabel}>Battery</Text>
+                            <View style={{ flex: 1 }} />
+                            <Text style={[styles.heroBatteryValue, { color: bColor }]}>
                                 {batteryLevel}%
                             </Text>
                         </View>
+                        <BatteryBar level={batteryLevel} color={bColor} />
 
-                        <View style={[styles.progressBg, { backgroundColor: colors.border + '40' }]}>
-                            <LinearGradient
-                                colors={[getBatteryColor(batteryLevel), `${getBatteryColor(batteryLevel)}CC`]}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 0 }}
-                                style={[styles.progressFill, { width: `${batteryLevel}%` }]}
+                        {/* Connection */}
+                        <View style={styles.heroConnectionRow}>
+                            <View
+                                style={[
+                                    styles.connDot,
+                                    { backgroundColor: isConnected ? '#22c55e' : '#ef4444' },
+                                ]}
                             />
-                        </View>
-                    </View>
-                </View>
-
-                {/* Quick Stats */}
-                <View style={styles.statsRow}>
-                    <View style={[styles.statTile, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        <View style={[styles.statIcon, { backgroundColor: '#10B98133' }]}>
-                            <Ionicons name="checkmark-circle" size={28} color="#10B981" />
-                        </View>
-                        <Text style={[styles.statNumber, { color: colors.text }]}>
-                            {isCleaning ? 'Active' : 'Ready'}
-                        </Text>
-                        <Text style={[styles.statCaption, { color: colors.textSecondary }]}>Status</Text>
-                    </View>
-
-                    <View style={[styles.statTile, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        <View style={[styles.statIcon, { backgroundColor: '#8B5CF633' }]}>
-                            <Ionicons name="time" size={28} color="#8B5CF6" />
-                        </View>
-                        <Text style={[styles.statNumber, { color: colors.text }]}>
-                            {isCleaning ? '2.5 h' : '—'}
-                        </Text>
-                        <Text style={[styles.statCaption, { color: colors.textSecondary }]}>Runtime</Text>
-                    </View>
-
-                    <View style={[styles.statTile, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        <View style={[styles.statIcon, { backgroundColor: '#F59E0B33' }]}>
-                            <Ionicons name="speedometer" size={28} color="#F59E0B" />
-                        </View>
-                        <Text style={[styles.statNumber, { color: colors.text }]}>127 m²</Text>
-                        <Text style={[styles.statCaption, { color: colors.textSecondary }]}>Cleaned</Text>
-                    </View>
-                </View>
-
-                {/* Last Cleaned */}
-                <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <View style={styles.cardHeader}>
-                        <Ionicons name="calendar" size={22} color={colors.primary} />
-                        <Text style={[styles.cardTitle, { color: colors.text }]}>Last Session</Text>
-                    </View>
-                    <Text style={[styles.lastCleanedText, { color: colors.text }]}>
-                        {status?.lastCleaned
-                            ? new Date(status.lastCleaned).toLocaleString([], {
-                                dateStyle: 'medium',
-                                timeStyle: 'short',
-                            })
-                            : 'No data yet'}
-                    </Text>
-                </View>
-
-                {/* Errors */}
-                {status?.errors?.length ? (
-                    <View style={styles.errorCard}>
-                        <View style={styles.errorHeader}>
-                            <View style={styles.errorIconWrap}>
-                                <Ionicons name="alert-circle" size={26} color="#EF4444" />
-                            </View>
-                            <View>
-                                <Text style={styles.errorTitle}>System Alerts</Text>
-                                <Text style={styles.errorSubtitle}>
-                                    {status.errors.length} issue{status.errors.length > 1 ? 's' : ''} detected
-                                </Text>
-                            </View>
-                        </View>
-                        {status.errors.map((err, i) => (
-                            <View key={i} style={styles.errorRow}>
-                                <View style={styles.errorBullet} />
-                                <Text style={styles.errorMessage}>{err}</Text>
-                            </View>
-                        ))}
-                    </View>
-                ) : null}
-
-                {/* Quick Actions */}
-                <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <View style={styles.cardHeader}>
-                        <Ionicons name="flash" size={22} color={colors.primary} />
-                        <Text style={[styles.cardTitle, { color: colors.text }]}>Quick Actions</Text>
-                    </View>
-
-                    <View style={styles.actionsGrid}>
-                        {[
-                            { icon: 'game-controller', label: 'Controls', route: '/(tabs)/02_ControlScreen', color: colors.primary },
-                            { icon: 'calendar', label: 'Schedule', route: '/(tabs)/04_ScheduleScreen', color: '#8B5CF6' },
-                            { icon: 'map', label: 'Map', route: '/(tabs)/03_MapScreen', color: '#10B981' },
-                        ].map((item, idx) => (
+                            <Text style={styles.heroConnectionText}>
+                                {isConnected
+                                    ? `Connected via ${status?.connectionType === 'wifi' ? 'Wi-Fi' : 'Bluetooth'}`
+                                    : 'Disconnected – tap to connect'}
+                            </Text>
                             <TouchableOpacity
-                                key={idx}
-                                style={styles.actionTile}
-                                onPress={() => router.push(item.route)}
-                                activeOpacity={0.85}
+                                onPress={() => {
+                                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                    router.push('../settings/connection');
+                                }}
+                                accessibilityLabel="Manage connection"
                             >
-                                <View style={[styles.actionIconWrap, { backgroundColor: `${item.color}22` }]}>
-                                    <Ionicons name={item.icon} size={32} color={item.color} />
-                                </View>
-                                <Text style={[styles.actionLabel, { color: colors.text }]}>{item.label}</Text>
+                                <Text style={styles.heroConnectionLink}>
+                                    {isConnected ? 'Manage' : 'Connect'}
+                                </Text>
                             </TouchableOpacity>
+                        </View>
+                    </LinearGradient>
+
+                    {/* ── STAT TILES ────────────────────────────────────────── */}
+                    <View style={styles.statRow}>
+                        {[
+                            {
+                                icon: 'checkmark-circle' as const,
+                                iconColor: '#22c55e',
+                                value: isCleaning ? 'Active' : 'Idle',
+                                label: 'Status',
+                            },
+                            {
+                                icon: 'time' as const,
+                                iconColor: '#a78bfa',
+                                value: '2.5 h',
+                                label: 'Runtime',
+                            },
+                            {
+                                icon: 'map' as const,
+                                iconColor: '#fb923c',
+                                value: '127 m²',
+                                label: 'Cleaned',
+                            },
+                        ].map((tile) => (
+                            <View
+                                key={tile.label}
+                                style={[styles.statTile, { backgroundColor: surfaceBg, borderColor: surfaceBorder }]}
+                            >
+                                <Ionicons name={tile.icon} size={26} color={tile.iconColor} />
+                                <Text style={[styles.statValue, { color: textPrimary }]}>{tile.value}</Text>
+                                <Text style={[styles.statLabel, { color: textSecondary }]}>{tile.label}</Text>
+                            </View>
                         ))}
                     </View>
-                </View>
 
-                {/* Pro Tip */}
-                <View
-                    style={[
-                        styles.tipCard,
-                        { backgroundColor: `${colors.primary}0D`, borderColor: `${colors.primary}40` },
-                    ]}
-                >
-                    <Ionicons name="bulb" size={24} color={colors.primary} />
-                    <View style={styles.tipBody}>
-                        <Text style={[styles.tipHeading, { color: colors.primary }]}>Pro Tip</Text>
-                        <Text style={[styles.tipText, { color: colors.text }]}>
-                            Empty the dustbin and wipe sensors before starting for best performance.
+                    {/* ── LAST SESSION ──────────────────────────────────────── */}
+                    <View style={[styles.card, { backgroundColor: surfaceBg, borderColor: surfaceBorder }]}>
+                        <View style={styles.cardHeader}>
+                            <View style={[styles.cardIconWrapper, { backgroundColor: `${colors.primary}1a` }]}>
+                                <Ionicons name="calendar" size={18} color={colors.primary} />
+                            </View>
+                            <Text style={[styles.cardTitle, { color: textPrimary }]}>Last Session</Text>
+                        </View>
+                        <Text style={[styles.cardBody, { color: textSecondary }]}>
+                            {formatLastCleaned(status?.lastCleaned ?? 'Never')}
                         </Text>
                     </View>
-                </View>
 
-                {/* === C++ BRIDGE: If you want to show real-time robot telemetry or advanced stats here,
-            fetch via RobotBridge.getTelemetry() and add more cards/sections below */}
+                    {/* ── ERROR BANNER (only shown when there are errors) ────── */}
+                    {(status?.errors ?? []).length > 0 && (
+                        <View style={styles.errorBanner}>
+                            <Ionicons name="warning" size={18} color="#fbbf24" />
+                            <Text style={styles.errorText}>
+                                {status!.errors[0]}
+                                {status!.errors.length > 1 ? ` (+${status!.errors.length - 1} more)` : ''}
+                            </Text>
+                        </View>
+                    )}
+
+                    {/* ── QUICK ACTIONS ─────────────────────────────────────── */}
+                    <View style={[styles.card, { backgroundColor: surfaceBg, borderColor: surfaceBorder }]}>
+                        <View style={styles.cardHeader}>
+                            <View style={[styles.cardIconWrapper, { backgroundColor: `${colors.primary}1a` }]}>
+                                <Ionicons name="flash" size={18} color={colors.primary} />
+                            </View>
+                            <Text style={[styles.cardTitle, { color: textPrimary }]}>Quick Actions</Text>
+                        </View>
+
+                        <View style={styles.actionsGrid}>
+                            {[
+                                {
+                                    icon: 'game-controller' as const,
+                                    label: 'Controls',
+                                    color: '#6366f1',
+                                    route: '/(tabs)/02_ControlScreen',
+                                },
+                                {
+                                    icon: 'calendar' as const,
+                                    label: 'Schedule',
+                                    color: '#ec4899',
+                                    route: '/(tabs)/04_ScheduleScreen',
+                                },
+                                {
+                                    icon: 'map' as const,
+                                    label: 'Map',
+                                    color: '#14b8a6',
+                                    route: '/(tabs)/03_MapScreen',
+                                },
+                            ].map((action) => (
+                                <TouchableOpacity
+                                    key={action.label}
+                                    style={[
+                                        styles.actionTile,
+                                        { backgroundColor: `${action.color}14`, borderColor: `${action.color}25` },
+                                    ]}
+                                    onPress={() => {
+                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                        router.push(action.route);
+                                    }}
+                                    accessibilityLabel={`Go to ${action.label}`}
+                                >
+                                    <View style={[styles.actionIconRing, { backgroundColor: `${action.color}22` }]}>
+                                        <Ionicons name={action.icon} size={24} color={action.color} />
+                                    </View>
+                                    <Text style={[styles.actionLabel, { color: textPrimary }]}>{action.label}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                    </View>
+
+                    {/* ── FOOTER ────────────────────────────────────────────── */}
+                    <Text style={[styles.footer, { color: textSecondary }]}>
+                        v1.0.0 · Smart Cleaner Pro © 2026
+                    </Text>
+
+                    {/*
+                     * === C++ INTEGRATION POINT ===
+                     * Insert real-time telemetry cards here once RobotBridge is ready.
+                     * Example card to add:
+                     *
+                     * <View style={[styles.card, { ... }]}>
+                     *   <Text>Dust Bin: {status?.dustBinFull ? 'Full' : 'OK'}</Text>
+                     *   <Text>Signal: {status?.signalStrength} dBm</Text>
+                     * </View>
+                     */}
+                </Animated.View>
             </ScrollView>
         </SafeAreaView>
     );
 }
 
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
+
 const styles = StyleSheet.create({
-    safeArea: { flex: 1 },
-    scrollView: { flex: 1 },
-    scrollContent: { paddingBottom: 40 },
+    safeArea: {
+        flex: 1,
+    },
 
-    content: {
+    scroll: {
         paddingHorizontal: 20,
-        paddingTop: 12,
+        paddingTop: 8,
+        paddingBottom: 100,
     },
 
-    heroCard: {
-        borderRadius: 24,
-        padding: 24,
-        borderWidth: 1,
-        marginBottom: 24,
+    // ── Loading ──
+    loadingContainer: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 16,
     },
-    heroHeader: {
+    loadingText: {
+        fontSize: 15,
+        fontWeight: '500',
+    },
+
+    // ── Page header ──
+    pageHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: 20,
+        marginTop: 8,
     },
-    robotInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 16,
+    pageTitle: {
+        fontSize: 28,
+        fontWeight: '800',
+        letterSpacing: -0.5,
     },
-    robotAvatar: {
-        width: 72,
-        height: 72,
-        borderRadius: 36,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    robotText: { gap: 4 },
-    robotName: {
-        fontSize: 22,
-        fontWeight: '700',
-    },
-    statusBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-    statusDot: {
-        width: 10,
-        height: 10,
-        borderRadius: 5,
-    },
-    statusLabel: {
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    refreshBtn: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-
-    connectionSection: {
-        marginBottom: 24,
-        gap: 12,
-    },
-    connectionRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 10,
-    },
-    connectionBadge: {
-        width: 12,
-        height: 12,
-        borderRadius: 6,
-    },
-    connectionText: {
+    pageSubtitle: {
         fontSize: 14,
         fontWeight: '500',
+        marginTop: 2,
     },
-    connectButton: {
-        flexDirection: 'row',
+    iconBtn: {
+        width: 44,
+        height: 44,
+        borderRadius: 14,
+        borderWidth: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 14,
-        paddingHorizontal: 20,
-        borderRadius: 12,
-        borderWidth: 1,
-        gap: 8,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.25,
-        shadowRadius: 6,
-        elevation: 4,
-    },
-    connectButtonText: {
-        color: '#fff',
-        fontSize: 16,
-        fontWeight: '600',
     },
 
-    batteryBlock: { gap: 12 },
-    batteryHeader: {
+    // ── Hero card ──
+    heroCard: {
+        borderRadius: 24,
+        padding: 22,
+        marginBottom: 16,
+        // Shadow
+        ...Platform.select({
+            ios: { shadowColor: '#2563eb', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.35, shadowRadius: 20 },
+            android: { elevation: 12 },
+        }),
+    },
+    heroTopRow: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
+        gap: 14,
+        marginBottom: 18,
     },
-    batteryLabelRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    batteryTitle: {
-        fontSize: 17,
-        fontWeight: '600',
-    },
-    batteryPercent: {
-        fontSize: 32,
-        fontWeight: '800',
-    },
-    progressBg: {
-        height: 14,
-        borderRadius: 7,
-        overflow: 'hidden',
-    },
-    progressFill: {
-        height: '100%',
-        borderRadius: 7,
-    },
-
-    statsRow: {
-        flexDirection: 'row',
-        gap: 12,
-        marginBottom: 24,
-    },
-    statTile: {
-        flex: 1,
-        borderRadius: 20,
-        paddingVertical: 20,
-        paddingHorizontal: 12,
-        borderWidth: 1,
-        alignItems: 'center',
-    },
-    statIcon: {
+    heroAvatarWrapper: {
         width: 56,
         height: 56,
-        borderRadius: 28,
+        borderRadius: 18,
+        backgroundColor: 'rgba(255,255,255,0.15)',
         alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: 12,
     },
-    statNumber: {
+    heroTitleBlock: {
+        flex: 1,
+    },
+    heroRobotName: {
         fontSize: 20,
         fontWeight: '700',
-        marginBottom: 4,
+        color: '#fff',
+        letterSpacing: -0.3,
     },
-    statCaption: {
+    statusRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginTop: 4,
+    },
+    heroStatusText: {
+        color: 'rgba(255,255,255,0.7)',
         fontSize: 13,
         fontWeight: '500',
     },
+    heroDivider: {
+        height: 1,
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        marginBottom: 16,
+    },
+    heroBatteryRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    heroBatteryLabel: {
+        color: 'rgba(255,255,255,0.7)',
+        fontSize: 14,
+        fontWeight: '500',
+    },
+    heroBatteryValue: {
+        fontSize: 18,
+        fontWeight: '800',
+    },
+    heroConnectionRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginTop: 16,
+    },
+    connDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+    },
+    heroConnectionText: {
+        flex: 1,
+        color: 'rgba(255,255,255,0.65)',
+        fontSize: 13,
+    },
+    heroConnectionLink: {
+        color: '#fff',
+        fontSize: 13,
+        fontWeight: '700',
+        textDecorationLine: 'underline',
+    },
 
+    // ── Stat tiles ──
+    statRow: {
+        flexDirection: 'row',
+        gap: 10,
+        marginBottom: 16,
+    },
+    statTile: {
+        flex: 1,
+        borderRadius: 18,
+        paddingVertical: 16,
+        paddingHorizontal: 10,
+        alignItems: 'center',
+        borderWidth: 1,
+        gap: 6,
+    },
+    statValue: {
+        fontSize: 15,
+        fontWeight: '700',
+        letterSpacing: -0.3,
+    },
+    statLabel: {
+        fontSize: 11,
+        fontWeight: '500',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+
+    // ── Generic card ──
     card: {
         borderRadius: 20,
         padding: 20,
         borderWidth: 1,
-        marginBottom: 20,
+        marginBottom: 16,
     },
     cardHeader: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 10,
-        marginBottom: 16,
+        marginBottom: 14,
+    },
+    cardIconWrapper: {
+        width: 34,
+        height: 34,
+        borderRadius: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     cardTitle: {
-        fontSize: 18,
-        fontWeight: '700',
-    },
-    lastCleanedText: {
         fontSize: 16,
+        fontWeight: '700',
+        letterSpacing: -0.2,
+    },
+    cardBody: {
+        fontSize: 15,
         fontWeight: '500',
     },
 
-    errorCard: {
-        backgroundColor: '#FEF2F2',
-        borderColor: '#FECACA',
-        borderWidth: 1,
-        borderRadius: 20,
-        padding: 20,
-        marginBottom: 24,
-    },
-    errorHeader: {
+    // ── Error banner ──
+    errorBanner: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 12,
+        gap: 10,
+        backgroundColor: '#451a0380',
+        borderWidth: 1,
+        borderColor: '#92400e',
+        borderRadius: 14,
+        padding: 14,
         marginBottom: 16,
     },
-    errorIconWrap: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        backgroundColor: '#FEE2E2',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    errorTitle: {
-        color: '#991B1B',
-        fontSize: 18,
-        fontWeight: '700',
-    },
-    errorSubtitle: {
-        color: '#B91C1C',
-        fontSize: 14,
-    },
-    errorRow: {
-        flexDirection: 'row',
-        gap: 10,
-        marginBottom: 10,
-    },
-    errorBullet: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: '#EF4444',
-        marginTop: 6,
-    },
-    errorMessage: {
+    errorText: {
         flex: 1,
-        color: '#DC2626',
-        fontSize: 15,
-        lineHeight: 22,
+        color: '#fbbf24',
+        fontSize: 13,
+        fontWeight: '500',
     },
 
+    // ── Quick actions ──
     actionsGrid: {
         flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 16,
-        marginTop: 8,
+        gap: 10,
     },
     actionTile: {
         flex: 1,
-        minWidth: '30%',
-        alignItems: 'center',
-        paddingVertical: 16,
         borderRadius: 16,
+        borderWidth: 1,
+        paddingVertical: 18,
+        alignItems: 'center',
+        gap: 10,
     },
-    actionIconWrap: {
-        width: 68,
-        height: 68,
-        borderRadius: 34,
+    actionIconRing: {
+        width: 46,
+        height: 46,
+        borderRadius: 14,
         alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: 10,
     },
     actionLabel: {
-        fontSize: 14,
+        fontSize: 12,
         fontWeight: '600',
     },
 
-    tipCard: {
-        borderRadius: 16,
-        padding: 16,
-        borderWidth: 1,
-        flexDirection: 'row',
-        gap: 14,
-        alignItems: 'flex-start',
-    },
-    tipBody: { flex: 1, gap: 4 },
-    tipHeading: {
-        fontSize: 15,
-        fontWeight: '700',
-    },
-    tipText: {
-        fontSize: 14,
-        lineHeight: 20,
+    // ── Footer ──
+    footer: {
+        textAlign: 'center',
+        fontSize: 11,
+        fontWeight: '400',
+        marginTop: 8,
+        marginBottom: 16,
+        opacity: 0.5,
     },
 });

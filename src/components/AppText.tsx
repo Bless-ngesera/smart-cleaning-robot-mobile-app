@@ -1,37 +1,82 @@
 // src/components/AppText.tsx
 import React from 'react';
-import { Text, TextProps } from 'react-native';
+import { Text, TextProps, StyleSheet, TextStyle } from 'react-native';
+import { useThemeContext } from '@/src/context/ThemeContext';
+
+type AppTextVariant = 'title' | 'subtitle' | 'body' | 'caption' | 'button' | 'label';
+
+interface AppTextProps extends TextProps {
+    variant?: AppTextVariant;
+    style?: TextStyle | TextStyle[];
+}
 
 /**
  * AppText - Global text component with premium typography defaults
  *
- * Features:
- * - Uses SF Pro Display fonts (via Tailwind classes)
- * - Enforces your design tokens (font family, colors, sizes)
- * - Disables system font scaling by default (premium consistency)
- * - Fully responsive via NativeWind rem units
- * - Easy to override with className
- * - Type-safe & bug-free
+ * - Uses theme colors from ThemeContext
+ * - Variant-based styling (title, subtitle, body, etc.)
+ * - Disables system font scaling for consistency
+ * - Fully StyleSheet-based (no NativeWind/Tailwind)
+ * - Type-safe, bug-free, easy to override
  */
-
 export default function AppText({
-                                    className = '',
-                                    style,
                                     children,
+                                    variant = 'body',
+                                    style,
                                     ...props
-                                }: TextProps) {
+                                }: AppTextProps) {
+    const { colors, darkMode } = useThemeContext();
+
+    // Define styles for each variant
+    const variantStyles: Record<AppTextVariant, TextStyle> = {
+        title: {
+            fontSize: 24,
+            fontWeight: '700',
+            lineHeight: 32,
+            letterSpacing: -0.5,
+            color: colors.text,
+        },
+        subtitle: {
+            fontSize: 20,
+            fontWeight: '600',
+            lineHeight: 28,
+            color: darkMode ? colors.subtitle || colors.textSecondary : colors.subtitle || colors.textSecondary,
+        },
+        body: {
+            fontSize: 16,
+            fontWeight: '400',
+            lineHeight: 24,
+            color: colors.text,
+        },
+        caption: {
+            fontSize: 14,
+            fontWeight: '400',
+            lineHeight: 20,
+            color: colors.textSecondary,
+        },
+        button: {
+            fontSize: 16,
+            fontWeight: '600',
+            lineHeight: 20,
+            color: colors.text,
+        },
+        label: {
+            fontSize: 14,
+            fontWeight: '500',
+            lineHeight: 20,
+            color: colors.textSecondary,
+            textTransform: 'uppercase',
+            letterSpacing: 0.5,
+        },
+    };
+
+    // Get the variant style — fallback to 'body' if invalid variant
+    const selectedVariantStyle = variantStyles[variant] ?? variantStyles.body;
+
     return (
         <Text
-            // Core defaults — always applied first
-            className={`
-        font-regular           // Default: SF-Pro-Display-Regular
-        text-textPrimary       // Default text color from your theme
-        text-base              // Default size: 16px / 1rem
-        leading-normal         // Clean line height
-        ${className}           // Allow overrides: font-bold, text-xl, etc.
-      `}
-            style={style}
-            allowFontScaling={false} // Enforce: no system size override
+            style={[styles.base, selectedVariantStyle, style]}
+            allowFontScaling={false} // Enforce consistent size across devices
             {...props}
         >
             {children}
@@ -39,31 +84,9 @@ export default function AppText({
     );
 }
 
-// Optional: Variant helper (very clean & premium usage)
-type AppTextVariant = 'title' | 'subtitle' | 'body' | 'caption' | 'button' | 'label';
-
-interface AppTextVariantProps extends TextProps {
-    variant?: AppTextVariant;
-}
-
-const variantClasses: Record<AppTextVariant, string> = {
-    title:    'font-bold text-2xl leading-tight tracking-tight',
-    subtitle: 'font-semibold text-xl leading-snug',
-    body:     'font-regular text-base leading-relaxed',
-    caption:  'font-regular text-sm text-textSecondary leading-snug',
-    button:   'font-semibold text-base leading-none',
-    label:    'font-medium text-sm text-textSecondary uppercase tracking-wide',
-};
-
-export function AppTextVariant({
-                                   variant = 'body',
-                                   className = '',
-                                   ...props
-                               }: AppTextVariantProps) {
-    return (
-        <AppText
-            className={`${variantClasses[variant]} ${className}`}
-            {...props}
-        />
-    );
-}
+const styles = StyleSheet.create({
+    base: {
+        // Global defaults (add custom fontFamily here if loaded)
+        fontFamily: 'System',
+    },
+});
