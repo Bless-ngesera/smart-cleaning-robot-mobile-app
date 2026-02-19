@@ -51,7 +51,6 @@ export default function SignupScreen() {
     const passRef = useRef<TextInput>(null);
     const confirmRef = useRef<TextInput>(null);
 
-    // Auto-redirect if already logged in
     useEffect(() => {
         let mounted = true;
 
@@ -202,15 +201,7 @@ export default function SignupScreen() {
                             subtitle="Join Smart Cleaner Pro today"
                         />
 
-                        <View
-                            style={[
-                                styles.card,
-                                {
-                                    backgroundColor: darkMode ? colors.card : '#ffffff',
-                                    borderColor: darkMode ? 'rgba(255,255,255,0.12)' : colors.border,
-                                },
-                            ]}
-                        >
+                        <View style={styles.card}>
                             <Field
                                 label="Full Name"
                                 value={fullName}
@@ -301,29 +292,21 @@ export default function SignupScreen() {
                                 refInput={confirmRef}
                             />
 
-                            {/* Terms – forced to two clean lines */}
-                            <AppText
-                                style={{
-                                    textAlign: 'center',
-                                    color: darkMode ? '#ffffff' : colors.textSecondary,
-                                    fontSize: 14,
-                                    lineHeight: 20,
-                                    marginBottom: 32,
-                                }}
-                            >
-                                By creating an account, you agree to our{'\n'}
-                                <TouchableOpacity onPress={() => Alert.alert('Terms of Service')}>
-                                    <AppText style={{ color: colors.primary, textDecorationLine: 'underline' }}>
-                                        Terms of Service
-                                    </AppText>
-                                </TouchableOpacity>{' '}
-                                and{' '}
-                                <TouchableOpacity onPress={() => Alert.alert('Privacy Policy')}>
-                                    <AppText style={{ color: colors.primary, textDecorationLine: 'underline' }}>
-                                        Privacy Policy
-                                    </AppText>
-                                </TouchableOpacity>
-                            </AppText>
+                            {/* Terms – two clean lines, perfectly aligned */}
+                            <View style={styles.termsContainer}>
+                                <AppText style={styles.termsLine}>
+                                    By creating an account, you agree to our
+                                </AppText>
+                                <View style={styles.termsLinksRow}>
+                                    <TouchableOpacity onPress={() => Alert.alert('Terms of Service')}>
+                                        <AppText style={styles.termsLink}>Terms of Service</AppText>
+                                    </TouchableOpacity>
+                                    <AppText style={styles.termsAnd}> and </AppText>
+                                    <TouchableOpacity onPress={() => Alert.alert('Privacy Policy')}>
+                                        <AppText style={styles.termsLink}>Privacy Policy</AppText>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
 
                             <Button
                                 title="Create Account"
@@ -333,75 +316,36 @@ export default function SignupScreen() {
                                 fullWidth
                                 loading={loading}
                                 disabled={loading}
-                                style={{ marginTop: 8 }}
+                                style={{ marginTop: 16 }}
                             />
 
                             <View style={styles.divider}>
-                                <View
-                                    style={[
-                                        styles.line,
-                                        { backgroundColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' },
-                                    ]}
-                                />
-                                <AppText
-                                    className="px-4 text-sm"
-                                    style={{ color: darkMode ? '#ffffff' : colors.textSecondary }}
-                                >
-                                    OR
-                                </AppText>
-                                <View
-                                    style={[
-                                        styles.line,
-                                        { backgroundColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' },
-                                    ]}
-                                />
+                                <View style={styles.line} />
+                                <AppText style={styles.orText}>OR</AppText>
+                                <View style={styles.line} />
                             </View>
 
                             <TouchableOpacity
                                 style={styles.backLink}
                                 onPress={() => router.push('/LoginScreen')}
                             >
-                                <AppText
-                                    style={{
-                                        color: colors.primary,
-                                        textDecorationLine: 'underline',
-                                        fontWeight: '500',
-                                    }}
-                                >
+                                <AppText style={styles.backLinkText}>
                                     Already have an account? Sign in
                                 </AppText>
                             </TouchableOpacity>
                         </View>
-
-                        <AppText
-                            className="text-center mt-12 text-xs opacity-85"
-                            style={{ color: darkMode ? '#ffffff' : colors.textSecondary }}
-                        >
-                            Version 1.0.0 • Smart Cleaner Pro © 2026
-                        </AppText>
                     </View>
+
+                    <AppText style={styles.footer}>
+                        Version 1.0.0 • Smart Cleaner Pro © 2026
+                    </AppText>
                 </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>
     );
 }
 
-// ─── Reusable Field Component ────────────────────────────────────────────────
-type FieldProps = {
-    label: string;
-    value: string;
-    onChangeText: (text: string) => void;
-    error?: string;
-    icon: keyof typeof Ionicons.glyphMap;
-    colors: any;
-    darkMode: boolean;
-    shake: Animated.Value;
-    secureTextEntry?: boolean;
-    rightIcon?: JSX.Element;
-    refInput?: React.RefObject<TextInput>;
-    [key: string]: any;
-};
-
+// ─── FIELD COMPONENT ─────────────────────────────────────────────────────────
 function Field({
                    label,
                    value,
@@ -415,7 +359,20 @@ function Field({
                    rightIcon,
                    refInput,
                    ...rest
-               }: FieldProps) {
+               }: {
+    label: string;
+    value: string;
+    onChangeText: (text: string) => void;
+    error?: string;
+    icon: keyof typeof Ionicons.glyphMap;
+    colors: any;
+    darkMode: boolean;
+    shake: Animated.Value;
+    secureTextEntry?: boolean;
+    rightIcon?: React.ReactNode;
+    refInput?: React.RefObject<TextInput>;
+    [key: string]: any;
+}) {
     return (
         <View style={styles.field}>
             <AppText style={[styles.label, { color: darkMode ? 'rgba(255,255,255,0.7)' : colors.textSecondary }]}>
@@ -456,7 +413,7 @@ function Field({
     );
 }
 
-// ─── Styles ─────────────────────────────────────────────────────────────────────
+/* ================= STYLES ================= */
 const styles = StyleSheet.create({
     container: { flex: 1 },
 
@@ -516,6 +473,28 @@ const styles = StyleSheet.create({
         fontSize: 13,
     },
 
+    termsContainer: {
+        marginVertical: 32,
+        alignItems: 'center',
+    },
+    termsLine: {
+        fontSize: 14,
+        textAlign: 'center',
+        lineHeight: 20,
+    },
+    termsLinksRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexWrap: 'wrap',
+        marginTop: 4,
+    },
+    termsLink: {
+        color: '#2563eb',
+        textDecorationLine: 'underline',
+        fontSize: 14,
+    },
+
     divider: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -525,14 +504,34 @@ const styles = StyleSheet.create({
     line: {
         flex: 1,
         height: 1,
+        backgroundColor: 'rgba(255,255,255,0.1)',
+    },
+
+    orText: {
+        color: '#ffffff',
+        fontSize: 14,
+        marginHorizontal: 16,
     },
 
     backLink: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 8,
         marginTop: 16,
         paddingVertical: 12,
+    },
+
+    backLinkText: {
+        color: '#2563eb',
+        fontSize: 16,
+        fontWeight: '500',
+        textDecorationLine: 'underline',
+    },
+
+    footer: {
+        textAlign: 'center',
+        marginTop: 32,
+        fontSize: 12,
+        opacity: 0.7,
     },
 });

@@ -42,13 +42,13 @@ export default function LoginScreen() {
 
     const passwordRef = useRef<TextInput>(null);
 
-    // Auto-redirect if logged in
+    // Auto-redirect if already logged in
     useEffect(() => {
         let mounted = true;
 
         const checkSession = async () => {
-            const { data } = await supabase.auth.getSession();
-            if (mounted && data?.session) {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (mounted && session) {
                 router.replace('/(tabs)/01_DashboardScreen');
             }
         };
@@ -135,10 +135,11 @@ export default function LoginScreen() {
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                 style={{ flex: 1 }}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
             >
                 <ScrollView
                     contentContainerStyle={[
-                        styles.scroll,
+                        styles.scrollContent,
                         isLargeScreen && { alignItems: 'center' },
                     ]}
                     keyboardShouldPersistTaps="handled"
@@ -150,17 +151,9 @@ export default function LoginScreen() {
                             subtitle="Sign in to control your Smart Cleaner Pro"
                         />
 
-                        {/* Flat card – no shadow, no glow */}
-                        <View
-                            style={[
-                                styles.card,
-                                {
-                                    backgroundColor: darkMode ? colors.card : '#ffffff',
-                                    borderColor: darkMode ? 'rgba(255,255,255,0.12)' : colors.border,
-                                },
-                            ]}
-                        >
-                            {/* Email */}
+                        {/* Premium Flat Card */}
+                        <View style={styles.card}>
+                            {/* Email Field */}
                             <Field
                                 label="Email Address"
                                 value={email}
@@ -178,7 +171,7 @@ export default function LoginScreen() {
                                 onSubmitEditing={() => passwordRef.current?.focus()}
                             />
 
-                            {/* Password */}
+                            {/* Password Field */}
                             <Field
                                 refInput={passwordRef}
                                 label="Password"
@@ -206,71 +199,38 @@ export default function LoginScreen() {
                                 onSubmitEditing={handleLogin}
                             />
 
+                            {/* Forgot Password */}
                             <TouchableOpacity
                                 style={styles.forgot}
                                 onPress={() => router.push('/ForgotPasswordScreen')}
                             >
-                                <AppText
-                                    style={{
-                                        color: colors.primary,
-                                        textDecorationLine: 'underline', // ← Underlined
-                                        fontWeight: '500',
-                                    }}
-                                >
+                                <AppText style={styles.forgotText}>
                                     Forgot password?
                                 </AppText>
                             </TouchableOpacity>
 
+                            {/* Sign In Button */}
                             <Button
                                 title="Sign In"
                                 icon="log-in-outline"
                                 onPress={handleLogin}
-                                fullWidth
                                 variant="primary"
+                                fullWidth
+                                loading={loading}
+                                disabled={loading}
                                 style={{ marginTop: 16 }}
                             />
 
+                            {/* OR Divider */}
                             <View style={styles.divider}>
-                                <View
-                                    style={[
-                                        styles.line,
-                                        {
-                                            backgroundColor: darkMode
-                                                ? 'rgba(255,255,255,0.1)'
-                                                : 'rgba(0,0,0,0.1)',
-                                        },
-                                    ]}
-                                />
-                                <AppText
-                                    style={{
-                                        marginHorizontal: 12,
-                                        color: darkMode ? '#ffffff' : colors.textSecondary,
-                                    }}
-                                >
-                                    OR
-                                </AppText>
-                                <View
-                                    style={[
-                                        styles.line,
-                                        {
-                                            backgroundColor: darkMode
-                                                ? 'rgba(255,255,255,0.1)'
-                                                : 'rgba(0,0,0,0.1)',
-                                        },
-                                    ]}
-                                />
+                                <View style={styles.line} />
+                                <AppText style={styles.orText}>OR</AppText>
+                                <View style={styles.line} />
                             </View>
 
-                            {/* Create New Account – improved style, no border, filled accent */}
+                            {/* Create New Account */}
                             <TouchableOpacity
-                                style={[
-                                    styles.createAccountButton,
-                                    {
-                                        backgroundColor: darkMode
-                                            ? 'rgba(59, 130, 246, 0.15)' // blue-500 with transparency
-                                            : 'rgba(37, 99, 235, 0.12)', // blue-600 with transparency
-                                    },
-                                ]}
+                                style={styles.createAccountButton}
                                 onPress={() => router.push('/SignupScreen')}
                             >
                                 <Ionicons
@@ -279,17 +239,17 @@ export default function LoginScreen() {
                                     color={darkMode ? '#ffffff' : colors.primary}
                                     style={{ marginRight: 12 }}
                                 />
-                                <AppText
-                                    style={{
-                                        color: darkMode ? '#ffffff' : colors.primary,
-                                        fontWeight: '500',
-                                    }}
-                                >
+                                <AppText style={styles.createAccountText}>
                                     Create New Account
                                 </AppText>
                             </TouchableOpacity>
                         </View>
                     </View>
+
+                    {/* Footer */}
+                    <AppText style={styles.footer}>
+                        Version 1.0.0 • Smart Cleaner Pro © 2026
+                    </AppText>
                 </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>
@@ -297,7 +257,6 @@ export default function LoginScreen() {
 }
 
 /* ================= FIELD ================= */
-
 function Field({
                    label,
                    value,
@@ -311,15 +270,23 @@ function Field({
                    rightIcon,
                    refInput,
                    ...rest
-               }: any) {
+               }: {
+    label: string;
+    value: string;
+    onChangeText: (text: string) => void;
+    error?: string;
+    icon: keyof typeof Ionicons.glyphMap;
+    colors: any;
+    darkMode: boolean;
+    shake: Animated.Value;
+    secureTextEntry?: boolean;
+    rightIcon?: React.ReactNode;
+    refInput?: React.RefObject<TextInput>;
+    [key: string]: any;
+}) {
     return (
         <View style={styles.field}>
-            <AppText
-                style={{
-                    marginBottom: 6,
-                    color: darkMode ? 'rgba(255,255,255,0.7)' : colors.textSecondary,
-                }}
-            >
+            <AppText style={[styles.label, { color: darkMode ? 'rgba(255,255,255,0.7)' : colors.textSecondary }]}>
                 {label}
             </AppText>
 
@@ -328,14 +295,8 @@ function Field({
                     <Ionicons
                         name={icon}
                         size={20}
-                        color={
-                            error
-                                ? '#ef4444'
-                                : darkMode
-                                    ? 'rgba(255,255,255,0.6)'
-                                    : colors.textSecondary
-                        }
-                        style={styles.leftIcon}
+                        color={error ? '#ef4444' : darkMode ? 'rgba(255,255,255,0.6)' : colors.textSecondary}
+                        style={styles.inputIconLeft}
                     />
 
                     <TextInput
@@ -346,19 +307,11 @@ function Field({
                         style={[
                             styles.input,
                             {
-                                borderColor: error
-                                    ? '#ef4444'
-                                    : darkMode
-                                        ? 'rgba(255,255,255,0.2)'
-                                        : 'rgba(0,0,0,0.15)',
+                                borderColor: error ? '#ef4444' : darkMode ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
                                 color: darkMode ? '#ffffff' : colors.text,
                             },
                         ]}
-                        placeholderTextColor={
-                            darkMode
-                                ? 'rgba(255,255,255,0.4)'
-                                : 'rgba(0,0,0,0.4)'
-                        }
+                        placeholderTextColor={darkMode ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'}
                         {...rest}
                     />
 
@@ -366,58 +319,53 @@ function Field({
                 </View>
             </Animated.View>
 
-            {error && (
-                <AppText style={styles.errorText}>{error}</AppText>
-            )}
+            {error && <AppText style={styles.errorText}>{error}</AppText>}
         </View>
     );
 }
 
 /* ================= STYLES ================= */
-
 const styles = StyleSheet.create({
     container: { flex: 1 },
 
-    scroll: {
+    scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
-        paddingVertical: 60,
+        paddingTop: 40,
+        paddingBottom: 80,
         justifyContent: 'center',
     },
 
-    wrapper: {
-        width: '100%',
-    },
+    wrapper: { width: '100%' },
 
-    largeWrapper: {
-        maxWidth: 480,
-    },
+    largeWrapper: { maxWidth: 480 },
 
     card: {
         borderRadius: 24,
         padding: 28,
         borderWidth: 1,
-        // NO shadow, no glow, no elevation – flat and clean
+        // Flat premium design – no shadow, no glow
     },
 
-    field: {
-        marginBottom: 26,
+    field: { marginBottom: 26 },
+
+    label: {
+        marginBottom: 6,
+        fontSize: 14,
     },
 
-    inputWrapper: {
-        position: 'relative',
-    },
+    inputWrapper: { position: 'relative' },
 
     input: {
         height: 56,
         borderWidth: 1.2,
         borderRadius: 14,
         paddingLeft: 46,
-        paddingRight: 46,
+        paddingRight: 48,
         fontSize: 16,
     },
 
-    leftIcon: {
+    inputIconLeft: {
         position: 'absolute',
         left: 14,
         top: 18,
@@ -433,7 +381,13 @@ const styles = StyleSheet.create({
 
     forgot: {
         alignSelf: 'flex-end',
-        marginBottom: 20,
+        marginBottom: 24,
+        paddingVertical: 4,
+    },
+
+    forgotText: {
+        fontSize: 15,
+        fontWeight: '500',
     },
 
     divider: {
@@ -445,6 +399,29 @@ const styles = StyleSheet.create({
     line: {
         flex: 1,
         height: 1,
+        backgroundColor: 'rgba(255,255,255,0.1)',
+    },
+
+    orText: {
+        color: '#ffffff',
+        fontSize: 14,
+        marginHorizontal: 16,
+    },
+
+    createAccountButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: 56,
+        borderRadius: 14,
+        marginTop: 16,
+        backgroundColor: 'rgba(59, 130, 246, 0.15)', // subtle blue accent
+    },
+
+    createAccountText: {
+        fontSize: 16,
+        fontWeight: '500',
+        color: '#ffffff',
     },
 
     errorText: {
@@ -453,13 +430,10 @@ const styles = StyleSheet.create({
         fontSize: 13,
     },
 
-    // Improved Create New Account button – no border, filled accent
-    createAccountButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: 56,
-        borderRadius: 14,
-        marginTop: 16,
+    footer: {
+        textAlign: 'center',
+        marginTop: 32,
+        fontSize: 12,
+        opacity: 0.7,
     },
 });

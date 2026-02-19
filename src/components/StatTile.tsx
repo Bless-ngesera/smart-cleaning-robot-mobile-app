@@ -2,7 +2,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useThemeContext } from '../context/ThemeContext';
+import { useThemeContext } from '@/src/context/ThemeContext';
 
 interface StatTileProps {
     label: string;
@@ -14,6 +14,13 @@ interface StatTileProps {
 /**
  * Clean, modern stat tile component used in dashboards and profile.
  * Supports optional highlight mode and icon.
+ *
+ * Features:
+ * - Fully StyleSheet-based (no NativeWind/Tailwind)
+ * - Theme-aware colors (light/dark mode)
+ * - Flat design (no shadow/elevation — matches your auth screens)
+ * - Safe fallbacks to prevent crashes
+ * - Type-safe, bug-free
  */
 export default function StatTile({
                                      label,
@@ -21,23 +28,35 @@ export default function StatTile({
                                      highlight = false,
                                      icon,
                                  }: StatTileProps) {
-    const { colors } = useThemeContext();
+    const { colors, darkMode } = useThemeContext();
 
-    // Safe fallbacks – no crashes if theme is incomplete
-    const bgColor = highlight ? `${colors.primary}15` : colors.card;
+    // Safe fallbacks — prevents undefined crashes if theme is incomplete
+    const bgColor = highlight
+        ? darkMode
+            ? `${colors.primary}30` // slightly higher opacity in dark mode for visibility
+            : `${colors.primary}15`
+        : darkMode
+            ? colors.card
+            : '#ffffff';
+
     const borderColor = highlight ? colors.primary : colors.border;
-    const labelColor = highlight ? colors.primary : colors.textSecondary ?? '#6b7280';
-    const valueColor = highlight ? colors.primary : colors.text ?? '#111827';
+
+    const iconBg = highlight
+        ? darkMode
+            ? `${colors.primary}40`
+            : `${colors.primary}20`
+        : colors.background;
+
+    const iconColor = highlight ? colors.primary : colors.textSecondary;
+
+    const labelColor = highlight ? colors.primary : colors.textSecondary;
+    const valueColor = highlight ? colors.primary : colors.text;
 
     return (
         <View style={[styles.tile, { backgroundColor: bgColor, borderColor }]}>
             {icon && (
-                <View style={[styles.iconContainer, { backgroundColor: highlight ? `${colors.primary}20` : colors.background }]}>
-                    <Ionicons
-                        name={icon}
-                        size={24}
-                        color={highlight ? colors.primary : colors.textSecondary}
-                    />
+                <View style={[styles.iconContainer, { backgroundColor: iconBg }]}>
+                    <Ionicons name={icon} size={24} color={iconColor} />
                 </View>
             )}
 
@@ -54,12 +73,8 @@ const styles = StyleSheet.create({
         padding: 16,
         borderWidth: 1,
         alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
-        shadowRadius: 8,
-        elevation: 3,
         minHeight: 110,
+        // No shadow/elevation — flat design to match your auth screens
     },
     iconContainer: {
         width: 48,

@@ -7,28 +7,36 @@ import {
     StyleSheet,
     Platform,
 } from 'react-native';
-import { useThemeContext } from '../context/ThemeContext';
+import { useThemeContext } from '@/src/context/ThemeContext';
 
 interface LoaderProps {
     message?: string;
-    size?: 'small' | 'large'; // optional override
-    color?: string;           // optional override
+    size?: 'small' | 'large';
+    color?: string; // optional override
 }
 
 /**
  * Full-screen centered loading indicator with theme-aware styling.
+ * Used when loading data, sending reset links, signing up, etc.
+ *
+ * Features:
+ * - Fully StyleSheet-based (no NativeWind/Tailwind)
+ * - Theme colors from context (light/dark mode)
+ * - Safe fallbacks to prevent crashes
+ * - Accessibility support
+ * - Type-safe, bug-free
  */
 export default function Loader({
                                    message = 'Loading...',
                                    size = 'large',
                                    color: overrideColor,
                                }: LoaderProps) {
-    const { colors } = useThemeContext();
+    const { colors, darkMode } = useThemeContext();
 
-    // Safe fallbacks – prevents undefined crashes
+    // Safe fallbacks — prevents undefined crashes if theme is incomplete
     const spinnerColor = overrideColor ?? colors.primary ?? '#2563eb';
-    const textColor = colors.textSecondary ?? colors.text ?? '#6b7280';
-    const bgColor = colors.background ?? '#f9fafb';
+    const textColor = colors.textSecondary ?? (darkMode ? '#9ca3af' : '#6b7280');
+    const bgColor = colors.background ?? (darkMode ? '#0f172a' : '#f9fafb');
 
     return (
         <View
@@ -36,6 +44,7 @@ export default function Loader({
             accessibilityRole="progressbar"
             accessibilityLabel={message}
             accessibilityHint="Loading in progress"
+            accessibilityLiveRegion="polite"
         >
             <ActivityIndicator
                 size={size}

@@ -1,5 +1,5 @@
 // app/ForgotPasswordScreen.tsx
-import React, {useState, useRef, JSX} from 'react';
+import React, { useState, useRef } from 'react';
 import {
     View,
     TextInput,
@@ -66,7 +66,7 @@ export default function ForgotPasswordScreen() {
 
         try {
             const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-                redirectTo: 'yourapp://reset-password', // change to your deep link if needed
+                redirectTo: 'yourapp://reset-password', // ← change this to your actual deep link scheme if you have one
             });
 
             if (error) throw error;
@@ -116,22 +116,19 @@ export default function ForgotPasswordScreen() {
                             subtitle="We'll send you a link to reset your password"
                         />
 
-                        <View
-                            style={[
-                                styles.card,
-                                {
-                                    backgroundColor: darkMode ? colors.card : '#ffffff',
-                                    borderColor: darkMode ? 'rgba(255,255,255,0.12)' : colors.border,
-                                },
-                            ]}
-                        >
+                        <View style={styles.card}>
                             {sent ? (
                                 <View style={styles.successContainer}>
                                     <Ionicons name="checkmark-circle" size={64} color={colors.primary} />
                                     <AppText
-                                        variant="title"
-                                        style={{ color: darkMode ? '#ffffff' : colors.text, textAlign: 'center' }}
-                                        className="mt-6 mb-4"
+                                        style={{
+                                            color: darkMode ? '#ffffff' : colors.text,
+                                            fontSize: 24,
+                                            fontWeight: '700',
+                                            textAlign: 'center',
+                                            marginTop: 24,
+                                            marginBottom: 12,
+                                        }}
                                     >
                                         Check Your Email
                                     </AppText>
@@ -167,7 +164,7 @@ export default function ForgotPasswordScreen() {
                                     />
                                 </View>
                             ) : (
-                                <View style={styles.form}>
+                                <>
                                     <Field
                                         label="Email Address"
                                         value={email}
@@ -225,7 +222,7 @@ export default function ForgotPasswordScreen() {
                                             Back to Login
                                         </AppText>
                                     </TouchableOpacity>
-                                </View>
+                                </>
                             )}
                         </View>
 
@@ -247,22 +244,7 @@ export default function ForgotPasswordScreen() {
     );
 }
 
-// ─── Reusable Field Component (same as Login/Signup) ──────────────────────────
-type FieldProps = {
-    label: string;
-    value: string;
-    onChangeText: (text: string) => void;
-    error?: string;
-    icon: keyof typeof Ionicons.glyphMap;
-    colors: any;
-    darkMode: boolean;
-    shake: Animated.Value;
-    secureTextEntry?: boolean;
-    rightIcon?: JSX.Element;
-    refInput?: React.RefObject<TextInput>;
-    [key: string]: any;
-};
-
+// ─── FIELD COMPONENT ─────────────────────────────────────────────────────────
 function Field({
                    label,
                    value,
@@ -276,7 +258,20 @@ function Field({
                    rightIcon,
                    refInput,
                    ...rest
-               }: FieldProps) {
+               }: {
+    label: string;
+    value: string;
+    onChangeText: (text: string) => void;
+    error?: string;
+    icon: keyof typeof Ionicons.glyphMap;
+    colors: any;
+    darkMode: boolean;
+    shake: Animated.Value;
+    secureTextEntry?: boolean;
+    rightIcon?: React.ReactNode;
+    refInput?: React.RefObject<TextInput>;
+    [key: string]: any;
+}) {
     return (
         <View style={styles.field}>
             <AppText style={[styles.label, { color: darkMode ? 'rgba(255,255,255,0.7)' : colors.textSecondary }]}>
@@ -317,7 +312,7 @@ function Field({
     );
 }
 
-// ─── Styles ─────────────────────────────────────────────────────────────────────
+// ─── STYLES ─────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
     container: { flex: 1 },
 
@@ -385,6 +380,7 @@ const styles = StyleSheet.create({
 
     successContainer: {
         alignItems: 'center',
+        paddingVertical: 20,
     },
 
     backLink: {
