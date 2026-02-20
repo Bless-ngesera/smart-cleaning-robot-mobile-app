@@ -15,7 +15,6 @@ const tabIcons: Record<string, IoniconName> = {
     map: 'map-outline',
     schedule: 'calendar-outline',
     profile: 'person-outline',
-    connection: 'person-outline',
 };
 
 export default function TabLayout() {
@@ -23,7 +22,6 @@ export default function TabLayout() {
     const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
     useEffect(() => {
-        // Initial session check
         const checkSession = async () => {
             try {
                 const { data: { session } } = await supabase.auth.getSession();
@@ -40,7 +38,6 @@ export default function TabLayout() {
 
         checkSession();
 
-        // Real-time auth state listener
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
             if (!session) {
                 router.replace('/LoginScreen');
@@ -50,7 +47,6 @@ export default function TabLayout() {
         return () => subscription.unsubscribe();
     }, []);
 
-    // Show nothing while checking auth (prevents flash of tabs)
     if (isCheckingAuth) {
         return null;
     }
@@ -60,28 +56,34 @@ export default function TabLayout() {
             screenOptions={{
                 headerShown: false,
                 tabBarActiveTintColor: colors.primary,
-                tabBarInactiveTintColor: colors.textSecondary,
+                tabBarInactiveTintColor: darkMode ? 'rgba(255,255,255,0.50)' : 'rgba(0,0,0,0.50)',
                 tabBarStyle: {
                     backgroundColor: colors.card,
-                    borderTopColor: colors.border,
-                    borderTopWidth: darkMode ? 0 : 1,
-                    height: 62,
-                    paddingBottom: 8,
-                    paddingTop: 6,
-                    elevation: darkMode ? 0 : 4,
-                    shadowOpacity: darkMode ? 0 : 0.08,
-                    shadowRadius: 8,
-                    shadowOffset: { width: 0, height: -2 },
+                    borderTopColor: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
+                    borderTopWidth: 1,
+                    height: 60,                    // tighter, more modern
+                    paddingBottom: 6,
+                    paddingTop: 4,
+                    elevation: darkMode ? 0 : 3,   // subtle in light mode only
+                    shadowColor: darkMode ? 'transparent' : '#000',
+                    shadowOpacity: 0.06,
+                    shadowRadius: 6,
+                    shadowOffset: { width: 0, height: -3 },
                 },
                 tabBarLabelStyle: {
-                    fontSize: 12,
+                    fontSize: 11.5,
                     fontWeight: '600',
-                    marginBottom: 4,
+                    marginBottom: 2,
+                    letterSpacing: 0.1,
                 },
                 tabBarIconStyle: {
-                    marginBottom: -2,
+                    marginBottom: -1,
                 },
-                tabBarActiveBackgroundColor: darkMode ? `${colors.primary}10` : undefined,
+                tabBarItemStyle: {
+                    paddingVertical: 4,
+                },
+                // Active tab gets a subtle background tint + dot indicator feel
+                tabBarActiveBackgroundColor: darkMode ? `${colors.primary}12` : `${colors.primary}10`,
             }}
         >
             <Tabs.Screen
@@ -89,7 +91,7 @@ export default function TabLayout() {
                 options={{
                     title: 'Dashboard',
                     tabBarIcon: ({ color, size }) => (
-                        <Ionicons name={tabIcons.dashboard} size={size} color={color} />
+                        <Ionicons name={tabIcons.dashboard} size={24} color={color} />
                     ),
                 }}
             />
@@ -99,7 +101,7 @@ export default function TabLayout() {
                 options={{
                     title: 'Control',
                     tabBarIcon: ({ color, size }) => (
-                        <Ionicons name={tabIcons.control} size={size} color={color} />
+                        <Ionicons name={tabIcons.control} size={24} color={color} />
                     ),
                 }}
             />
@@ -109,7 +111,7 @@ export default function TabLayout() {
                 options={{
                     title: 'Map',
                     tabBarIcon: ({ color, size }) => (
-                        <Ionicons name={tabIcons.map} size={size} color={color} />
+                        <Ionicons name={tabIcons.map} size={24} color={color} />
                     ),
                 }}
             />
@@ -119,7 +121,7 @@ export default function TabLayout() {
                 options={{
                     title: 'Schedule',
                     tabBarIcon: ({ color, size }) => (
-                        <Ionicons name={tabIcons.schedule} size={size} color={color} />
+                        <Ionicons name={tabIcons.schedule} size={24} color={color} />
                     ),
                 }}
             />
@@ -129,7 +131,7 @@ export default function TabLayout() {
                 options={{
                     title: 'Profile',
                     tabBarIcon: ({ color, size }) => (
-                        <Ionicons name={tabIcons.profile} size={size} color={color} />
+                        <Ionicons name={tabIcons.profile} size={24} color={color} />
                     ),
                 }}
             />

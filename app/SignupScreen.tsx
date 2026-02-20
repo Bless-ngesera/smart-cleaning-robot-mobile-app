@@ -77,10 +77,10 @@ export default function SignupScreen() {
 
     const shakeField = (anim: Animated.Value) => {
         Animated.sequence([
-            Animated.timing(anim, { toValue: 8, duration: 60, useNativeDriver: true }),
-            Animated.timing(anim, { toValue: -8, duration: 60, useNativeDriver: true }),
-            Animated.timing(anim, { toValue: 4, duration: 50, useNativeDriver: true }),
-            Animated.timing(anim, { toValue: -4, duration: 50, useNativeDriver: true }),
+            Animated.timing(anim, { toValue: 10, duration: 60, useNativeDriver: true }),
+            Animated.timing(anim, { toValue: -10, duration: 60, useNativeDriver: true }),
+            Animated.timing(anim, { toValue: 5, duration: 50, useNativeDriver: true }),
+            Animated.timing(anim, { toValue: -5, duration: 50, useNativeDriver: true }),
             Animated.timing(anim, { toValue: 0, duration: 60, useNativeDriver: true }),
         ]).start();
     };
@@ -255,8 +255,8 @@ export default function SignupScreen() {
                                     <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
                                         <Ionicons
                                             name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                                            size={20}
-                                            color={darkMode ? '#ffffff' : colors.textSecondary}
+                                            size={22}
+                                            color={darkMode ? '#d1d5db' : colors.textSecondary}
                                         />
                                     </TouchableOpacity>
                                 }
@@ -282,8 +282,8 @@ export default function SignupScreen() {
                                     <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
                                         <Ionicons
                                             name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
-                                            size={20}
-                                            color={darkMode ? '#ffffff' : colors.textSecondary}
+                                            size={22}
+                                            color={darkMode ? '#d1d5db' : colors.textSecondary}
                                         />
                                     </TouchableOpacity>
                                 }
@@ -292,18 +292,33 @@ export default function SignupScreen() {
                                 refInput={confirmRef}
                             />
 
-                            {/* Terms – two clean lines, perfectly aligned */}
                             <View style={styles.termsContainer}>
-                                <AppText style={styles.termsLine}>
+                                <AppText
+                                    style={[
+                                        styles.termsLine,
+                                        { color: darkMode ? 'rgba(255,255,255,0.75)' : 'rgba(0,0,0,0.70)' },
+                                    ]}
+                                >
                                     By creating an account, you agree to our
                                 </AppText>
                                 <View style={styles.termsLinksRow}>
                                     <TouchableOpacity onPress={() => Alert.alert('Terms of Service')}>
-                                        <AppText style={styles.termsLink}>Terms of Service</AppText>
+                                        <AppText style={[styles.termsLink, { color: colors.primary }]}>
+                                            Terms of Service
+                                        </AppText>
                                     </TouchableOpacity>
-                                    <AppText style={styles.termsAnd}> and </AppText>
+                                    <AppText
+                                        style={[
+                                            styles.termsAnd,
+                                            { color: darkMode ? 'rgba(255,255,255,0.75)' : 'rgba(0,0,0,0.70)' },
+                                        ]}
+                                    >
+                                        {' and '}
+                                    </AppText>
                                     <TouchableOpacity onPress={() => Alert.alert('Privacy Policy')}>
-                                        <AppText style={styles.termsLink}>Privacy Policy</AppText>
+                                        <AppText style={[styles.termsLink, { color: colors.primary }]}>
+                                            Privacy Policy
+                                        </AppText>
                                     </TouchableOpacity>
                                 </View>
                             </View>
@@ -316,20 +331,42 @@ export default function SignupScreen() {
                                 fullWidth
                                 loading={loading}
                                 disabled={loading}
-                                style={{ marginTop: 16 }}
+                                style={{ marginTop: 16 }} // reduced
                             />
 
                             <View style={styles.divider}>
-                                <View style={styles.line} />
-                                <AppText style={styles.orText}>OR</AppText>
-                                <View style={styles.line} />
+                                <View
+                                    style={[
+                                        styles.line,
+                                        { backgroundColor: darkMode ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.14)' },
+                                    ]}
+                                />
+                                <AppText
+                                    style={[
+                                        styles.orText,
+                                        { color: darkMode ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)' },
+                                    ]}
+                                >
+                                    OR
+                                </AppText>
+                                <View
+                                    style={[
+                                        styles.line,
+                                        { backgroundColor: darkMode ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.14)' },
+                                    ]}
+                                />
                             </View>
 
                             <TouchableOpacity
                                 style={styles.backLink}
                                 onPress={() => router.push('/LoginScreen')}
                             >
-                                <AppText style={styles.backLinkText}>
+                                <AppText
+                                    style={[
+                                        styles.backLinkText,
+                                        { color: colors.primary },
+                                    ]}
+                                >
                                     Already have an account? Sign in
                                 </AppText>
                             </TouchableOpacity>
@@ -345,7 +382,6 @@ export default function SignupScreen() {
     );
 }
 
-// ─── FIELD COMPONENT ─────────────────────────────────────────────────────────
 function Field({
                    label,
                    value,
@@ -373,9 +409,29 @@ function Field({
     refInput?: React.RefObject<TextInput>;
     [key: string]: any;
 }) {
+    const borderColor = error
+        ? '#ef4444'
+        : darkMode
+            ? 'rgba(255,255,255,0.28)'
+            : 'rgba(0,0,0,0.24)';
+
+    const iconColor = error
+        ? '#ef4444'
+        : darkMode
+            ? 'rgba(255,255,255,0.75)'
+            : 'rgba(0,0,0,0.60)';
+
     return (
         <View style={styles.field}>
-            <AppText style={[styles.label, { color: darkMode ? 'rgba(255,255,255,0.7)' : colors.textSecondary }]}>
+            <AppText
+                style={[
+                    styles.label,
+                    {
+                        color: darkMode ? 'rgba(255,255,255,0.88)' : 'rgba(0,0,0,0.80)',
+                        fontWeight: '500',
+                    },
+                ]}
+            >
                 {label}
             </AppText>
 
@@ -383,8 +439,8 @@ function Field({
                 <View style={styles.inputWrapper}>
                     <Ionicons
                         name={icon}
-                        size={20}
-                        color={error ? '#ef4444' : darkMode ? 'rgba(255,255,255,0.6)' : colors.textSecondary}
+                        size={22}
+                        color={iconColor}
                         style={styles.inputIconLeft}
                     />
 
@@ -396,11 +452,12 @@ function Field({
                         style={[
                             styles.input,
                             {
-                                borderColor: error ? '#ef4444' : darkMode ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
+                                borderColor,
                                 color: darkMode ? '#ffffff' : colors.text,
+                                backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
                             },
                         ]}
-                        placeholderTextColor={darkMode ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'}
+                        placeholderTextColor={darkMode ? 'rgba(255,255,255,0.40)' : 'rgba(0,0,0,0.40)'}
                         {...rest}
                     />
 
@@ -408,20 +465,23 @@ function Field({
                 </View>
             </Animated.View>
 
-            {error && <AppText style={styles.errorText}>{error}</AppText>}
+            {error && (
+                <AppText style={[styles.errorText, { color: '#dc2626' }]}>
+                    {error}
+                </AppText>
+            )}
         </View>
     );
 }
 
-/* ================= STYLES ================= */
 const styles = StyleSheet.create({
     container: { flex: 1 },
 
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
-        paddingTop: 40,
-        paddingBottom: 80,
+        paddingTop: 32,          // reduced
+        paddingBottom: 60,       // reduced
         justifyContent: 'center',
     },
 
@@ -431,57 +491,64 @@ const styles = StyleSheet.create({
 
     card: {
         borderRadius: 24,
-        padding: 28,
+        padding: 24,             // reduced from 28
         borderWidth: 1,
     },
 
-    field: { marginBottom: 26 },
+    field: {
+        marginBottom: 20,        // reduced from 28
+    },
 
     label: {
-        marginBottom: 6,
-        fontSize: 14,
+        marginBottom: 6,         // reduced from 8
+        fontSize: 14.5,
+        fontWeight: '500',
     },
 
     inputWrapper: { position: 'relative' },
 
     input: {
-        height: 56,
-        borderWidth: 1.2,
+        height: 54,              // reduced from 58
+        borderWidth: 1.5,
         borderRadius: 14,
-        paddingLeft: 46,
-        paddingRight: 48,
+        paddingLeft: 48,
+        paddingRight: 52,
         fontSize: 16,
+        fontWeight: '400',
     },
 
     inputIconLeft: {
         position: 'absolute',
         left: 14,
-        top: 18,
+        top: 16,                 // adjusted for height 54
         zIndex: 1,
     },
 
     rightIcon: {
         position: 'absolute',
         right: 14,
-        top: 18,
+        top: 16,
         zIndex: 1,
     },
 
     errorText: {
-        color: '#ef4444',
+        color: '#dc2626',
         marginTop: 6,
-        fontSize: 13,
+        fontSize: 13.5,
+        fontWeight: '500',
     },
 
     termsContainer: {
-        marginVertical: 32,
+        marginVertical: 20,      // reduced from 32
         alignItems: 'center',
     },
+
     termsLine: {
         fontSize: 14,
         textAlign: 'center',
         lineHeight: 20,
     },
+
     termsLinksRow: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -489,49 +556,53 @@ const styles = StyleSheet.create({
         flexWrap: 'wrap',
         marginTop: 4,
     },
+
     termsLink: {
-        color: '#2563eb',
+        fontSize: 14,
         textDecorationLine: 'underline',
+        fontWeight: '500',
+    },
+
+    termsAnd: {
         fontSize: 14,
     },
 
     divider: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginVertical: 28,
+        marginVertical: 24,      // reduced from 32
     },
 
     line: {
         flex: 1,
-        height: 1,
-        backgroundColor: 'rgba(255,255,255,0.1)',
+        height: 1.2,
     },
 
     orText: {
-        color: '#ffffff',
         fontSize: 14,
-        marginHorizontal: 16,
+        fontWeight: '500',
+        marginHorizontal: 18,
     },
 
     backLink: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        marginTop: 16,
-        paddingVertical: 12,
+        marginTop: 8,            // reduced from 12
+        paddingVertical: 10,
     },
 
     backLinkText: {
-        color: '#2563eb',
         fontSize: 16,
-        fontWeight: '500',
+        fontWeight: '600',
         textDecorationLine: 'underline',
     },
 
     footer: {
         textAlign: 'center',
-        marginTop: 32,
-        fontSize: 12,
-        opacity: 0.7,
+        marginTop: 32,           // reduced from 40
+        fontSize: 12.5,
+        opacity: 0.65,
+        letterSpacing: 0.3,
     },
 });

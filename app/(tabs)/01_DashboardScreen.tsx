@@ -17,22 +17,22 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     View,
-    Text,
-    ScrollView,
-    RefreshControl,
-    Alert,
-    StyleSheet,
     TouchableOpacity,
+    StyleSheet,
+    ScrollView,
+    Alert,
     Animated,
     Dimensions,
-    Platform,
+    RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
 
+import Header from '../../src/components/Header';
+import Loader from '../../src/components/Loader';
+import AppText from '../../src/components/AppText';
 import { useThemeContext } from '@/src/context/ThemeContext';
 import { supabase } from '@/src/services/supabase';
 
@@ -44,21 +44,21 @@ type ConnectionType = 'wifi' | 'ble' | 'none';
 type RobotStatusCode = 'Online' | 'Offline' | 'Charging' | 'Error';
 
 type RobotStatus = {
-    batteryLevel: number;        // 0–100
+    batteryLevel: number;       // 0–100
     isCleaning: boolean;
-    lastCleaned: string;         // ISO date string or 'Never'
+    lastCleaned: string;        // ISO date string or 'Never'
     errors: string[];
     status: RobotStatusCode;
     connectionType: ConnectionType;
     // === C++ INTEGRATION POINT ===
     // Add extra telemetry fields returned by RobotBridge here:
     // dustBinFull?: boolean;
-    // signalStrength?: number;   // dBm
+    // signalStrength?: number;  // dBm
     // firmwareVersion?: string;
 };
 
 // ---------------------------------------------------------------------------
-// Mock data layer – DELETE when native bridge is ready
+// Mock data layer – REPLACE with RobotBridge when native bridge is ready
 // ---------------------------------------------------------------------------
 const MockRobotBridge = {
     getLiveStatus: async (): Promise<Partial<RobotStatus>> => ({
@@ -75,7 +75,8 @@ const MockRobotBridge = {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
+const isLargeScreen = width >= 768;
 
 function formatLastCleaned(raw: string): string {
     if (!raw || raw === 'Never') return 'Never';
@@ -98,7 +99,6 @@ function batteryColor(level: number): string {
 function batteryIcon(level: number): keyof typeof Ionicons.glyphMap {
     if (level >= 75) return 'battery-full';
     if (level >= 50) return 'battery-half';
-    if (level >= 20) return 'battery-dead';
     return 'battery-dead';
 }
 
@@ -106,9 +106,10 @@ function batteryIcon(level: number): keyof typeof Ionicons.glyphMap {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-/** Animated battery bar */
-function BatteryBar({ level, color }: { level: number; color: string }) {
+/** Animated battery fill bar */
+function BatteryBar({ level, color, darkMode }: { level: number; color: string; darkMode: boolean }) {
     const anim = useRef(new Animated.Value(0)).current;
+
     useEffect(() => {
         Animated.timing(anim, {
             toValue: level / 100,
@@ -116,45 +117,54 @@ function BatteryBar({ level, color }: { level: number; color: string }) {
             useNativeDriver: false,
         }).start();
     }, [level]);
-    const width = anim.interpolate({
+
+    const animatedWidth = anim.interpolate({
         inputRange: [0, 1],
         outputRange: ['0%', '100%'],
     });
+
     return (
-        <View style={batteryBarStyles.track}>
-            <Animated.View style={[batteryBarStyles.fill, { width, backgroundColor: color }]} />
+        <View style={[
+            batteryBarStyles.track,
+            { backgroundColor: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' },
+        ]}>
+            <Animated.View style={[batteryBarStyles.fill, { width: animatedWidth, backgroundColor: color }]} />
         </View>
     );
 }
 
 const batteryBarStyles = StyleSheet.create({
     track: {
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: 'rgba(255,255,255,0.08)',
+        height: 6,
+        borderRadius: 3,
         overflow: 'hidden',
-        marginTop: 8,
+        marginTop: 10,
     },
     fill: {
         height: '100%',
-        borderRadius: 4,
+        borderRadius: 3,
     },
 });
 
-/** Pulsing dot shown when robot is active */
+/** Pulsing dot – same visual weight as login's status indicators */
 function PulsingDot({ active }: { active: boolean }) {
     const scale = useRef(new Animated.Value(1)).current;
+
     useEffect(() => {
-        if (!active) return;
+        if (!active) {
+            scale.setValue(1);
+            return;
+        }
         const loop = Animated.loop(
             Animated.sequence([
-                Animated.timing(scale, { toValue: 1.5, duration: 600, useNativeDriver: true }),
-                Animated.timing(scale, { toValue: 1, duration: 600, useNativeDriver: true }),
+                Animated.timing(scale, { toValue: 1.6, duration: 700, useNativeDriver: true }),
+                Animated.timing(scale, { toValue: 1,   duration: 700, useNativeDriver: true }),
             ]),
         );
         loop.start();
         return () => loop.stop();
-    }, [active]);
+    }, [active, scale]);
+
     return (
         <Animated.View
             style={[
@@ -179,45 +189,36 @@ const pulseStyles = StyleSheet.create({
 export default function DashboardScreen() {
     const { colors, darkMode } = useThemeContext();
 
-    const [status, setStatus] = useState<RobotStatus | null>(null);
-    const [loading, setLoading] = useState(true);
+    const [status, setStatus]       = useState<RobotStatus | null>(null);
+    const [loading, setLoading]     = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
-    // Entrance animation
-    const fadeAnim = useRef(new Animated.Value(0)).current;
-    const slideAnim = useRef(new Animated.Value(24)).current;
+    // ── Design tokens mirrored from LoginScreen ───────────────────────────────
+    const textPrimary   = darkMode ? '#ffffff'                : colors.text;
+    const textSecondary = darkMode ? 'rgba(255,255,255,0.8)' : colors.textSecondary; // slightly darker for visibility
+    const borderColor   = darkMode ? 'rgba(255,255,255,0.12)' : colors.border; // exact match to Login
+    const dividerColor  = darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
 
-    const animateIn = useCallback(() => {
-        Animated.parallel([
-            Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
-            Animated.timing(slideAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
-        ]).start();
-    }, [fadeAnim, slideAnim]);
-
-    // -----------------------------------------------------------------------
-    // Data fetching
-    // -----------------------------------------------------------------------
+    // ── Data fetching ─────────────────────────────────────────────────────────
 
     const fetchStatus = useCallback(async () => {
         setRefreshing(true);
 
         try {
             // === C++ INTEGRATION POINT ===
-            // Step 1 – fetch live hardware data.
             // Replace MockRobotBridge with your real native module, e.g.:
             //   import RobotBridge from '@/src/native/RobotBridge';
             //   const liveData = await RobotBridge.getLiveStatus();
             const liveData = await MockRobotBridge.getLiveStatus();
 
-            // Step 2 – optionally merge with Supabase for cloud-persisted fields
-            // (last_cleaned, historical errors, etc.). If your DB has no table yet
-            // the .single() will return a PGRST116 error which we safely ignore.
+            // Merge with Supabase (cloud-persisted history).
+            // Safely ignored when the table doesn't exist yet (PGRST116).
             let dbData: Partial<RobotStatus> = {};
             try {
                 const userId = (await supabase.auth.getUser()).data.user?.id;
                 if (userId) {
                     const { data, error } = await supabase
-                        .from('robot_status') // Create this table when ready
+                        .from('robot_status') // ← create this table when ready
                         .select('battery_level, is_cleaning, last_cleaned, errors, status')
                         .eq('user_id', userId)
                         .order('created_at', { ascending: false })
@@ -227,54 +228,53 @@ export default function DashboardScreen() {
                     if (!error || error.code === 'PGRST116') {
                         dbData = {
                             batteryLevel: data?.battery_level,
-                            isCleaning: data?.is_cleaning,
-                            lastCleaned: data?.last_cleaned,
-                            errors: data?.errors,
-                            status: data?.status,
+                            isCleaning:   data?.is_cleaning,
+                            lastCleaned:  data?.last_cleaned,
+                            errors:       data?.errors,
+                            status:       data?.status,
                         };
                     }
                 }
             } catch {
-                // DB not set up yet – silent fallback
+                // DB not configured yet – silent fallback to live/mock data
             }
 
             // Live hardware data takes priority over cloud snapshot
             setStatus({
-                batteryLevel: liveData.batteryLevel ?? dbData.batteryLevel ?? 0,
-                isCleaning: liveData.isCleaning ?? dbData.isCleaning ?? false,
-                lastCleaned: liveData.lastCleaned ?? dbData.lastCleaned ?? 'Never',
-                errors: liveData.errors ?? dbData.errors ?? [],
-                status: liveData.status ?? dbData.status ?? 'Offline',
+                batteryLevel:  liveData.batteryLevel  ?? dbData.batteryLevel  ?? 0,
+                isCleaning:    liveData.isCleaning    ?? dbData.isCleaning    ?? false,
+                lastCleaned:   liveData.lastCleaned   ?? dbData.lastCleaned   ?? 'Never',
+                errors:        liveData.errors        ?? dbData.errors        ?? [],
+                status:        liveData.status        ?? dbData.status        ?? 'Offline',
                 connectionType: liveData.connectionType ?? 'none',
             });
-
-            animateIn();
         } catch (err: any) {
             console.error('[DashboardScreen] fetchStatus error:', err);
             Alert.alert('Connection Issue', 'Unable to load robot status. Pull to retry.');
             setStatus({
-                batteryLevel: 0,
-                isCleaning: false,
-                lastCleaned: 'Never',
-                errors: [],
-                status: 'Offline',
+                batteryLevel:  0,
+                isCleaning:    false,
+                lastCleaned:   'Never',
+                errors:        [],
+                status:        'Offline',
                 connectionType: 'none',
             });
         } finally {
             setLoading(false);
             setRefreshing(false);
         }
-    }, [animateIn]);
+    }, []);
 
     useEffect(() => {
         fetchStatus();
 
         // === C++ INTEGRATION POINT ===
-        // For real-time telemetry, subscribe to hardware events instead of polling:
-        //   const sub = RobotBridge.onStatusChange((data) => setStatus(prev => ({ ...prev, ...data })));
+        // Subscribe to hardware events for real-time telemetry:
+        //   const sub = RobotBridge.onStatusChange((data) =>
+        //       setStatus(prev => prev ? { ...prev, ...data } : null));
         //   return () => sub.remove();
         //
-        // Or use a 10-second poll as a fallback:
+        // Or enable a timed poll as fallback:
         // const interval = setInterval(fetchStatus, 10_000);
         // return () => clearInterval(interval);
     }, [fetchStatus]);
@@ -284,46 +284,28 @@ export default function DashboardScreen() {
         fetchStatus();
     }, [fetchStatus]);
 
-    // -----------------------------------------------------------------------
-    // Derived state
-    // -----------------------------------------------------------------------
+    // ── Derived state ─────────────────────────────────────────────────────────
 
     const batteryLevel = status?.batteryLevel ?? 0;
-    const isCleaning = status?.isCleaning ?? false;
-    const isConnected = status?.connectionType !== 'none';
-    const bColor = batteryColor(batteryLevel);
+    const isCleaning   = status?.isCleaning   ?? false;
+    const isConnected  = status?.connectionType !== 'none';
+    const bColor       = batteryColor(batteryLevel);
 
-    // Theme-aware surface colors
-    const surfaceBg = darkMode ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)';
-    const surfaceBorder = darkMode ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
-    const textPrimary = darkMode ? '#f1f5f9' : '#0f172a';
-    const textSecondary = darkMode ? '#94a3b8' : '#64748b';
-
-    // -----------------------------------------------------------------------
-    // Loading skeleton
-    // -----------------------------------------------------------------------
+    // ── Loading state – same Loader component as LoginScreen ─────────────────
 
     if (loading && !status) {
-        return (
-            <SafeAreaView style={[styles.safeArea, { backgroundColor: darkMode ? '#0a0f1e' : '#f8faff' }]}>
-                <View style={styles.loadingContainer}>
-                    <Ionicons name="hardware-chip" size={48} color={colors.primary} />
-                    <Text style={[styles.loadingText, { color: textSecondary }]}>
-                        Connecting to robot…
-                    </Text>
-                </View>
-            </SafeAreaView>
-        );
+        return <Loader message="Fetching robot status..." />;
     }
 
-    // -----------------------------------------------------------------------
-    // Render
-    // -----------------------------------------------------------------------
+    // ── Render ────────────────────────────────────────────────────────────────
 
     return (
-        <SafeAreaView style={[styles.safeArea, { backgroundColor: darkMode ? '#0a0f1e' : '#f0f4ff' }]}>
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             <ScrollView
-                contentContainerStyle={styles.scroll}
+                contentContainerStyle={[
+                    styles.scrollContent,
+                    isLargeScreen && styles.scrollContentLarge,
+                ]}
                 refreshControl={
                     <RefreshControl
                         refreshing={refreshing}
@@ -332,189 +314,179 @@ export default function DashboardScreen() {
                         colors={[colors.primary]}
                     />
                 }
+                keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
             >
-                <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+                <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
 
-                    {/* ── PAGE HEADER ───────────────────────────────────────── */}
-                    <View style={styles.pageHeader}>
-                        <View>
-                            <Text style={[styles.pageTitle, { color: textPrimary }]}>Dashboard</Text>
-                            <Text style={[styles.pageSubtitle, { color: textSecondary }]}>
-                                Smart Cleaner Pro
-                            </Text>
-                        </View>
-                        <TouchableOpacity
-                            style={[styles.iconBtn, { backgroundColor: surfaceBg, borderColor: surfaceBorder }]}
-                            onPress={fetchStatus}
-                            accessibilityLabel="Refresh status"
-                        >
-                            <Ionicons name="refresh" size={20} color={colors.primary} />
-                        </TouchableOpacity>
-                    </View>
+                    {/* ── Header – same component as LoginScreen ── */}
+                    <Header
+                        title="Dashboard"
+                        subtitle="Monitor your Smart Cleaner Pro"
+                    />
 
-                    {/* ── HERO CARD ─────────────────────────────────────────── */}
-                    <LinearGradient
-                        colors={
-                            isCleaning
-                                ? ['#064e3b', '#065f46']
-                                : darkMode
-                                    ? ['#1e1b4b', '#1e3a5f']
-                                    : ['#2563eb', '#1d4ed8']
-                        }
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.heroCard}
-                    >
-                        {/* Top row */}
-                        <View style={styles.heroTopRow}>
-                            <View style={styles.heroAvatarWrapper}>
-                                <Ionicons name="hardware-chip" size={32} color="#fff" />
+                    {/* HERO CARD – exact same card style as Login */}
+                    <View style={[styles.card, { borderColor }]}>
+
+                        {/* Robot identity */}
+                        <View style={styles.robotRow}>
+                            <View style={[
+                                styles.robotAvatar,
+                                { backgroundColor: isCleaning ? 'rgba(34,197,94,0.15)' : `${colors.primary}1a` },
+                            ]}>
+                                <Ionicons
+                                    name="hardware-chip"
+                                    size={32}
+                                    color={isCleaning ? '#22c55e' : colors.primary}
+                                />
                             </View>
-                            <View style={styles.heroTitleBlock}>
-                                <Text style={styles.heroRobotName}>Smart Cleaner Pro</Text>
-                                <View style={styles.statusRow}>
+
+                            <View style={styles.robotInfo}>
+                                <AppText style={[styles.robotName, { color: textPrimary }]}>
+                                    Smart Cleaner Pro
+                                </AppText>
+                                <View style={styles.statusBadge}>
                                     <PulsingDot active={isCleaning} />
-                                    <Text style={styles.heroStatusText}>
-                                        {isCleaning ? 'Cleaning in progress' : status?.status ?? 'Offline'}
-                                    </Text>
+                                    <AppText style={[styles.statusLabel, { color: textSecondary }]}>
+                                        {isCleaning ? 'Cleaning in progress' : (status?.status ?? 'Offline')}
+                                    </AppText>
                                 </View>
                             </View>
+
+                            {/* Refresh – same tap-target size as login's eye-toggle */}
+                            <TouchableOpacity
+                                style={styles.iconButton}
+                                onPress={() => {
+                                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                    fetchStatus();
+                                }}
+                                accessibilityLabel="Refresh status"
+                            >
+                                <Ionicons name="refresh-outline" size={20} color={colors.primary} />
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Divider – same rgba as login OR divider */}
+                        <View style={[styles.divider, { backgroundColor: dividerColor }]} />
+
+                        {/* Battery */}
+                        <View style={styles.batterySection}>
+                            <View style={styles.batteryRow}>
+                                <Ionicons name={batteryIcon(batteryLevel)} size={20} color={bColor} />
+                                <AppText style={[styles.fieldLabel, { color: textSecondary }]}>
+                                    Battery
+                                </AppText>
+                                <View style={styles.flex1} />
+                                <AppText style={[styles.batteryPercent, { color: bColor }]}>
+                                    {batteryLevel}%
+                                </AppText>
+                            </View>
+                            <BatteryBar level={batteryLevel} color={bColor} darkMode={darkMode} />
                         </View>
 
                         {/* Divider */}
-                        <View style={styles.heroDivider} />
+                        <View style={[styles.divider, { backgroundColor: dividerColor }]} />
 
-                        {/* Battery */}
-                        <View style={styles.heroBatteryRow}>
-                            <Ionicons name={batteryIcon(batteryLevel)} size={18} color={bColor} />
-                            <Text style={styles.heroBatteryLabel}>Battery</Text>
-                            <View style={{ flex: 1 }} />
-                            <Text style={[styles.heroBatteryValue, { color: bColor }]}>
-                                {batteryLevel}%
-                            </Text>
-                        </View>
-                        <BatteryBar level={batteryLevel} color={bColor} />
-
-                        {/* Connection */}
-                        <View style={styles.heroConnectionRow}>
-                            <View
-                                style={[
-                                    styles.connDot,
-                                    { backgroundColor: isConnected ? '#22c55e' : '#ef4444' },
-                                ]}
-                            />
-                            <Text style={styles.heroConnectionText}>
+                        {/* Connection status */}
+                        <View style={styles.connectionRow}>
+                            <View style={[styles.connDot, { backgroundColor: isConnected ? '#22c55e' : '#ef4444' }]} />
+                            <AppText style={[styles.connectionText, { color: textSecondary }]}>
                                 {isConnected
                                     ? `Connected via ${status?.connectionType === 'wifi' ? 'Wi-Fi' : 'Bluetooth'}`
-                                    : 'Disconnected – tap to connect'}
-                            </Text>
-                            <TouchableOpacity
-                                onPress={() => {
-                                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                                    router.push('../settings/connection');
-                                }}
-                                accessibilityLabel="Manage connection"
-                            >
-                                <Text style={styles.heroConnectionLink}>
-                                    {isConnected ? 'Manage' : 'Connect'}
-                                </Text>
-                            </TouchableOpacity>
+                                    : 'Disconnected'}
+                            </AppText>
                         </View>
-                    </LinearGradient>
 
-                    {/* ── STAT TILES ────────────────────────────────────────── */}
+                        {/* Connect / Manage – styled as login's "Create New Account" secondary button */}
+                        <TouchableOpacity
+                            style={styles.secondaryButton}
+                            onPress={() => {
+                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                router.push('../settings/connection');
+                            }}
+                            accessibilityLabel={isConnected ? 'Manage connection' : 'Connect robot'}
+                        >
+                            <Ionicons
+                                name={isConnected ? 'link-outline' : 'link-outline'}
+                                size={20}
+                                color={darkMode ? '#ffffff' : colors.primary}
+                                style={styles.secondaryButtonIcon}
+                            />
+                            <AppText style={[styles.secondaryButtonText, { color: darkMode ? '#ffffff' : colors.primary }]}>
+                                {isConnected ? 'Manage Connection' : 'Connect Robot'}
+                            </AppText>
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* QUICK STATS – three mini-cards in a row */}
                     <View style={styles.statRow}>
-                        {[
-                            {
-                                icon: 'checkmark-circle' as const,
-                                iconColor: '#22c55e',
-                                value: isCleaning ? 'Active' : 'Idle',
-                                label: 'Status',
-                            },
-                            {
-                                icon: 'time' as const,
-                                iconColor: '#a78bfa',
-                                value: '2.5 h',
-                                label: 'Runtime',
-                            },
-                            {
-                                icon: 'map' as const,
-                                iconColor: '#fb923c',
-                                value: '127 m²',
-                                label: 'Cleaned',
-                            },
-                        ].map((tile) => (
+                        {([
+                            { icon: 'checkmark-circle-outline', color: '#22c55e', value: isCleaning ? 'Active' : 'Idle', label: 'Status'  },
+                            { icon: 'time-outline',             color: '#a78bfa', value: '2.5 h',                        label: 'Runtime' },
+                            { icon: 'map-outline',              color: '#fb923c', value: '127 m²',                       label: 'Cleaned' },
+                        ] as const).map((tile) => (
                             <View
                                 key={tile.label}
-                                style={[styles.statTile, { backgroundColor: surfaceBg, borderColor: surfaceBorder }]}
+                                style={[styles.statTile, { borderColor }]}
                             >
-                                <Ionicons name={tile.icon} size={26} color={tile.iconColor} />
-                                <Text style={[styles.statValue, { color: textPrimary }]}>{tile.value}</Text>
-                                <Text style={[styles.statLabel, { color: textSecondary }]}>{tile.label}</Text>
+                                <Ionicons name={tile.icon} size={26} color={tile.color} />
+                                <AppText style={[styles.statValue, { color: textPrimary }]}>
+                                    {tile.value}
+                                </AppText>
+                                <AppText style={[styles.statLabel, { color: textSecondary }]}>
+                                    {tile.label}
+                                </AppText>
                             </View>
                         ))}
                     </View>
 
-                    {/* ── LAST SESSION ──────────────────────────────────────── */}
-                    <View style={[styles.card, { backgroundColor: surfaceBg, borderColor: surfaceBorder }]}>
+                    {/* LAST SESSION */}
+                    <View style={[styles.card, { borderColor }]}>
                         <View style={styles.cardHeader}>
-                            <View style={[styles.cardIconWrapper, { backgroundColor: `${colors.primary}1a` }]}>
-                                <Ionicons name="calendar" size={18} color={colors.primary} />
-                            </View>
-                            <Text style={[styles.cardTitle, { color: textPrimary }]}>Last Session</Text>
+                            <Ionicons name="calendar-outline" size={20} color={colors.primary} style={styles.cardHeaderIcon} />
+                            <AppText style={[styles.cardLabel, { color: textSecondary }]}>
+                                Last Session
+                            </AppText>
                         </View>
-                        <Text style={[styles.cardBody, { color: textSecondary }]}>
+                        <AppText style={[styles.cardValue, { color: textPrimary }]}>
                             {formatLastCleaned(status?.lastCleaned ?? 'Never')}
-                        </Text>
+                        </AppText>
                     </View>
 
-                    {/* ── ERROR BANNER (only shown when there are errors) ────── */}
+                    {/* ERROR BANNER */}
                     {(status?.errors ?? []).length > 0 && (
                         <View style={styles.errorBanner}>
-                            <Ionicons name="warning" size={18} color="#fbbf24" />
-                            <Text style={styles.errorText}>
+                            <Ionicons name="warning-outline" size={20} color="#fbbf24" />
+                            <AppText style={styles.errorBannerText}>
                                 {status!.errors[0]}
                                 {status!.errors.length > 1 ? ` (+${status!.errors.length - 1} more)` : ''}
-                            </Text>
+                            </AppText>
                         </View>
                     )}
 
-                    {/* ── QUICK ACTIONS ─────────────────────────────────────── */}
-                    <View style={[styles.card, { backgroundColor: surfaceBg, borderColor: surfaceBorder }]}>
+                    {/* QUICK ACTIONS */}
+                    <View style={[styles.card, { borderColor }]}>
                         <View style={styles.cardHeader}>
-                            <View style={[styles.cardIconWrapper, { backgroundColor: `${colors.primary}1a` }]}>
-                                <Ionicons name="flash" size={18} color={colors.primary} />
-                            </View>
-                            <Text style={[styles.cardTitle, { color: textPrimary }]}>Quick Actions</Text>
+                            <Ionicons name="flash-outline" size={20} color={colors.primary} style={styles.cardHeaderIcon} />
+                            <AppText style={[styles.cardLabel, { color: textSecondary }]}>
+                                Quick Actions
+                            </AppText>
                         </View>
 
+                        {/* Divider above actions – mirrors login OR divider */}
+                        <View style={[styles.divider, { backgroundColor: dividerColor, marginTop: 4, marginBottom: 20 }]} />
+
                         <View style={styles.actionsGrid}>
-                            {[
-                                {
-                                    icon: 'game-controller' as const,
-                                    label: 'Controls',
-                                    color: '#6366f1',
-                                    route: '/(tabs)/02_ControlScreen',
-                                },
-                                {
-                                    icon: 'calendar' as const,
-                                    label: 'Schedule',
-                                    color: '#ec4899',
-                                    route: '/(tabs)/04_ScheduleScreen',
-                                },
-                                {
-                                    icon: 'map' as const,
-                                    label: 'Map',
-                                    color: '#14b8a6',
-                                    route: '/(tabs)/03_MapScreen',
-                                },
-                            ].map((action) => (
+                            {([
+                                { icon: 'game-controller-outline', label: 'Controls', route: '/(tabs)/02_ControlScreen',  accent: '#6366f1' },
+                                { icon: 'calendar-outline',        label: 'Schedule', route: '/(tabs)/04_ScheduleScreen', accent: '#ec4899' },
+                                { icon: 'map-outline',             label: 'Map',      route: '/(tabs)/03_MapScreen',      accent: '#14b8a6' },
+                            ] as const).map((action) => (
                                 <TouchableOpacity
                                     key={action.label}
                                     style={[
                                         styles.actionTile,
-                                        { backgroundColor: `${action.color}14`, borderColor: `${action.color}25` },
+                                        { backgroundColor: `${action.accent}18`, borderColor: `${action.accent}30` },
                                     ]}
                                     onPress={() => {
                                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -522,197 +494,192 @@ export default function DashboardScreen() {
                                     }}
                                     accessibilityLabel={`Go to ${action.label}`}
                                 >
-                                    <View style={[styles.actionIconRing, { backgroundColor: `${action.color}22` }]}>
-                                        <Ionicons name={action.icon} size={24} color={action.color} />
-                                    </View>
-                                    <Text style={[styles.actionLabel, { color: textPrimary }]}>{action.label}</Text>
+                                    <Ionicons name={action.icon} size={24} color={action.accent} />
+                                    <AppText style={[styles.actionLabel, { color: textPrimary }]}>
+                                        {action.label}
+                                    </AppText>
                                 </TouchableOpacity>
                             ))}
                         </View>
                     </View>
 
-                    {/* ── FOOTER ────────────────────────────────────────────── */}
-                    <Text style={[styles.footer, { color: textSecondary }]}>
-                        v1.0.0 · Smart Cleaner Pro © 2026
-                    </Text>
+                </View>
 
-                    {/*
-                     * === C++ INTEGRATION POINT ===
-                     * Insert real-time telemetry cards here once RobotBridge is ready.
-                     * Example card to add:
-                     *
-                     * <View style={[styles.card, { ... }]}>
-                     *   <Text>Dust Bin: {status?.dustBinFull ? 'Full' : 'OK'}</Text>
-                     *   <Text>Signal: {status?.signalStrength} dBm</Text>
-                     * </View>
-                     */}
-                </Animated.View>
+                {/* Footer – identical style to LoginScreen */}
+                <AppText style={[styles.footer, { color: textSecondary }]}>
+                    Version 1.0.0 • Smart Cleaner Pro © 2026
+                </AppText>
             </ScrollView>
         </SafeAreaView>
     );
 }
 
 // ---------------------------------------------------------------------------
-// Styles
+// Styles – every value mirrors LoginScreen token-for-token
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
-    safeArea: {
-        flex: 1,
+
+    // ── Layout ──────────────────────────────────────────────────────────────
+    container: { flex: 1 },
+
+    scrollContent: {
+        flexGrow: 1,
+        paddingHorizontal: 24,
+        paddingTop: 40,
+        paddingBottom: 80,
     },
 
-    scroll: {
-        paddingHorizontal: 20,
-        paddingTop: 8,
-        paddingBottom: 100,
-    },
-
-    // ── Loading ──
-    loadingContainer: {
-        flex: 1,
+    scrollContentLarge: {
         alignItems: 'center',
-        justifyContent: 'center',
-        gap: 16,
-    },
-    loadingText: {
-        fontSize: 15,
-        fontWeight: '500',
     },
 
-    // ── Page header ──
-    pageHeader: {
+    wrapper: { width: '100%' },
+
+    largeWrapper: { maxWidth: 480 },   // matches login largeWrapper
+
+    flex1: { flex: 1 },
+
+    // ── Card – token-for-token copy of login card ────────────────────────────
+    card: {
+        borderRadius: 24,              // login: borderRadius: 24
+        padding: 28,                   // login: padding: 28
+        borderWidth: 1,                // login: borderWidth: 1
+        marginBottom: 20,
+        // Flat premium – no shadow, no glow (same as login)
+    },
+
+    // ── Robot identity row ───────────────────────────────────────────────────
+    robotRow: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: 20,
-        marginTop: 8,
     },
-    pageTitle: {
-        fontSize: 28,
-        fontWeight: '800',
-        letterSpacing: -0.5,
+
+    robotAvatar: {
+        width: 56,
+        height: 56,
+        borderRadius: 14,              // matches login input borderRadius: 14
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 14,
     },
-    pageSubtitle: {
-        fontSize: 14,
+
+    robotInfo: { flex: 1 },
+
+    robotName: {
+        fontSize: 18,
+        fontWeight: '700',
+        letterSpacing: -0.3,
+        marginBottom: 4,
+    },
+
+    statusBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+
+    statusLabel: {
+        fontSize: 14,                  // matches login label fontSize: 14
         fontWeight: '500',
-        marginTop: 2,
     },
-    iconBtn: {
+
+    // Icon button – same tap target as login's right-side eye toggle
+    iconButton: {
         width: 44,
         height: 44,
         borderRadius: 14,
-        borderWidth: 1,
         alignItems: 'center',
         justifyContent: 'center',
     },
 
-    // ── Hero card ──
-    heroCard: {
-        borderRadius: 24,
-        padding: 22,
-        marginBottom: 16,
-        // Shadow
-        ...Platform.select({
-            ios: { shadowColor: '#2563eb', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.35, shadowRadius: 20 },
-            android: { elevation: 12 },
-        }),
+    // ── Divider – same rgba as login OR divider line ─────────────────────────
+    divider: {
+        height: 1,
+        marginVertical: 20,
+        borderRadius: 1,
     },
-    heroTopRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 14,
-        marginBottom: 18,
-    },
-    heroAvatarWrapper: {
-        width: 56,
-        height: 56,
-        borderRadius: 18,
-        backgroundColor: 'rgba(255,255,255,0.15)',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    heroTitleBlock: {
-        flex: 1,
-    },
-    heroRobotName: {
-        fontSize: 20,
-        fontWeight: '700',
-        color: '#fff',
-        letterSpacing: -0.3,
-    },
-    statusRow: {
+
+    // ── Battery ───────────────────────────────────────────────────────────────
+    batterySection: { marginBottom: 0 },
+
+    batteryRow: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
-        marginTop: 4,
     },
-    heroStatusText: {
-        color: 'rgba(255,255,255,0.7)',
-        fontSize: 13,
+
+    fieldLabel: {
+        fontSize: 14,                  // matches login label fontSize: 14
         fontWeight: '500',
     },
-    heroDivider: {
-        height: 1,
-        backgroundColor: 'rgba(255,255,255,0.1)',
-        marginBottom: 16,
+
+    batteryPercent: {
+        fontSize: 16,
+        fontWeight: '700',
     },
-    heroBatteryRow: {
+
+    // ── Connection ────────────────────────────────────────────────────────────
+    connectionRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
+        gap: 10,
+        marginBottom: 20,
     },
-    heroBatteryLabel: {
-        color: 'rgba(255,255,255,0.7)',
+
+    connDot: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+    },
+
+    connectionText: {
+        flex: 1,
         fontSize: 14,
         fontWeight: '500',
     },
-    heroBatteryValue: {
-        fontSize: 18,
-        fontWeight: '800',
-    },
-    heroConnectionRow: {
+
+    // Secondary button – identical to login "Create New Account" button
+    secondaryButton: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
-        marginTop: 16,
-    },
-    connDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-    },
-    heroConnectionText: {
-        flex: 1,
-        color: 'rgba(255,255,255,0.65)',
-        fontSize: 13,
-    },
-    heroConnectionLink: {
-        color: '#fff',
-        fontSize: 13,
-        fontWeight: '700',
-        textDecorationLine: 'underline',
+        justifyContent: 'center',
+        height: 56,                    // login: height: 56
+        borderRadius: 14,              // login: borderRadius: 14
+        backgroundColor: 'rgba(59, 130, 246, 0.15)', // login: same rgba
     },
 
-    // ── Stat tiles ──
+    secondaryButtonIcon: { marginRight: 12 }, // login: marginRight: 12
+
+    secondaryButtonText: {
+        fontSize: 16,                  // login: fontSize: 16
+        fontWeight: '500',             // login: fontWeight: '500'
+    },
+
+    // ── Stat row ──────────────────────────────────────────────────────────────
     statRow: {
         flexDirection: 'row',
-        gap: 10,
-        marginBottom: 16,
+        gap: 12,
+        marginBottom: 20,
     },
+
     statTile: {
         flex: 1,
-        borderRadius: 18,
-        paddingVertical: 16,
+        borderRadius: 20,
+        paddingVertical: 18,
         paddingHorizontal: 10,
         alignItems: 'center',
         borderWidth: 1,
         gap: 6,
     },
+
     statValue: {
         fontSize: 15,
         fontWeight: '700',
-        letterSpacing: -0.3,
+        letterSpacing: -0.2,
     },
+
     statLabel: {
         fontSize: 11,
         fontWeight: '500',
@@ -720,87 +687,71 @@ const styles = StyleSheet.create({
         letterSpacing: 0.5,
     },
 
-    // ── Generic card ──
-    card: {
-        borderRadius: 20,
-        padding: 20,
-        borderWidth: 1,
-        marginBottom: 16,
-    },
+    // ── Card internals ────────────────────────────────────────────────────────
     cardHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 10,
-        marginBottom: 14,
+        marginBottom: 10,
     },
-    cardIconWrapper: {
-        width: 34,
-        height: 34,
-        borderRadius: 10,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    cardTitle: {
-        fontSize: 16,
-        fontWeight: '700',
-        letterSpacing: -0.2,
-    },
-    cardBody: {
-        fontSize: 15,
+
+    cardHeaderIcon: { marginRight: 8 },
+
+    cardLabel: {
+        fontSize: 14,                  // matches login label fontSize: 14
         fontWeight: '500',
     },
 
-    // ── Error banner ──
+    cardValue: {
+        fontSize: 16,
+        fontWeight: '600',
+        letterSpacing: -0.2,
+    },
+
+    // ── Error banner ──────────────────────────────────────────────────────────
     errorBanner: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 10,
-        backgroundColor: '#451a0380',
+        backgroundColor: 'rgba(239,68,68,0.1)',
         borderWidth: 1,
-        borderColor: '#92400e',
-        borderRadius: 14,
-        padding: 14,
-        marginBottom: 16,
+        borderColor: 'rgba(239,68,68,0.3)',
+        borderRadius: 14,              // matches login input borderRadius: 14
+        padding: 16,
+        marginBottom: 20,
     },
-    errorText: {
+
+    errorBannerText: {
         flex: 1,
         color: '#fbbf24',
-        fontSize: 13,
+        fontSize: 14,
         fontWeight: '500',
     },
 
-    // ── Quick actions ──
+    // ── Quick actions ─────────────────────────────────────────────────────────
     actionsGrid: {
         flexDirection: 'row',
-        gap: 10,
+        gap: 12,
     },
+
     actionTile: {
         flex: 1,
-        borderRadius: 16,
+        borderRadius: 14,              // matches login input borderRadius: 14
         borderWidth: 1,
-        paddingVertical: 18,
+        paddingVertical: 20,
         alignItems: 'center',
         gap: 10,
     },
-    actionIconRing: {
-        width: 46,
-        height: 46,
-        borderRadius: 14,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
+
     actionLabel: {
-        fontSize: 12,
+        fontSize: 13,
         fontWeight: '600',
     },
 
-    // ── Footer ──
+    // ── Footer – identical to LoginScreen ─────────────────────────────────────
     footer: {
         textAlign: 'center',
-        fontSize: 11,
-        fontWeight: '400',
-        marginTop: 8,
-        marginBottom: 16,
-        opacity: 0.5,
+        marginTop: 32,                 // login: marginTop: 32
+        fontSize: 12,                  // login: fontSize: 12
+        opacity: 0.7,                  // login: opacity: 0.7
     },
 });
