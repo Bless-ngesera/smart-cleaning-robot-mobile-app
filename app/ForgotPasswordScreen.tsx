@@ -39,10 +39,10 @@ export default function ForgotPasswordScreen() {
 
     const shakeField = () => {
         Animated.sequence([
-            Animated.timing(emailShake, { toValue: 8, duration: 60, useNativeDriver: true }),
-            Animated.timing(emailShake, { toValue: -8, duration: 60, useNativeDriver: true }),
-            Animated.timing(emailShake, { toValue: 4, duration: 50, useNativeDriver: true }),
-            Animated.timing(emailShake, { toValue: -4, duration: 50, useNativeDriver: true }),
+            Animated.timing(emailShake, { toValue: 10, duration: 60, useNativeDriver: true }),
+            Animated.timing(emailShake, { toValue: -10, duration: 60, useNativeDriver: true }),
+            Animated.timing(emailShake, { toValue: 5, duration: 50, useNativeDriver: true }),
+            Animated.timing(emailShake, { toValue: -5, duration: 50, useNativeDriver: true }),
             Animated.timing(emailShake, { toValue: 0, duration: 60, useNativeDriver: true }),
         ]).start();
     };
@@ -66,7 +66,7 @@ export default function ForgotPasswordScreen() {
 
         try {
             const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-                redirectTo: 'yourapp://reset-password', // ← change this to your actual deep link scheme if you have one
+                redirectTo: 'yourapp://reset-password', // ← update to your actual deep link
             });
 
             if (error) throw error;
@@ -123,10 +123,10 @@ export default function ForgotPasswordScreen() {
                                     <AppText
                                         style={{
                                             color: darkMode ? '#ffffff' : colors.text,
-                                            fontSize: 24,
+                                            fontSize: 22,
                                             fontWeight: '700',
                                             textAlign: 'center',
-                                            marginTop: 24,
+                                            marginTop: 20,
                                             marginBottom: 12,
                                         }}
                                     >
@@ -134,24 +134,26 @@ export default function ForgotPasswordScreen() {
                                     </AppText>
                                     <AppText
                                         style={{
-                                            color: darkMode ? 'rgba(255,255,255,0.8)' : colors.textSecondary,
+                                            color: darkMode ? 'rgba(255,255,255,0.85)' : colors.textSecondary,
                                             textAlign: 'center',
-                                            fontSize: 16,
-                                            lineHeight: 24,
+                                            fontSize: 15.5,
+                                            lineHeight: 22,
                                         }}
                                     >
                                         We sent a password reset link to{'\n'}
-                                        <AppText style={{ color: colors.primary, fontWeight: '600' }}>{email}</AppText>
+                                        <AppText style={{ color: colors.primary, fontWeight: '600' }}>
+                                            {email}
+                                        </AppText>
                                     </AppText>
                                     <AppText
                                         style={{
-                                            color: darkMode ? 'rgba(255,255,255,0.6)' : colors.textSecondary,
+                                            color: darkMode ? 'rgba(255,255,255,0.65)' : colors.textSecondary,
                                             textAlign: 'center',
-                                            fontSize: 14,
+                                            fontSize: 13.5,
                                             marginTop: 12,
                                         }}
                                     >
-                                        Check your inbox and spam folder.
+                                        Check inbox & spam folder. Link expires in 24 hours.
                                     </AppText>
 
                                     <Button
@@ -160,7 +162,7 @@ export default function ForgotPasswordScreen() {
                                         onPress={() => router.replace('/LoginScreen')}
                                         variant="outline"
                                         fullWidth
-                                        style={{ marginTop: 32 }}
+                                        style={{ marginTop: 28 }}
                                     />
                                 </View>
                             ) : (
@@ -186,13 +188,12 @@ export default function ForgotPasswordScreen() {
                                     />
 
                                     <AppText
-                                        style={{
-                                            color: darkMode ? 'rgba(255,255,255,0.7)' : colors.textSecondary,
-                                            fontSize: 14,
-                                            textAlign: 'center',
-                                            marginVertical: 24,
-                                            lineHeight: 20,
-                                        }}
+                                        style={[
+                                            styles.infoText,
+                                            {
+                                                color: darkMode ? 'rgba(255,255,255,0.78)' : 'rgba(0,0,0,0.70)',
+                                            },
+                                        ]}
                                     >
                                         Enter the email associated with your account and we'll send you a reset link.
                                     </AppText>
@@ -205,19 +206,19 @@ export default function ForgotPasswordScreen() {
                                         fullWidth
                                         loading={loading}
                                         disabled={loading}
+                                        style={{ marginTop: 16 }}
                                     />
 
                                     <TouchableOpacity
                                         style={styles.backLink}
                                         onPress={() => router.back()}
                                     >
-                                        <Ionicons name="arrow-back-outline" size={18} color={colors.primary} />
+                                        <Ionicons name="arrow-back-outline" size={20} color={colors.primary} />
                                         <AppText
-                                            style={{
-                                                color: colors.primary,
-                                                fontWeight: '500',
-                                                marginLeft: 8,
-                                            }}
+                                            style={[
+                                                styles.backLinkText,
+                                                { color: colors.primary },
+                                            ]}
                                         >
                                             Back to Login
                                         </AppText>
@@ -225,26 +226,17 @@ export default function ForgotPasswordScreen() {
                                 </>
                             )}
                         </View>
-
-                        <AppText
-                            style={{
-                                textAlign: 'center',
-                                marginTop: 32,
-                                fontSize: 12,
-                                color: darkMode ? '#ffffff80' : colors.textSecondary,
-                                opacity: 0.7,
-                            }}
-                        >
-                            Version 1.0.0 • Smart Cleaner Pro © 2026
-                        </AppText>
                     </View>
+
+                    <AppText style={styles.footer}>
+                        Version 1.0.0 • Smart Cleaner Pro © 2026
+                    </AppText>
                 </ScrollView>
             </KeyboardAvoidingView>
         </SafeAreaView>
     );
 }
 
-// ─── FIELD COMPONENT ─────────────────────────────────────────────────────────
 function Field({
                    label,
                    value,
@@ -272,9 +264,29 @@ function Field({
     refInput?: React.RefObject<TextInput>;
     [key: string]: any;
 }) {
+    const borderColor = error
+        ? '#ef4444'
+        : darkMode
+            ? 'rgba(255,255,255,0.28)'
+            : 'rgba(0,0,0,0.24)';
+
+    const iconColor = error
+        ? '#ef4444'
+        : darkMode
+            ? 'rgba(255,255,255,0.75)'
+            : 'rgba(0,0,0,0.60)';
+
     return (
         <View style={styles.field}>
-            <AppText style={[styles.label, { color: darkMode ? 'rgba(255,255,255,0.7)' : colors.textSecondary }]}>
+            <AppText
+                style={[
+                    styles.label,
+                    {
+                        color: darkMode ? 'rgba(255,255,255,0.88)' : 'rgba(0,0,0,0.80)',
+                        fontWeight: '500',
+                    },
+                ]}
+            >
                 {label}
             </AppText>
 
@@ -282,8 +294,8 @@ function Field({
                 <View style={styles.inputWrapper}>
                     <Ionicons
                         name={icon}
-                        size={20}
-                        color={error ? '#ef4444' : darkMode ? 'rgba(255,255,255,0.6)' : colors.textSecondary}
+                        size={22}
+                        color={iconColor}
                         style={styles.inputIconLeft}
                     />
 
@@ -295,11 +307,12 @@ function Field({
                         style={[
                             styles.input,
                             {
-                                borderColor: error ? '#ef4444' : darkMode ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
+                                borderColor,
                                 color: darkMode ? '#ffffff' : colors.text,
+                                backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
                             },
                         ]}
-                        placeholderTextColor={darkMode ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'}
+                        placeholderTextColor={darkMode ? 'rgba(255,255,255,0.40)' : 'rgba(0,0,0,0.40)'}
                         {...rest}
                     />
 
@@ -307,20 +320,23 @@ function Field({
                 </View>
             </Animated.View>
 
-            {error && <AppText style={styles.errorText}>{error}</AppText>}
+            {error && (
+                <AppText style={[styles.errorText, { color: '#dc2626' }]}>
+                    {error}
+                </AppText>
+            )}
         </View>
     );
 }
 
-// ─── STYLES ─────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
     container: { flex: 1 },
 
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
-        paddingTop: 40,
-        paddingBottom: 80,
+        paddingTop: 32,          // reduced
+        paddingBottom: 60,       // reduced
         justifyContent: 'center',
     },
 
@@ -330,75 +346,83 @@ const styles = StyleSheet.create({
 
     card: {
         borderRadius: 24,
-        padding: 28,
+        padding: 24,             // reduced from 28
         borderWidth: 1,
     },
 
-    form: {
-        width: '100%',
-    },
-
     field: {
-        marginBottom: 26,
+        marginBottom: 20,        // reduced from 28
     },
 
     label: {
-        marginBottom: 6,
-        fontSize: 14,
+        marginBottom: 6,         // reduced from 8
+        fontSize: 14.5,
+        fontWeight: '500',
     },
 
     inputWrapper: { position: 'relative' },
 
     input: {
-        height: 56,
-        borderWidth: 1.2,
+        height: 54,              // reduced from 58
+        borderWidth: 1.5,
         borderRadius: 14,
-        paddingLeft: 46,
-        paddingRight: 48,
+        paddingLeft: 48,
+        paddingRight: 50,
         fontSize: 16,
+        fontWeight: '400',
     },
 
     inputIconLeft: {
         position: 'absolute',
-        left: 14,
-        top: 18,
+        left: 14,                // adjusted
+        top: 16,                 // adjusted for height 54
         zIndex: 1,
     },
 
     rightIcon: {
         position: 'absolute',
         right: 14,
-        top: 18,
+        top: 16,
         zIndex: 1,
     },
 
     errorText: {
-        color: '#ef4444',
+        color: '#dc2626',
         marginTop: 6,
-        fontSize: 13,
+        fontSize: 13.5,
+        fontWeight: '500',
+    },
+
+    infoText: {
+        fontSize: 14,
+        textAlign: 'center',
+        lineHeight: 20,
+        marginVertical: 20,      // reduced from 28
     },
 
     successContainer: {
         alignItems: 'center',
-        paddingVertical: 20,
+        paddingVertical: 16,     // reduced
     },
 
     backLink: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        marginTop: 24,
-        paddingVertical: 12,
+        marginTop: 20,           // reduced from 28
+        paddingVertical: 10,
     },
 
-    divider: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginVertical: 28,
+    backLinkText: {
+        fontSize: 16,
+        fontWeight: '600',
     },
 
-    line: {
-        flex: 1,
-        height: 1,
+    footer: {
+        textAlign: 'center',
+        marginTop: 32,           // reduced from 40
+        fontSize: 12.5,
+        opacity: 0.65,
+        letterSpacing: 0.3,
     },
 });
