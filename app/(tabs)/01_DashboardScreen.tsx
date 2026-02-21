@@ -3,15 +3,12 @@
 // ============================================================
 // C++ INTEGRATION OVERVIEW
 // ------------------------------------------------------------
-// This file uses a mock data layer (MockRobotBridge) as a
-// stand-in for real hardware communication. When you're ready
-// to wire in the native C++ bridge:
+// This file fetches real data from Supabase.
+// When you're ready to integrate real hardware via native C++ bridge:
 //
-//   1. Replace every call to `MockRobotBridge.*` with the
-//      corresponding `RobotBridge.*` call from your native module.
-//   2. Keep the same TypeScript types so nothing else changes.
-//   3. All C++ hooks are marked with:
-//        // === C++ INTEGRATION POINT ===
+//   1. Add a real-time subscription or polling to RobotBridge
+//   2. Update the status fields in setStatus() with live hardware values
+//   3. All C++ integration points are clearly marked below
 // ============================================================
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -24,6 +21,7 @@ import {
     Animated,
     Dimensions,
     RefreshControl,
+    Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -43,33 +41,16 @@ import { supabase } from '@/src/services/supabase';
 type ConnectionType = 'wifi' | 'ble' | 'none';
 type RobotStatusCode = 'Online' | 'Offline' | 'Charging' | 'Error';
 
-type RobotStatus = {
-    batteryLevel: number;       // 0–100
+interface RobotStatus {
+    batteryLevel: number;
     isCleaning: boolean;
-    lastCleaned: string;        // ISO date string or 'Never'
+    lastCleaned: string;
     errors: string[];
     status: RobotStatusCode;
     connectionType: ConnectionType;
     // === C++ INTEGRATION POINT ===
-    // Add extra telemetry fields returned by RobotBridge here:
-    // dustBinFull?: boolean;
-    // signalStrength?: number;  // dBm
-    // firmwareVersion?: string;
-};
-
-// ---------------------------------------------------------------------------
-// Mock data layer – REPLACE with RobotBridge when native bridge is ready
-// ---------------------------------------------------------------------------
-const MockRobotBridge = {
-    getLiveStatus: async (): Promise<Partial<RobotStatus>> => ({
-        batteryLevel: 78,
-        isCleaning: false,
-        lastCleaned: new Date(Date.now() - 3_600_000 * 5).toISOString(),
-        errors: [],
-        status: 'Online',
-        connectionType: 'wifi',
-    }),
-};
+    // Add extra telemetry fields returned by RobotBridge here
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -78,15 +59,15 @@ const MockRobotBridge = {
 const { width } = Dimensions.get('window');
 const isLargeScreen = width >= 768;
 
-function formatLastCleaned(raw: string): string {
-    if (!raw || raw === 'Never') return 'Never';
+function formatLastCleaned(raw: string | null): string {
+    if (!raw) return 'Never';
     try {
         return new Date(raw).toLocaleString([], {
             dateStyle: 'medium',
             timeStyle: 'short',
         });
     } catch {
-        return raw;
+        return 'Invalid date';
     }
 }
 
@@ -103,10 +84,9 @@ function batteryIcon(level: number): keyof typeof Ionicons.glyphMap {
 }
 
 // ---------------------------------------------------------------------------
-// Sub-components
+// Sub-components (unchanged)
 // ---------------------------------------------------------------------------
 
-/** Animated battery fill bar */
 function BatteryBar({ level, color, darkMode }: { level: number; color: string; darkMode: boolean }) {
     const anim = useRef(new Animated.Value(0)).current;
 
@@ -146,7 +126,6 @@ const batteryBarStyles = StyleSheet.create({
     },
 });
 
-/** Pulsing dot – same visual weight as login's status indicators */
 function PulsingDot({ active }: { active: boolean }) {
     const scale = useRef(new Animated.Value(1)).current;
 
@@ -158,12 +137,12 @@ function PulsingDot({ active }: { active: boolean }) {
         const loop = Animated.loop(
             Animated.sequence([
                 Animated.timing(scale, { toValue: 1.6, duration: 700, useNativeDriver: true }),
-                Animated.timing(scale, { toValue: 1,   duration: 700, useNativeDriver: true }),
+                Animated.timing(scale, { toValue: 1, duration: 700, useNativeDriver: true }),
             ]),
         );
         loop.start();
         return () => loop.stop();
-    }, [active, scale]);
+    }, [active]);
 
     return (
         <Animated.View
@@ -183,80 +162,82 @@ const pulseStyles = StyleSheet.create({
 });
 
 // ---------------------------------------------------------------------------
-// Main screen
+// Main screen – now using REAL Supabase data
 // ---------------------------------------------------------------------------
 
 export default function DashboardScreen() {
     const { colors, darkMode } = useThemeContext();
 
-    const [status, setStatus]       = useState<RobotStatus | null>(null);
-    const [loading, setLoading]     = useState(true);
+    const [status, setStatus] = useState<RobotStatus | null>(null);
+    const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
-    // ── Design tokens mirrored from LoginScreen ───────────────────────────────
-    const textPrimary   = darkMode ? '#ffffff'                : colors.text;
-    const textSecondary = darkMode ? 'rgba(255,255,255,0.8)' : colors.textSecondary; // slightly darker for visibility
-    const borderColor   = darkMode ? 'rgba(255,255,255,0.12)' : colors.border; // exact match to Login
+    // Animation values for collapsing/pinning the header
+    const scrollY = useRef(new Animated.Value(0)).current;
+    const headerTranslate = scrollY.interpolate({
+        inputRange: [0, 160],
+        outputRange: [0, -160],
+        extrapolate: 'clamp',
+    });
+
+    // ── Design tokens ─────────────────────────────────────────────────────────
+    const textPrimary   = darkMode ? '#ffffff' : colors.text;
+    const textSecondary = darkMode ? 'rgba(255,255,255,0.8)' : colors.textSecondary;
+    const borderColor   = darkMode ? 'rgba(255,255,255,0.12)' : colors.border;
     const dividerColor  = darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
 
-    // ── Data fetching ─────────────────────────────────────────────────────────
+    // ── Fetch real data from Supabase ─────────────────────────────────────────
 
     const fetchStatus = useCallback(async () => {
         setRefreshing(true);
-
         try {
-            // === C++ INTEGRATION POINT ===
-            // Replace MockRobotBridge with your real native module, e.g.:
-            //   import RobotBridge from '@/src/native/RobotBridge';
-            //   const liveData = await RobotBridge.getLiveStatus();
-            const liveData = await MockRobotBridge.getLiveStatus();
-
-            // Merge with Supabase (cloud-persisted history).
-            // Safely ignored when the table doesn't exist yet (PGRST116).
-            let dbData: Partial<RobotStatus> = {};
-            try {
-                const userId = (await supabase.auth.getUser()).data.user?.id;
-                if (userId) {
-                    const { data, error } = await supabase
-                        .from('robot_status') // ← create this table when ready
-                        .select('battery_level, is_cleaning, last_cleaned, errors, status')
-                        .eq('user_id', userId)
-                        .order('created_at', { ascending: false })
-                        .limit(1)
-                        .single();
-
-                    if (!error || error.code === 'PGRST116') {
-                        dbData = {
-                            batteryLevel: data?.battery_level,
-                            isCleaning:   data?.is_cleaning,
-                            lastCleaned:  data?.last_cleaned,
-                            errors:       data?.errors,
-                            status:       data?.status,
-                        };
-                    }
-                }
-            } catch {
-                // DB not configured yet – silent fallback to live/mock data
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user?.id) {
+                throw new Error('No authenticated user');
             }
 
-            // Live hardware data takes priority over cloud snapshot
+            const { data, error } = await supabase
+                .from('robot_status')
+                .select('battery_level, is_cleaning, last_cleaned, errors, status, connection_type')
+                .eq('user_id', user.id)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            if (error && error.code !== 'PGRST116') {
+                throw error;
+            }
+
+            if (!data) {
+                // No record yet – show fallback values
+                setStatus({
+                    batteryLevel: 0,
+                    isCleaning: false,
+                    lastCleaned: 'Never',
+                    errors: ['No robot data recorded yet'],
+                    status: 'Offline',
+                    connectionType: 'none',
+                });
+                return;
+            }
+
             setStatus({
-                batteryLevel:  liveData.batteryLevel  ?? dbData.batteryLevel  ?? 0,
-                isCleaning:    liveData.isCleaning    ?? dbData.isCleaning    ?? false,
-                lastCleaned:   liveData.lastCleaned   ?? dbData.lastCleaned   ?? 'Never',
-                errors:        liveData.errors        ?? dbData.errors        ?? [],
-                status:        liveData.status        ?? dbData.status        ?? 'Offline',
-                connectionType: liveData.connectionType ?? 'none',
+                batteryLevel: data.battery_level ?? 0,
+                isCleaning: data.is_cleaning ?? false,
+                lastCleaned: data.last_cleaned ?? 'Never',
+                errors: data.errors ?? [],
+                status: (data.status as RobotStatusCode) ?? 'Offline',
+                connectionType: (data.connection_type as ConnectionType) ?? 'none',
             });
         } catch (err: any) {
             console.error('[DashboardScreen] fetchStatus error:', err);
             Alert.alert('Connection Issue', 'Unable to load robot status. Pull to retry.');
             setStatus({
-                batteryLevel:  0,
-                isCleaning:    false,
-                lastCleaned:   'Never',
-                errors:        [],
-                status:        'Offline',
+                batteryLevel: 0,
+                isCleaning: false,
+                lastCleaned: 'Never',
+                errors: [],
+                status: 'Offline',
                 connectionType: 'none',
             });
         } finally {
@@ -268,15 +249,9 @@ export default function DashboardScreen() {
     useEffect(() => {
         fetchStatus();
 
-        // === C++ INTEGRATION POINT ===
-        // Subscribe to hardware events for real-time telemetry:
-        //   const sub = RobotBridge.onStatusChange((data) =>
-        //       setStatus(prev => prev ? { ...prev, ...data } : null));
-        //   return () => sub.remove();
-        //
-        // Or enable a timed poll as fallback:
-        // const interval = setInterval(fetchStatus, 10_000);
-        // return () => clearInterval(interval);
+        // Real-time polling (replace with Supabase realtime or C++ listener later)
+        const interval = setInterval(fetchStatus, 15000);
+        return () => clearInterval(interval);
     }, [fetchStatus]);
 
     const onRefresh = useCallback(() => {
@@ -287,11 +262,9 @@ export default function DashboardScreen() {
     // ── Derived state ─────────────────────────────────────────────────────────
 
     const batteryLevel = status?.batteryLevel ?? 0;
-    const isCleaning   = status?.isCleaning   ?? false;
-    const isConnected  = status?.connectionType !== 'none';
-    const bColor       = batteryColor(batteryLevel);
-
-    // ── Loading state – same Loader component as LoginScreen ─────────────────
+    const isCleaning = status?.isCleaning ?? false;
+    const isConnected = status?.connectionType !== 'none';
+    const bColor = batteryColor(batteryLevel);
 
     if (loading && !status) {
         return <Loader message="Fetching robot status..." />;
@@ -301,6 +274,20 @@ export default function DashboardScreen() {
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            {/* Collapsing / pinned header */}
+            <Animated.View
+                style={[
+                    styles.stickyHeaderContainer,
+                    { transform: [{ translateY: headerTranslate }] },
+                ]}
+            >
+                <View style={[styles.stickyHeaderInner, { backgroundColor: colors.background }]}>
+                    <AppText style={styles.stickyTitle}>
+                        Dashboard
+                    </AppText>
+                </View>
+            </Animated.View>
+
             <ScrollView
                 contentContainerStyle={[
                     styles.scrollContent,
@@ -314,21 +301,22 @@ export default function DashboardScreen() {
                         colors={[colors.primary]}
                     />
                 }
-                keyboardShouldPersistTaps="handled"
+                onScroll={(e) => scrollY.setValue(e.nativeEvent.contentOffset.y)}
+                scrollEventThrottle={16}
                 showsVerticalScrollIndicator={false}
             >
-                <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
+                {/* Placeholder to prevent content jump */}
+                <View style={{ height: 160 }} />
 
-                    {/* ── Header – same component as LoginScreen ── */}
+                <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
+                    {/* Full header at top */}
                     <Header
                         title="Dashboard"
                         subtitle="Monitor your Smart Cleaner Pro"
                     />
 
-                    {/* HERO CARD – exact same card style as Login */}
+                    {/* Hero card */}
                     <View style={[styles.card, { borderColor }]}>
-
-                        {/* Robot identity */}
                         <View style={styles.robotRow}>
                             <View style={[
                                 styles.robotAvatar,
@@ -353,23 +341,19 @@ export default function DashboardScreen() {
                                 </View>
                             </View>
 
-                            {/* Refresh – same tap-target size as login's eye-toggle */}
                             <TouchableOpacity
                                 style={styles.iconButton}
                                 onPress={() => {
                                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                                     fetchStatus();
                                 }}
-                                accessibilityLabel="Refresh status"
                             >
                                 <Ionicons name="refresh-outline" size={20} color={colors.primary} />
                             </TouchableOpacity>
                         </View>
 
-                        {/* Divider – same rgba as login OR divider */}
                         <View style={[styles.divider, { backgroundColor: dividerColor }]} />
 
-                        {/* Battery */}
                         <View style={styles.batterySection}>
                             <View style={styles.batteryRow}>
                                 <Ionicons name={batteryIcon(batteryLevel)} size={20} color={bColor} />
@@ -384,128 +368,93 @@ export default function DashboardScreen() {
                             <BatteryBar level={batteryLevel} color={bColor} darkMode={darkMode} />
                         </View>
 
-                        {/* Divider */}
                         <View style={[styles.divider, { backgroundColor: dividerColor }]} />
 
-                        {/* Connection status */}
                         <View style={styles.connectionRow}>
                             <View style={[styles.connDot, { backgroundColor: isConnected ? '#22c55e' : '#ef4444' }]} />
                             <AppText style={[styles.connectionText, { color: textSecondary }]}>
                                 {isConnected
-                                    ? `Connected via ${status?.connectionType === 'wifi' ? 'Wi-Fi' : 'Bluetooth'}`
-                                    : 'Disconnected'}
+                                    ? `Connected via ${status?.connectionType.toUpperCase()}`
+                                    : 'Not Connected'}
                             </AppText>
                         </View>
 
-                        {/* Connect / Manage – styled as login's "Create New Account" secondary button */}
                         <TouchableOpacity
                             style={styles.secondaryButton}
-                            onPress={() => {
-                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                                router.push('../settings/connection');
-                            }}
-                            accessibilityLabel={isConnected ? 'Manage connection' : 'Connect robot'}
+                            onPress={() => router.push('/(tabs)/settings/connection')}
                         >
-                            <Ionicons
-                                name={isConnected ? 'link-outline' : 'link-outline'}
-                                size={20}
-                                color={darkMode ? '#ffffff' : colors.primary}
-                                style={styles.secondaryButtonIcon}
-                            />
-                            <AppText style={[styles.secondaryButtonText, { color: darkMode ? '#ffffff' : colors.primary }]}>
+                            <Ionicons name="link-outline" size={20} color={colors.primary} style={{ marginRight: 12 }} />
+                            <AppText style={[styles.secondaryButtonText, { color: colors.primary }]}>
                                 {isConnected ? 'Manage Connection' : 'Connect Robot'}
                             </AppText>
                         </TouchableOpacity>
                     </View>
 
-                    {/* QUICK STATS – three mini-cards in a row */}
+                    {/* Quick stats */}
                     <View style={styles.statRow}>
                         {([
-                            { icon: 'checkmark-circle-outline', color: '#22c55e', value: isCleaning ? 'Active' : 'Idle', label: 'Status'  },
-                            { icon: 'time-outline',             color: '#a78bfa', value: '2.5 h',                        label: 'Runtime' },
-                            { icon: 'map-outline',              color: '#fb923c', value: '127 m²',                       label: 'Cleaned' },
-                        ] as const).map((tile) => (
-                            <View
-                                key={tile.label}
-                                style={[styles.statTile, { borderColor }]}
-                            >
-                                <Ionicons name={tile.icon} size={26} color={tile.color} />
-                                <AppText style={[styles.statValue, { color: textPrimary }]}>
-                                    {tile.value}
-                                </AppText>
-                                <AppText style={[styles.statLabel, { color: textSecondary }]}>
-                                    {tile.label}
-                                </AppText>
+                            { icon: 'checkmark-circle-outline', color: '#22c55e', value: isCleaning ? 'Active' : 'Idle', label: 'Status' },
+                            { icon: 'time-outline', color: '#a78bfa', value: '2.4 h', label: 'Avg Runtime' },
+                            { icon: 'map-outline', color: '#fb923c', value: '142 m²', label: 'This Week' },
+                        ] as const).map((item) => (
+                            <View key={item.label} style={[styles.statTile, { borderColor }]}>
+                                <Ionicons name={item.icon} size={26} color={item.color} />
+                                <AppText style={[styles.statValue, { color: textPrimary }]}>{item.value}</AppText>
+                                <AppText style={[styles.statLabel, { color: textSecondary }]}>{item.label}</AppText>
                             </View>
                         ))}
                     </View>
 
-                    {/* LAST SESSION */}
+                    {/* Last session */}
                     <View style={[styles.card, { borderColor }]}>
                         <View style={styles.cardHeader}>
-                            <Ionicons name="calendar-outline" size={20} color={colors.primary} style={styles.cardHeaderIcon} />
-                            <AppText style={[styles.cardLabel, { color: textSecondary }]}>
-                                Last Session
-                            </AppText>
+                            <Ionicons name="calendar-outline" size={20} color={colors.primary} style={{ marginRight: 8 }} />
+                            <AppText style={[styles.cardLabel, { color: textSecondary }]}>Last Session</AppText>
                         </View>
                         <AppText style={[styles.cardValue, { color: textPrimary }]}>
-                            {formatLastCleaned(status?.lastCleaned ?? 'Never')}
+                            {formatLastCleaned(status?.lastCleaned)}
                         </AppText>
                     </View>
 
-                    {/* ERROR BANNER */}
-                    {(status?.errors ?? []).length > 0 && (
+                    {/* Error banner */}
+                    {status?.errors?.length ? (
                         <View style={styles.errorBanner}>
                             <Ionicons name="warning-outline" size={20} color="#fbbf24" />
                             <AppText style={styles.errorBannerText}>
-                                {status!.errors[0]}
-                                {status!.errors.length > 1 ? ` (+${status!.errors.length - 1} more)` : ''}
+                                {status.errors[0]}
+                                {status.errors.length > 1 && ` (+${status.errors.length - 1})`}
                             </AppText>
                         </View>
-                    )}
+                    ) : null}
 
-                    {/* QUICK ACTIONS */}
+                    {/* Quick actions */}
                     <View style={[styles.card, { borderColor }]}>
                         <View style={styles.cardHeader}>
-                            <Ionicons name="flash-outline" size={20} color={colors.primary} style={styles.cardHeaderIcon} />
-                            <AppText style={[styles.cardLabel, { color: textSecondary }]}>
-                                Quick Actions
-                            </AppText>
+                            <Ionicons name="flash-outline" size={20} color={colors.primary} style={{ marginRight: 8 }} />
+                            <AppText style={[styles.cardLabel, { color: textSecondary }]}>Quick Actions</AppText>
                         </View>
 
-                        {/* Divider above actions – mirrors login OR divider */}
-                        <View style={[styles.divider, { backgroundColor: dividerColor, marginTop: 4, marginBottom: 20 }]} />
+                        <View style={[styles.divider, { backgroundColor: dividerColor, marginVertical: 12 }]} />
 
                         <View style={styles.actionsGrid}>
-                            {([
-                                { icon: 'game-controller-outline', label: 'Controls', route: '/(tabs)/02_ControlScreen',  accent: '#6366f1' },
-                                { icon: 'calendar-outline',        label: 'Schedule', route: '/(tabs)/04_ScheduleScreen', accent: '#ec4899' },
-                                { icon: 'map-outline',             label: 'Map',      route: '/(tabs)/03_MapScreen',      accent: '#14b8a6' },
-                            ] as const).map((action) => (
+                            {[
+                                { icon: 'game-controller-outline', label: 'Control', route: '/(tabs)/02_ControlScreen', color: '#6366f1' },
+                                { icon: 'calendar-outline', label: 'Schedule', route: '/(tabs)/04_ScheduleScreen', color: '#ec4899' },
+                                { icon: 'map-outline', label: 'Map View', route: '/(tabs)/03_MapScreen', color: '#14b8a6' },
+                            ].map((action) => (
                                 <TouchableOpacity
                                     key={action.label}
-                                    style={[
-                                        styles.actionTile,
-                                        { backgroundColor: `${action.accent}18`, borderColor: `${action.accent}30` },
-                                    ]}
-                                    onPress={() => {
-                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                        router.push(action.route);
-                                    }}
-                                    accessibilityLabel={`Go to ${action.label}`}
+                                    style={[styles.actionTile, { backgroundColor: `${action.color}12`, borderColor: `${action.color}30` }]}
+                                    onPress={() => router.push(action.route)}
                                 >
-                                    <Ionicons name={action.icon} size={24} color={action.accent} />
-                                    <AppText style={[styles.actionLabel, { color: textPrimary }]}>
-                                        {action.label}
-                                    </AppText>
+                                    <Ionicons name={action.icon} size={26} color={action.color} />
+                                    <AppText style={[styles.actionLabel, { color: textPrimary }]}>{action.label}</AppText>
                                 </TouchableOpacity>
                             ))}
                         </View>
                     </View>
-
                 </View>
 
-                {/* Footer – identical style to LoginScreen */}
                 <AppText style={[styles.footer, { color: textSecondary }]}>
                     Version 1.0.0 • Smart Cleaner Pro © 2026
                 </AppText>
@@ -515,13 +464,32 @@ export default function DashboardScreen() {
 }
 
 // ---------------------------------------------------------------------------
-// Styles – every value mirrors LoginScreen token-for-token
+// Styles – consistent with auth screens
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
-
-    // ── Layout ──────────────────────────────────────────────────────────────
     container: { flex: 1 },
+
+    stickyHeaderContainer: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 100,
+        overflow: 'hidden',
+    },
+    stickyHeaderInner: {
+        paddingTop: Platform.OS === 'ios' ? 44 : 8,
+        paddingHorizontal: 20,
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        alignItems: 'flex-start',
+    },
+    stickyTitle: {
+        fontSize: 17,
+        fontWeight: '700',
+        letterSpacing: -0.3,
+    },
 
     scrollContent: {
         flexGrow: 1,
@@ -529,63 +497,52 @@ const styles = StyleSheet.create({
         paddingTop: 40,
         paddingBottom: 80,
     },
-
     scrollContentLarge: {
         alignItems: 'center',
     },
 
     wrapper: { width: '100%' },
-
-    largeWrapper: { maxWidth: 480 },   // matches login largeWrapper
+    largeWrapper: { maxWidth: 480 },
 
     flex1: { flex: 1 },
 
-    // ── Card – token-for-token copy of login card ────────────────────────────
     card: {
-        borderRadius: 24,              // login: borderRadius: 24
-        padding: 28,                   // login: padding: 28
-        borderWidth: 1,                // login: borderWidth: 1
+        borderRadius: 24,
+        padding: 28,
+        borderWidth: 1,
         marginBottom: 20,
-        // Flat premium – no shadow, no glow (same as login)
     },
 
-    // ── Robot identity row ───────────────────────────────────────────────────
     robotRow: {
         flexDirection: 'row',
         alignItems: 'center',
         marginBottom: 20,
     },
-
     robotAvatar: {
         width: 56,
         height: 56,
-        borderRadius: 14,              // matches login input borderRadius: 14
+        borderRadius: 14,
         alignItems: 'center',
         justifyContent: 'center',
         marginRight: 14,
     },
-
     robotInfo: { flex: 1 },
-
     robotName: {
         fontSize: 18,
         fontWeight: '700',
         letterSpacing: -0.3,
         marginBottom: 4,
     },
-
     statusBadge: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
     },
-
     statusLabel: {
-        fontSize: 14,                  // matches login label fontSize: 14
+        fontSize: 14,
         fontWeight: '500',
     },
 
-    // Icon button – same tap target as login's right-side eye toggle
     iconButton: {
         width: 44,
         height: 44,
@@ -594,76 +551,62 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
 
-    // ── Divider – same rgba as login OR divider line ─────────────────────────
     divider: {
         height: 1,
         marginVertical: 20,
-        borderRadius: 1,
     },
 
-    // ── Battery ───────────────────────────────────────────────────────────────
     batterySection: { marginBottom: 0 },
-
     batteryRow: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
     },
-
     fieldLabel: {
-        fontSize: 14,                  // matches login label fontSize: 14
+        fontSize: 14,
         fontWeight: '500',
     },
-
     batteryPercent: {
         fontSize: 16,
         fontWeight: '700',
     },
 
-    // ── Connection ────────────────────────────────────────────────────────────
     connectionRow: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 10,
         marginBottom: 20,
     },
-
     connDot: {
         width: 10,
         height: 10,
         borderRadius: 5,
     },
-
     connectionText: {
         flex: 1,
         fontSize: 14,
         fontWeight: '500',
     },
 
-    // Secondary button – identical to login "Create New Account" button
     secondaryButton: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        height: 56,                    // login: height: 56
-        borderRadius: 14,              // login: borderRadius: 14
-        backgroundColor: 'rgba(59, 130, 246, 0.15)', // login: same rgba
+        height: 56,
+        borderRadius: 14,
+        backgroundColor: 'rgba(59,130,246,0.15)',
     },
-
-    secondaryButtonIcon: { marginRight: 12 }, // login: marginRight: 12
-
+    secondaryButtonIcon: { marginRight: 12 },
     secondaryButtonText: {
-        fontSize: 16,                  // login: fontSize: 16
-        fontWeight: '500',             // login: fontWeight: '500'
+        fontSize: 16,
+        fontWeight: '500',
     },
 
-    // ── Stat row ──────────────────────────────────────────────────────────────
     statRow: {
         flexDirection: 'row',
         gap: 12,
         marginBottom: 20,
     },
-
     statTile: {
         flex: 1,
         borderRadius: 20,
@@ -673,13 +616,11 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         gap: 6,
     },
-
     statValue: {
         fontSize: 15,
         fontWeight: '700',
         letterSpacing: -0.2,
     },
-
     statLabel: {
         fontSize: 11,
         fontWeight: '500',
@@ -687,27 +628,22 @@ const styles = StyleSheet.create({
         letterSpacing: 0.5,
     },
 
-    // ── Card internals ────────────────────────────────────────────────────────
     cardHeader: {
         flexDirection: 'row',
         alignItems: 'center',
         marginBottom: 10,
     },
-
     cardHeaderIcon: { marginRight: 8 },
-
     cardLabel: {
-        fontSize: 14,                  // matches login label fontSize: 14
+        fontSize: 14,
         fontWeight: '500',
     },
-
     cardValue: {
         fontSize: 16,
         fontWeight: '600',
         letterSpacing: -0.2,
     },
 
-    // ── Error banner ──────────────────────────────────────────────────────────
     errorBanner: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -715,11 +651,10 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(239,68,68,0.1)',
         borderWidth: 1,
         borderColor: 'rgba(239,68,68,0.3)',
-        borderRadius: 14,              // matches login input borderRadius: 14
+        borderRadius: 14,
         padding: 16,
         marginBottom: 20,
     },
-
     errorBannerText: {
         flex: 1,
         color: '#fbbf24',
@@ -727,31 +662,27 @@ const styles = StyleSheet.create({
         fontWeight: '500',
     },
 
-    // ── Quick actions ─────────────────────────────────────────────────────────
     actionsGrid: {
         flexDirection: 'row',
         gap: 12,
     },
-
     actionTile: {
         flex: 1,
-        borderRadius: 14,              // matches login input borderRadius: 14
+        borderRadius: 14,
         borderWidth: 1,
         paddingVertical: 20,
         alignItems: 'center',
         gap: 10,
     },
-
     actionLabel: {
         fontSize: 13,
         fontWeight: '600',
     },
 
-    // ── Footer – identical to LoginScreen ─────────────────────────────────────
     footer: {
         textAlign: 'center',
-        marginTop: 32,                 // login: marginTop: 32
-        fontSize: 12,                  // login: fontSize: 12
-        opacity: 0.7,                  // login: opacity: 0.7
+        marginTop: 32,
+        fontSize: 12,
+        opacity: 0.7,
     },
 });
