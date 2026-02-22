@@ -28,11 +28,22 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 
-import Header from '../../src/components/Header';
 import Loader from '../../src/components/Loader';
 import AppText from '../../src/components/AppText';
 import { useThemeContext } from '@/src/context/ThemeContext';
 import { supabase } from '@/src/services/supabase';
+
+// === C++ BRIDGE / TYPE DEFINITIONS ===
+// If using native modules for enhanced hardware integration (JNI/Obj-C++):
+// declare module 'react-native' {
+//   interface NativeModulesStatic {
+//     RobotBridge: {
+//       getRobotStatus(): Promise<RobotStatus>;
+//       subscribeToStatusUpdates(callback: (status: RobotStatus) => void): Promise<void>;
+//       unsubscribeFromStatusUpdates(): Promise<void>;
+//     }
+//   }
+// }
 
 // ---------------------------------------------------------------------------
 // Types
@@ -50,6 +61,7 @@ interface RobotStatus {
     connectionType: ConnectionType;
     // === C++ INTEGRATION POINT ===
     // Add extra telemetry fields returned by RobotBridge here
+    // e.g., currentSpeed, cleanedArea, sensorReadings, etc.
 }
 
 // ---------------------------------------------------------------------------
@@ -60,12 +72,24 @@ const { width } = Dimensions.get('window');
 const isLargeScreen = width >= 768;
 
 function formatLastCleaned(raw: string | null): string {
-    if (!raw) return 'Never';
+    if (!raw || raw === 'Never') return 'Never';
     try {
-        return new Date(raw).toLocaleString([], {
-            dateStyle: 'medium',
-            timeStyle: 'short',
-        });
+        const date = new Date(raw);
+        const now = new Date();
+        const diffMs = now.getTime() - date.getTime();
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMs / 3600000);
+        const diffDays = Math.floor(diffMs / 86400000);
+
+        if (diffMins < 60) {
+            return `${diffMins} min${diffMins !== 1 ? 's' : ''} ago`;
+        } else if (diffHours < 24) {
+            return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+        } else if (diffDays < 7) {
+            return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+        } else {
+            return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+        }
     } catch {
         return 'Invalid date';
     }
@@ -80,23 +104,27 @@ function batteryColor(level: number): string {
 function batteryIcon(level: number): keyof typeof Ionicons.glyphMap {
     if (level >= 75) return 'battery-full';
     if (level >= 50) return 'battery-half';
+    if (level >= 25) return 'battery-charging';
     return 'battery-dead';
 }
 
 // ---------------------------------------------------------------------------
-// Sub-components (unchanged)
+// Sub-components
 // ---------------------------------------------------------------------------
 
+/**
+ * Animated battery bar with smooth fill animation
+ */
 function BatteryBar({ level, color, darkMode }: { level: number; color: string; darkMode: boolean }) {
     const anim = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
         Animated.timing(anim, {
             toValue: level / 100,
-            duration: 900,
+            duration: 800,
             useNativeDriver: false,
         }).start();
-    }, [level]);
+    }, [level, anim]);
 
     const animatedWidth = anim.interpolate({
         inputRange: [0, 1],
@@ -108,49 +136,70 @@ function BatteryBar({ level, color, darkMode }: { level: number; color: string; 
             batteryBarStyles.track,
             { backgroundColor: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' },
         ]}>
-            <Animated.View style={[batteryBarStyles.fill, { width: animatedWidth, backgroundColor: color }]} />
+            <Animated.View
+                style={[
+                    batteryBarStyles.fill,
+                    {
+                        width: animatedWidth,
+                        backgroundColor: color,
+                    }
+                ]}
+            />
         </View>
     );
 }
 
 const batteryBarStyles = StyleSheet.create({
     track: {
-        height: 6,
-        borderRadius: 3,
+        height: 8,
+        borderRadius: 4,
         overflow: 'hidden',
-        marginTop: 10,
+        marginTop: 12,
     },
     fill: {
         height: '100%',
-        borderRadius: 3,
+        borderRadius: 4,
     },
 });
 
+/**
+ * Pulsing dot indicator for active/cleaning status
+ */
 function PulsingDot({ active }: { active: boolean }) {
     const scale = useRef(new Animated.Value(1)).current;
+    const opacity = useRef(new Animated.Value(1)).current;
 
     useEffect(() => {
         if (!active) {
             scale.setValue(1);
+            opacity.setValue(1);
             return;
         }
+
         const loop = Animated.loop(
-            Animated.sequence([
-                Animated.timing(scale, { toValue: 1.6, duration: 700, useNativeDriver: true }),
-                Animated.timing(scale, { toValue: 1, duration: 700, useNativeDriver: true }),
+            Animated.parallel([
+                Animated.sequence([
+                    Animated.timing(scale, { toValue: 1.4, duration: 1000, useNativeDriver: true }),
+                    Animated.timing(scale, { toValue: 1, duration: 1000, useNativeDriver: true }),
+                ]),
+                Animated.sequence([
+                    Animated.timing(opacity, { toValue: 0.6, duration: 1000, useNativeDriver: true }),
+                    Animated.timing(opacity, { toValue: 1, duration: 1000, useNativeDriver: true }),
+                ]),
             ]),
         );
         loop.start();
         return () => loop.stop();
-    }, [active]);
+    }, [active, scale, opacity]);
 
     return (
         <Animated.View
             style={[
                 pulseStyles.dot,
                 {
-                    backgroundColor: active ? '#22c55e' : '#64748b',
+                    backgroundColor: active ? '#22c55e' : '#94a3b8',
                     transform: [{ scale }],
+                    opacity,
                 },
             ]}
         />
@@ -158,11 +207,15 @@ function PulsingDot({ active }: { active: boolean }) {
 }
 
 const pulseStyles = StyleSheet.create({
-    dot: { width: 10, height: 10, borderRadius: 5 },
+    dot: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+    },
 });
 
 // ---------------------------------------------------------------------------
-// Main screen – now using REAL Supabase data
+// Main Dashboard Screen
 // ---------------------------------------------------------------------------
 
 export default function DashboardScreen() {
@@ -172,29 +225,25 @@ export default function DashboardScreen() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
-    // Animation values for collapsing/pinning the header
-    const scrollY = useRef(new Animated.Value(0)).current;
-    const headerTranslate = scrollY.interpolate({
-        inputRange: [0, 160],
-        outputRange: [0, -160],
-        extrapolate: 'clamp',
-    });
+    // Design tokens for consistent styling with LoginScreen
+    const cardBg = darkMode ? 'rgba(255,255,255,0.05)' : '#ffffff';
+    const cardBorder = darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)';
+    const textPrimary = darkMode ? '#ffffff' : colors.text;
+    const textSecondary = darkMode ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.60)';
+    const dividerColor = darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)';
 
-    // ── Design tokens ─────────────────────────────────────────────────────────
-    const textPrimary   = darkMode ? '#ffffff' : colors.text;
-    const textSecondary = darkMode ? 'rgba(255,255,255,0.8)' : colors.textSecondary;
-    const borderColor   = darkMode ? 'rgba(255,255,255,0.12)' : colors.border;
-    const dividerColor  = darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
-
-    // ── Fetch real data from Supabase ─────────────────────────────────────────
-
+    // === C++ BRIDGE / FETCH STATUS FROM SUPABASE ===
     const fetchStatus = useCallback(async () => {
-        setRefreshing(true);
         try {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user?.id) {
                 throw new Error('No authenticated user');
             }
+
+            // === C++ INTEGRATION POINT ===
+            // Replace Supabase call with native module:
+            // const nativeStatus = await RobotBridge.getRobotStatus();
+            // setStatus(nativeStatus);
 
             const { data, error } = await supabase
                 .from('robot_status')
@@ -214,7 +263,7 @@ export default function DashboardScreen() {
                     batteryLevel: 0,
                     isCleaning: false,
                     lastCleaned: 'Never',
-                    errors: ['No robot data recorded yet'],
+                    errors: ['No robot data available'],
                     status: 'Offline',
                     connectionType: 'none',
                 });
@@ -231,12 +280,12 @@ export default function DashboardScreen() {
             });
         } catch (err: any) {
             console.error('[DashboardScreen] fetchStatus error:', err);
-            Alert.alert('Connection Issue', 'Unable to load robot status. Pull to retry.');
+            Alert.alert('Connection Error', 'Unable to load robot status. Please try again.');
             setStatus({
                 batteryLevel: 0,
                 isCleaning: false,
                 lastCleaned: 'Never',
-                errors: [],
+                errors: ['Failed to load status'],
                 status: 'Offline',
                 connectionType: 'none',
             });
@@ -246,48 +295,45 @@ export default function DashboardScreen() {
         }
     }, []);
 
+    // Initial fetch only - no auto-refresh
     useEffect(() => {
         fetchStatus();
 
-        // Real-time polling (replace with Supabase realtime or C++ listener later)
-        const interval = setInterval(fetchStatus, 15000);
-        return () => clearInterval(interval);
+        // === C++ INTEGRATION POINT ===
+        // Subscribe to real-time hardware updates:
+        // RobotBridge.subscribeToStatusUpdates((newStatus) => {
+        //   setStatus(newStatus);
+        // });
+        //
+        // return () => {
+        //   RobotBridge.unsubscribeFromStatusUpdates();
+        // };
     }, [fetchStatus]);
 
     const onRefresh = useCallback(() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        if (Platform.OS === 'ios') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+        setRefreshing(true);
         fetchStatus();
     }, [fetchStatus]);
 
-    // ── Derived state ─────────────────────────────────────────────────────────
-
+    // Derived state
     const batteryLevel = status?.batteryLevel ?? 0;
     const isCleaning = status?.isCleaning ?? false;
     const isConnected = status?.connectionType !== 'none';
     const bColor = batteryColor(batteryLevel);
 
     if (loading && !status) {
-        return <Loader message="Fetching robot status..." />;
+        return <Loader message="Loading dashboard..." />;
     }
 
-    // ── Render ────────────────────────────────────────────────────────────────
+    // ---------------------------------------------------------------------------
+    // Render
+    // ---------------------------------------------------------------------------
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-            {/* Collapsing / pinned header */}
-            <Animated.View
-                style={[
-                    styles.stickyHeaderContainer,
-                    { transform: [{ translateY: headerTranslate }] },
-                ]}
-            >
-                <View style={[styles.stickyHeaderInner, { backgroundColor: colors.background }]}>
-                    <AppText style={styles.stickyTitle}>
-                        Dashboard
-                    </AppText>
-                </View>
-            </Animated.View>
-
             <ScrollView
                 contentContainerStyle={[
                     styles.scrollContent,
@@ -301,30 +347,35 @@ export default function DashboardScreen() {
                         colors={[colors.primary]}
                     />
                 }
-                onScroll={(e) => scrollY.setValue(e.nativeEvent.contentOffset.y)}
-                scrollEventThrottle={16}
                 showsVerticalScrollIndicator={false}
             >
-                {/* Placeholder to prevent content jump */}
-                <View style={{ height: 160 }} />
-
                 <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
-                    {/* Full header at top */}
-                    <Header
-                        title="Dashboard"
-                        subtitle="Monitor your Smart Cleaner Pro"
-                    />
+                    {/* Large Header - always visible, positioned higher */}
+                    <View style={styles.headerSection}>
+                        <AppText style={[styles.headerTitle, { color: textPrimary }]}>
+                            Dashboard
+                        </AppText>
+                        <AppText style={[styles.headerSubtitle, { color: textSecondary }]}>
+                            Monitor your Smart Cleaner Pro
+                        </AppText>
+                    </View>
 
-                    {/* Hero card */}
-                    <View style={[styles.card, { borderColor }]}>
-                        <View style={styles.robotRow}>
+                    {/* Robot Status Card - matches LoginScreen card styling */}
+                    <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                        <View style={styles.robotHeader}>
                             <View style={[
                                 styles.robotAvatar,
-                                { backgroundColor: isCleaning ? 'rgba(34,197,94,0.15)' : `${colors.primary}1a` },
+                                {
+                                    backgroundColor: isCleaning
+                                        ? 'rgba(34,197,94,0.15)'
+                                        : darkMode
+                                            ? 'rgba(59,130,246,0.16)'
+                                            : 'rgba(59,130,246,0.12)',
+                                },
                             ]}>
                                 <Ionicons
                                     name="hardware-chip"
-                                    size={32}
+                                    size={28}
                                     color={isCleaning ? '#22c55e' : colors.primary}
                                 />
                             </View>
@@ -333,20 +384,23 @@ export default function DashboardScreen() {
                                 <AppText style={[styles.robotName, { color: textPrimary }]}>
                                     Smart Cleaner Pro
                                 </AppText>
-                                <View style={styles.statusBadge}>
+                                <View style={styles.statusRow}>
                                     <PulsingDot active={isCleaning} />
-                                    <AppText style={[styles.statusLabel, { color: textSecondary }]}>
-                                        {isCleaning ? 'Cleaning in progress' : (status?.status ?? 'Offline')}
+                                    <AppText style={[styles.statusText, { color: textSecondary }]}>
+                                        {isCleaning ? 'Cleaning in progress' : status?.status ?? 'Offline'}
                                     </AppText>
                                 </View>
                             </View>
 
                             <TouchableOpacity
-                                style={styles.iconButton}
+                                style={styles.refreshButton}
                                 onPress={() => {
-                                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                    if (Platform.OS === 'ios') {
+                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                    }
                                     fetchStatus();
                                 }}
+                                activeOpacity={0.7}
                             >
                                 <Ionicons name="refresh-outline" size={20} color={colors.primary} />
                             </TouchableOpacity>
@@ -354,13 +408,15 @@ export default function DashboardScreen() {
 
                         <View style={[styles.divider, { backgroundColor: dividerColor }]} />
 
+                        {/* Battery Section */}
                         <View style={styles.batterySection}>
-                            <View style={styles.batteryRow}>
-                                <Ionicons name={batteryIcon(batteryLevel)} size={20} color={bColor} />
-                                <AppText style={[styles.fieldLabel, { color: textSecondary }]}>
-                                    Battery
-                                </AppText>
-                                <View style={styles.flex1} />
+                            <View style={styles.batteryHeader}>
+                                <View style={styles.batteryLabelRow}>
+                                    <Ionicons name={batteryIcon(batteryLevel)} size={20} color={bColor} />
+                                    <AppText style={[styles.fieldLabel, { color: textSecondary }]}>
+                                        Battery Level
+                                    </AppText>
+                                </View>
                                 <AppText style={[styles.batteryPercent, { color: bColor }]}>
                                     {batteryLevel}%
                                 </AppText>
@@ -370,91 +426,190 @@ export default function DashboardScreen() {
 
                         <View style={[styles.divider, { backgroundColor: dividerColor }]} />
 
-                        <View style={styles.connectionRow}>
-                            <View style={[styles.connDot, { backgroundColor: isConnected ? '#22c55e' : '#ef4444' }]} />
-                            <AppText style={[styles.connectionText, { color: textSecondary }]}>
-                                {isConnected
-                                    ? `Connected via ${status?.connectionType.toUpperCase()}`
-                                    : 'Not Connected'}
-                            </AppText>
-                        </View>
+                        {/* Connection Status */}
+                        <View style={styles.connectionSection}>
+                            <View style={styles.connectionRow}>
+                                <View style={[
+                                    styles.connectionDot,
+                                    { backgroundColor: isConnected ? '#22c55e' : '#ef4444' }
+                                ]} />
+                                <AppText style={[styles.connectionText, { color: textSecondary }]}>
+                                    {isConnected
+                                        ? `Connected via ${status?.connectionType.toUpperCase()}`
+                                        : 'Not Connected'}
+                                </AppText>
+                            </View>
 
-                        <TouchableOpacity
-                            style={styles.secondaryButton}
-                            onPress={() => router.push('/(tabs)/settings/connection')}
-                        >
-                            <Ionicons name="link-outline" size={20} color={colors.primary} style={{ marginRight: 12 }} />
-                            <AppText style={[styles.secondaryButtonText, { color: colors.primary }]}>
-                                {isConnected ? 'Manage Connection' : 'Connect Robot'}
-                            </AppText>
-                        </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[
+                                    styles.connectionButton,
+                                    {
+                                        backgroundColor: darkMode
+                                            ? 'rgba(59,130,246,0.16)'
+                                            : 'rgba(59,130,246,0.12)',
+                                    },
+                                ]}
+                                onPress={() => {
+                                    // Navigate to Settings tab instead of non-existent route
+                                    router.push('../settings/connection');
+                                }}
+                                activeOpacity={0.7}
+                            >
+                                <Ionicons
+                                    name="link-outline"
+                                    size={18}
+                                    color={colors.primary}
+                                    style={{ marginRight: 10 }}
+                                />
+                                <AppText style={[styles.connectionButtonText, { color: colors.primary }]}>
+                                    {isConnected ? 'Manage Connection' : 'Connect Robot'}
+                                </AppText>
+                            </TouchableOpacity>
+                        </View>
                     </View>
 
-                    {/* Quick stats */}
-                    <View style={styles.statRow}>
-                        {([
-                            { icon: 'checkmark-circle-outline', color: '#22c55e', value: isCleaning ? 'Active' : 'Idle', label: 'Status' },
-                            { icon: 'time-outline', color: '#a78bfa', value: '2.4 h', label: 'Avg Runtime' },
-                            { icon: 'map-outline', color: '#fb923c', value: '142 m²', label: 'This Week' },
-                        ] as const).map((item) => (
-                            <View key={item.label} style={[styles.statTile, { borderColor }]}>
-                                <Ionicons name={item.icon} size={26} color={item.color} />
-                                <AppText style={[styles.statValue, { color: textPrimary }]}>{item.value}</AppText>
-                                <AppText style={[styles.statLabel, { color: textSecondary }]}>{item.label}</AppText>
+                    {/* Quick Stats Row */}
+                    <View style={styles.statsRow}>
+                        {[
+                            {
+                                icon: 'checkmark-circle-outline' as keyof typeof Ionicons.glyphMap,
+                                color: isCleaning ? '#22c55e' : '#94a3b8',
+                                value: isCleaning ? 'Active' : 'Idle',
+                                label: 'Status'
+                            },
+                            {
+                                icon: 'time-outline' as keyof typeof Ionicons.glyphMap,
+                                color: '#a78bfa',
+                                value: '2.4h',
+                                label: 'Runtime'
+                            },
+                            {
+                                icon: 'map-outline' as keyof typeof Ionicons.glyphMap,
+                                color: '#fb923c',
+                                value: '142m²',
+                                label: 'This Week'
+                            },
+                        ].map((stat) => (
+                            <View
+                                key={stat.label}
+                                style={[
+                                    styles.statCard,
+                                    { backgroundColor: cardBg, borderColor: cardBorder }
+                                ]}
+                            >
+                                <Ionicons name={stat.icon} size={24} color={stat.color} />
+                                <AppText style={[styles.statValue, { color: textPrimary }]}>
+                                    {stat.value}
+                                </AppText>
+                                <AppText style={[styles.statLabel, { color: textSecondary }]}>
+                                    {stat.label}
+                                </AppText>
                             </View>
                         ))}
                     </View>
 
-                    {/* Last session */}
-                    <View style={[styles.card, { borderColor }]}>
+                    {/* Last Session Card */}
+                    <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
                         <View style={styles.cardHeader}>
-                            <Ionicons name="calendar-outline" size={20} color={colors.primary} style={{ marginRight: 8 }} />
-                            <AppText style={[styles.cardLabel, { color: textSecondary }]}>Last Session</AppText>
+                            <Ionicons
+                                name="calendar-outline"
+                                size={18}
+                                color={colors.primary}
+                                style={{ marginRight: 8 }}
+                            />
+                            <AppText style={[styles.cardTitle, { color: textSecondary }]}>
+                                Last Cleaning Session
+                            </AppText>
                         </View>
                         <AppText style={[styles.cardValue, { color: textPrimary }]}>
-                            {formatLastCleaned(status?.lastCleaned)}
+                            {formatLastCleaned(status?.lastCleaned ?? 'Never')}
                         </AppText>
                     </View>
 
-                    {/* Error banner */}
-                    {status?.errors?.length ? (
+                    {/* Error Banner */}
+                    {status?.errors && status.errors.length > 0 && (
                         <View style={styles.errorBanner}>
-                            <Ionicons name="warning-outline" size={20} color="#fbbf24" />
-                            <AppText style={styles.errorBannerText}>
-                                {status.errors[0]}
-                                {status.errors.length > 1 && ` (+${status.errors.length - 1})`}
+                            <View style={styles.errorIconContainer}>
+                                <Ionicons name="warning-outline" size={20} color="#fbbf24" />
+                            </View>
+                            <View style={styles.errorContent}>
+                                <AppText style={styles.errorText}>
+                                    {status.errors[0]}
+                                </AppText>
+                                {status.errors.length > 1 && (
+                                    <AppText style={styles.errorCount}>
+                                        +{status.errors.length - 1} more issue{status.errors.length - 1 !== 1 ? 's' : ''}
+                                    </AppText>
+                                )}
+                            </View>
+                        </View>
+                    )}
+
+                    {/* Quick Actions Card */}
+                    <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                        <View style={styles.cardHeader}>
+                            <Ionicons
+                                name="flash-outline"
+                                size={18}
+                                color={colors.primary}
+                                style={{ marginRight: 8 }}
+                            />
+                            <AppText style={[styles.cardTitle, { color: textSecondary }]}>
+                                Quick Actions
                             </AppText>
                         </View>
-                    ) : null}
 
-                    {/* Quick actions */}
-                    <View style={[styles.card, { borderColor }]}>
-                        <View style={styles.cardHeader}>
-                            <Ionicons name="flash-outline" size={20} color={colors.primary} style={{ marginRight: 8 }} />
-                            <AppText style={[styles.cardLabel, { color: textSecondary }]}>Quick Actions</AppText>
-                        </View>
-
-                        <View style={[styles.divider, { backgroundColor: dividerColor, marginVertical: 12 }]} />
+                        <View style={[styles.divider, { backgroundColor: dividerColor, marginVertical: 16 }]} />
 
                         <View style={styles.actionsGrid}>
                             {[
-                                { icon: 'game-controller-outline', label: 'Control', route: '/(tabs)/02_ControlScreen', color: '#6366f1' },
-                                { icon: 'calendar-outline', label: 'Schedule', route: '/(tabs)/04_ScheduleScreen', color: '#ec4899' },
-                                { icon: 'map-outline', label: 'Map View', route: '/(tabs)/03_MapScreen', color: '#14b8a6' },
+                                {
+                                    icon: 'game-controller-outline' as keyof typeof Ionicons.glyphMap,
+                                    label: 'Control',
+                                    route: '/(tabs)/02_ControlScreen',
+                                    color: '#6366f1'
+                                },
+                                {
+                                    icon: 'calendar-outline' as keyof typeof Ionicons.glyphMap,
+                                    label: 'Schedule',
+                                    route: '/(tabs)/04_ScheduleScreen',
+                                    color: '#ec4899'
+                                },
+                                {
+                                    icon: 'map-outline' as keyof typeof Ionicons.glyphMap,
+                                    label: 'Map',
+                                    route: '/(tabs)/03_MapScreen',
+                                    color: '#14b8a6'
+                                },
                             ].map((action) => (
                                 <TouchableOpacity
                                     key={action.label}
-                                    style={[styles.actionTile, { backgroundColor: `${action.color}12`, borderColor: `${action.color}30` }]}
-                                    onPress={() => router.push(action.route)}
+                                    style={[
+                                        styles.actionButton,
+                                        {
+                                            backgroundColor: `${action.color}${darkMode ? '1a' : '12'}`,
+                                            borderColor: `${action.color}30`,
+                                        }
+                                    ]}
+                                    onPress={() => {
+                                        if (Platform.OS === 'ios') {
+                                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                        }
+                                        router.push(action.route);
+                                    }}
+                                    activeOpacity={0.7}
                                 >
-                                    <Ionicons name={action.icon} size={26} color={action.color} />
-                                    <AppText style={[styles.actionLabel, { color: textPrimary }]}>{action.label}</AppText>
+                                    <Ionicons name={action.icon} size={24} color={action.color} />
+                                    <AppText style={[styles.actionLabel, { color: textPrimary }]}>
+                                        {action.label}
+                                    </AppText>
                                 </TouchableOpacity>
                             ))}
                         </View>
                     </View>
                 </View>
 
+                {/* Footer */}
                 <AppText style={[styles.footer, { color: textSecondary }]}>
                     Version 1.0.0 • Smart Cleaner Pro © 2026
                 </AppText>
@@ -464,37 +619,17 @@ export default function DashboardScreen() {
 }
 
 // ---------------------------------------------------------------------------
-// Styles – consistent with auth screens
+// Styles - Consistent with LoginScreen
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
 
-    stickyHeaderContainer: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 100,
-        overflow: 'hidden',
-    },
-    stickyHeaderInner: {
-        paddingTop: Platform.OS === 'ios' ? 44 : 8,
-        paddingHorizontal: 20,
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-        alignItems: 'flex-start',
-    },
-    stickyTitle: {
-        fontSize: 17,
-        fontWeight: '700',
-        letterSpacing: -0.3,
-    },
-
+    // Scroll content
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
-        paddingTop: 40,
+        paddingTop: 25, // Increased significantly so header sits higher / more premium spacing from top
         paddingBottom: 80,
     },
     scrollContentLarge: {
@@ -504,49 +639,66 @@ const styles = StyleSheet.create({
     wrapper: { width: '100%' },
     largeWrapper: { maxWidth: 480 },
 
-    flex1: { flex: 1 },
+    // Header section (large, always visible, positioned higher)
+    headerSection: {
+        marginBottom: 32, // Slightly more breathing room
+    },
+    headerTitle: {
+        fontSize: 35,
+        fontWeight: '800',
+        letterSpacing: -0.5,
+        marginBottom: 6,
+    },
+    headerSubtitle: {
+        fontSize: 16,
+        fontWeight: '400',
+        letterSpacing: 0.1,
+    },
 
+    // Cards - matching LoginScreen styling
     card: {
         borderRadius: 24,
-        padding: 28,
+        padding: 24,
         borderWidth: 1,
         marginBottom: 20,
     },
 
-    robotRow: {
+    // Robot status section
+    robotHeader: {
         flexDirection: 'row',
         alignItems: 'center',
         marginBottom: 20,
     },
     robotAvatar: {
-        width: 56,
-        height: 56,
+        width: 52,
+        height: 52,
         borderRadius: 14,
         alignItems: 'center',
         justifyContent: 'center',
         marginRight: 14,
     },
-    robotInfo: { flex: 1 },
+    robotInfo: {
+        flex: 1,
+    },
     robotName: {
-        fontSize: 18,
+        fontSize: 17,
         fontWeight: '700',
         letterSpacing: -0.3,
-        marginBottom: 4,
+        marginBottom: 6,
     },
-    statusBadge: {
+    statusRow: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
     },
-    statusLabel: {
+    statusText: {
         fontSize: 14,
         fontWeight: '500',
     },
-
-    iconButton: {
-        width: 44,
-        height: 44,
-        borderRadius: 14,
+    refreshButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 12,
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -556,8 +708,16 @@ const styles = StyleSheet.create({
         marginVertical: 20,
     },
 
-    batterySection: { marginBottom: 0 },
-    batteryRow: {
+    // Battery section
+    batterySection: {
+        marginBottom: 0,
+    },
+    batteryHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    batteryLabelRow: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
@@ -567,17 +727,22 @@ const styles = StyleSheet.create({
         fontWeight: '500',
     },
     batteryPercent: {
-        fontSize: 16,
+        fontSize: 17,
         fontWeight: '700',
+        letterSpacing: -0.2,
     },
 
+    // Connection section
+    connectionSection: {
+        marginBottom: 0,
+    },
     connectionRow: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 10,
-        marginBottom: 20,
+        marginBottom: 16,
     },
-    connDot: {
+    connectionDot: {
         width: 10,
         height: 10,
         borderRadius: 5,
@@ -587,37 +752,35 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '500',
     },
-
-    secondaryButton: {
+    connectionButton: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        height: 56,
+        height: 48,
         borderRadius: 14,
-        backgroundColor: 'rgba(59,130,246,0.15)',
     },
-    secondaryButtonIcon: { marginRight: 12 },
-    secondaryButtonText: {
-        fontSize: 16,
-        fontWeight: '500',
+    connectionButtonText: {
+        fontSize: 15,
+        fontWeight: '600',
     },
 
-    statRow: {
+    // Stats row
+    statsRow: {
         flexDirection: 'row',
         gap: 12,
         marginBottom: 20,
     },
-    statTile: {
+    statCard: {
         flex: 1,
-        borderRadius: 20,
-        paddingVertical: 18,
-        paddingHorizontal: 10,
+        borderRadius: 18,
+        paddingVertical: 20,
+        paddingHorizontal: 8,
         alignItems: 'center',
         borderWidth: 1,
-        gap: 6,
+        gap: 8,
     },
     statValue: {
-        fontSize: 15,
+        fontSize: 16,
         fontWeight: '700',
         letterSpacing: -0.2,
     },
@@ -625,52 +788,66 @@ const styles = StyleSheet.create({
         fontSize: 11,
         fontWeight: '500',
         textTransform: 'uppercase',
-        letterSpacing: 0.5,
+        letterSpacing: 0.6,
     },
 
+    // Card header
     cardHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 10,
+        marginBottom: 12,
     },
-    cardHeaderIcon: { marginRight: 8 },
-    cardLabel: {
+    cardTitle: {
         fontSize: 14,
         fontWeight: '500',
     },
     cardValue: {
-        fontSize: 16,
+        fontSize: 17,
         fontWeight: '600',
         letterSpacing: -0.2,
     },
 
+    // Error banner
     errorBanner: {
         flexDirection: 'row',
-        alignItems: 'center',
-        gap: 10,
-        backgroundColor: 'rgba(239,68,68,0.1)',
+        alignItems: 'flex-start',
+        backgroundColor: 'rgba(251,191,36,0.12)',
         borderWidth: 1,
-        borderColor: 'rgba(239,68,68,0.3)',
+        borderColor: 'rgba(251,191,36,0.3)',
         borderRadius: 14,
         padding: 16,
         marginBottom: 20,
+        gap: 12,
     },
-    errorBannerText: {
+    errorIconContainer: {
+        marginTop: 2,
+    },
+    errorContent: {
         flex: 1,
+    },
+    errorText: {
         color: '#fbbf24',
         fontSize: 14,
         fontWeight: '500',
+        marginBottom: 4,
+    },
+    errorCount: {
+        color: '#fbbf24',
+        fontSize: 12,
+        fontWeight: '400',
+        opacity: 0.8,
     },
 
+    // Actions grid
     actionsGrid: {
         flexDirection: 'row',
         gap: 12,
     },
-    actionTile: {
+    actionButton: {
         flex: 1,
         borderRadius: 14,
         borderWidth: 1,
-        paddingVertical: 20,
+        paddingVertical: 18,
         alignItems: 'center',
         gap: 10,
     },
@@ -679,10 +856,12 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
 
+    // Footer
     footer: {
         textAlign: 'center',
         marginTop: 32,
-        fontSize: 12,
-        opacity: 0.7,
+        fontSize: 12.5,
+        opacity: 0.65,
+        letterSpacing: 0.3,
     },
 });
