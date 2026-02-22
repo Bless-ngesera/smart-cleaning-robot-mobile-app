@@ -644,7 +644,7 @@ const styles = StyleSheet.create({
         marginBottom: 32, // Slightly more breathing room
     },
     headerTitle: {
-        fontSize: 35,
+        fontSize: 32,
         fontWeight: '800',
         letterSpacing: -0.5,
         marginBottom: 6,

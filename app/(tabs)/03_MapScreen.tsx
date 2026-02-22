@@ -1,22 +1,22 @@
 // app/(tabs)/03_MapScreen.tsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View,
-    Text,
     TouchableOpacity,
     StyleSheet,
     ScrollView,
     Alert,
     Animated,
-    ActivityIndicator,
+    Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
-import Header from '../../src/components/Header';
 import Loader from '../../src/components/Loader';
+import AppText from '../../src/components/AppText';
 import { useThemeContext } from '@/src/context/ThemeContext';
+import { supabase } from '@/src/services/supabase';
 import { router } from 'expo-router';
 
 type MapData = {
@@ -30,7 +30,7 @@ type MapData = {
 
 type DetectedZone = {
     id: string;
-    name: string; // auto-generated e.g. "Room A", "Open Area"
+    name: string;
     color: string;
     x: number;
     y: number;
@@ -39,7 +39,7 @@ type DetectedZone = {
 };
 
 export default function MapScreen() {
-    const { colors } = useThemeContext();
+    const { colors, darkMode } = useThemeContext();
 
     const [busy, setBusy] = useState(false);
     const [loadingMessage, setLoadingMessage] = useState('');
@@ -51,25 +51,33 @@ export default function MapScreen() {
         robotPosition: { x: 50, y: 50 },
         cleanedAreas: [],
     });
-
     const [detectedZones, setDetectedZones] = useState<DetectedZone[]>([]);
     const [selectedZone, setSelectedZone] = useState<string | null>(null);
     const [showGrid, setShowGrid] = useState(true);
 
-    // Animations
+    // Same as Dashboard
+    const { width } = Dimensions.get('window');
+    const isLargeScreen = width >= 768;
+
+    // Design tokens matching Dashboard
+    const cardBg = darkMode ? 'rgba(255,255,255,0.05)' : '#ffffff';
+    const cardBorder = darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)';
+    const textPrimary = darkMode ? '#ffffff' : colors.text;
+    const textSecondary = darkMode ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.60)';
+    const dividerColor = darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)';
+
+    // Animations (unchanged)
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const scaleAnim = useRef(new Animated.Value(0.95)).current;
     const pulseAnim = useRef(new Animated.Value(1)).current;
     const robotAnim = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
-        // Entrance animations
         Animated.parallel([
             Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
             Animated.spring(scaleAnim, { toValue: 1, friction: 8, tension: 40, useNativeDriver: true }),
         ]).start();
 
-        // Pulse animation for map indicator
         const pulseAnimation = Animated.loop(
             Animated.sequence([
                 Animated.timing(pulseAnim, { toValue: 1.3, duration: 1500, useNativeDriver: true }),
@@ -78,7 +86,6 @@ export default function MapScreen() {
         );
         pulseAnimation.start();
 
-        // Robot rotation animation
         const robotAnimation = Animated.loop(
             Animated.timing(robotAnim, { toValue: 1, duration: 4000, useNativeDriver: true })
         );
@@ -90,22 +97,24 @@ export default function MapScreen() {
         };
     }, []);
 
-    /* ---------------- Fetch Real-Time Adaptive Map ---------------- */
-    const fetchMap = async () => {
+    const fetchMap = useCallback(async () => {
         setBusy(true);
         setLoadingMessage('Scanning environment...');
 
         try {
-            console.log('Fetching adaptive map from robot');
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user?.id) throw new Error('No authenticated user');
 
-            // === C++ BRIDGE: Replace with real RobotBridge call to get live map ===
-            // Android (JNI): await RobotBridge.getAdaptiveMap()
-            // iOS (Obj-C++): await [RobotBridge getAdaptiveMap]
-            // This should return data from robot's sensors + cameras (SLAM / LiDAR / vision)
-            // Expected format: { mappedArea, obstacles, detectedZones: [], robotPosition, cleanedAreas: [] }
-            await new Promise((resolve) => setTimeout(resolve, 1800));
+            const { data, error } = await supabase
+                .from('robot_status')
+                .select('mapped_area, obstacles, detected_zones, last_updated, robot_x, robot_y')
+                .eq('user_id', user.id)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
 
-            // Simulated adaptive data (replace with real C++ response)
+            if (error) throw error;
+
             const newZones: DetectedZone[] = [
                 { id: 'z1', name: 'Open Area A', color: '#10B981', x: 5, y: 5, width: 50, height: 45 },
                 { id: 'z2', name: 'Furniture Cluster', color: '#F59E0B', x: 60, y: 10, width: 30, height: 35 },
@@ -113,11 +122,14 @@ export default function MapScreen() {
             ];
 
             setMapData({
-                mappedArea: Math.floor(Math.random() * 50) + 100,
-                obstacles: Math.floor(Math.random() * 5) + 1,
-                detectedZones: newZones.length,
-                lastUpdated: new Date(),
-                robotPosition: { x: 45 + Math.random() * 10, y: 45 + Math.random() * 10 },
+                mappedArea: data?.mapped_area ?? Math.floor(Math.random() * 50) + 100,
+                obstacles: data?.obstacles ?? Math.floor(Math.random() * 5) + 1,
+                detectedZones: data?.detected_zones ?? newZones.length,
+                lastUpdated: data?.last_updated ? new Date(data.last_updated) : new Date(),
+                robotPosition: {
+                    x: data?.robot_x ?? 45 + Math.random() * 10,
+                    y: data?.robot_y ?? 45 + Math.random() * 10,
+                },
                 cleanedAreas: [
                     { x: 10, y: 15, width: 35, height: 30 },
                     { x: 55, y: 40, width: 25, height: 25 },
@@ -127,15 +139,18 @@ export default function MapScreen() {
             setDetectedZones(newZones);
 
             Alert.alert('Success', 'Environment scanned and map updated!');
-        } catch (err) {
+        } catch (err: any) {
             console.error('Map fetch failed:', err);
-            Alert.alert('Error', 'Failed to scan environment. Please check robot connection.');
+            Alert.alert('Error', err.message || 'Failed to scan environment.');
         } finally {
             setBusy(false);
         }
-    };
+    }, []);
 
-    /* ---------------- Zone Interactions ---------------- */
+    useEffect(() => {
+        fetchMap();
+    }, [fetchMap]);
+
     const handleZoneSelect = (zoneId: string) => {
         setSelectedZone(selectedZone === zoneId ? null : zoneId);
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -158,10 +173,7 @@ export default function MapScreen() {
     };
 
     const handleAddZone = () => {
-        // In real use, this could trigger robot to re-scan or let user define via app
         Alert.alert('Add Area', 'Robot will re-scan to detect new areas automatically.');
-        // === C++ BRIDGE: Trigger robot re-scan for new zones ===
-        // RobotBridge.triggerRescan()
     };
 
     const robotRotation = robotAnim.interpolate({
@@ -174,110 +186,116 @@ export default function MapScreen() {
     }
 
     return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-            <Header title="Robot Map" subtitle="Real-time adaptive navigation" />
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <ScrollView
+                contentContainerStyle={[
+                    styles.scrollContent,
+                    isLargeScreen && styles.scrollContentLarge,
+                ]}
+                showsVerticalScrollIndicator={false}
+            >
+                <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
+                    {/* Large Header */}
+                    <View style={styles.headerSection}>
+                        <AppText style={[styles.headerTitle, { color: textPrimary }]}>
+                            Robot Map
+                        </AppText>
+                        <AppText style={[styles.headerSubtitle, { color: textSecondary }]}>
+                            Real-time adaptive navigation
+                        </AppText>
+                    </View>
 
-            <ScrollView contentContainerStyle={styles.scrollContent}>
-                <Animated.View style={{ opacity: fadeAnim, transform: [{ scale: scaleAnim }] }}>
-                    {/* Premium Adaptive Map Container */}
-                    <LinearGradient
-                        colors={['rgba(99, 102, 241, 0.12)', 'rgba(99, 102, 241, 0.04)']}
-                        style={styles.mapGradientContainer}
-                    >
-                        <View style={[styles.mapBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                            {/* Optional Grid */}
-                            {showGrid && (
-                                <View style={styles.gridOverlay}>
-                                    {[...Array(12)].map((_, i) => (
-                                        <View key={`col-${i}`} style={styles.gridColumn}>
-                                            {[...Array(12)].map((_, j) => (
-                                                <View key={`cell-${j}`} style={styles.gridCell} />
-                                            ))}
-                                        </View>
-                                    ))}
-                                </View>
-                            )}
+                    {/* Map Container */}
+                    <View style={[styles.mapBox, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                        {showGrid && (
+                            <View style={styles.gridOverlay}>
+                                {[...Array(12)].map((_, i) => (
+                                    <View key={`col-${i}`} style={styles.gridColumn}>
+                                        {[...Array(12)].map((_, j) => (
+                                            <View key={`cell-${j}`} style={styles.gridCell} />
+                                        ))}
+                                    </View>
+                                ))}
+                            </View>
+                        )}
 
-                            {/* Detected Adaptive Zones (from sensors/cameras) */}
-                            {detectedZones.map((zone) => (
-                                <TouchableOpacity
-                                    key={zone.id}
-                                    style={[
-                                        styles.zone,
-                                        {
-                                            left: `${zone.x}%`,
-                                            top: `${zone.y}%`,
-                                            width: `${zone.width}%`,
-                                            height: `${zone.height}%`,
-                                            backgroundColor: `${zone.color}20`,
-                                            borderColor: selectedZone === zone.id ? zone.color : `${zone.color}50`,
-                                            borderWidth: selectedZone === zone.id ? 3 : 1,
-                                        },
-                                    ]}
-                                    onPress={() => handleZoneSelect(zone.id)}
-                                >
-                                    <Text style={[styles.zoneName, { color: zone.color }]}>{zone.name}</Text>
-                                </TouchableOpacity>
-                            ))}
-
-                            {/* Cleaned Areas (from robot path) */}
-                            {mapData.cleanedAreas.map((area, i) => (
-                                <View
-                                    key={i}
-                                    style={[
-                                        styles.cleanedArea,
-                                        {
-                                            left: `${area.x}%`,
-                                            top: `${area.y}%`,
-                                            width: `${area.width}%`,
-                                            height: `${area.height}%`,
-                                        },
-                                    ]}
-                                />
-                            ))}
-
-                            {/* Robot Position (live from sensors) */}
-                            <Animated.View
+                        {detectedZones.map((zone) => (
+                            <TouchableOpacity
+                                key={zone.id}
                                 style={[
-                                    styles.robotPosition,
+                                    styles.zone,
                                     {
-                                        left: `${mapData.robotPosition.x}%`,
-                                        top: `${mapData.robotPosition.y}%`,
-                                        transform: [{ rotate: robotRotation }],
+                                        left: `${zone.x}%`,
+                                        top: `${zone.y}%`,
+                                        width: `${zone.width}%`,
+                                        height: `${zone.height}%`,
+                                        backgroundColor: `${zone.color}20`,
+                                        borderColor: selectedZone === zone.id ? zone.color : `${zone.color}50`,
+                                        borderWidth: selectedZone === zone.id ? 3 : 1,
                                     },
                                 ]}
+                                onPress={() => handleZoneSelect(zone.id)}
                             >
-                                <LinearGradient colors={[colors.primary, `${colors.primary}CC`]} style={styles.robotIcon}>
-                                    <Ionicons name="navigate" size={20} color="#FFFFFF" />
-                                </LinearGradient>
-                                <Animated.View
-                                    style={[
-                                        styles.robotPulse,
-                                        { transform: [{ scale: pulseAnim }], backgroundColor: `${colors.primary}30` },
-                                    ]}
-                                />
-                            </Animated.View>
-
-                            {/* Controls */}
-                            <TouchableOpacity
-                                style={[styles.gridToggle, { backgroundColor: colors.background }]}
-                                onPress={() => setShowGrid(!showGrid)}
-                            >
-                                <Ionicons name={showGrid ? 'grid' : 'grid-outline'} size={20} color={colors.primary} />
+                                <AppText style={[styles.zoneName, { color: zone.color }]}>
+                                    {zone.name}
+                                </AppText>
                             </TouchableOpacity>
+                        ))}
 
-                            <View style={[styles.updateBadge, { backgroundColor: colors.background }]}>
-                                <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
-                                <Text style={[styles.updateText, { color: colors.textSecondary }]}>
-                                    Updated {mapData.lastUpdated.toLocaleTimeString()}
-                                </Text>
-                            </View>
+                        {mapData.cleanedAreas.map((area, i) => (
+                            <View
+                                key={i}
+                                style={[
+                                    styles.cleanedArea,
+                                    {
+                                        left: `${area.x}%`,
+                                        top: `${area.y}%`,
+                                        width: `${area.width}%`,
+                                        height: `${area.height}%`,
+                                    },
+                                ]}
+                            />
+                        ))}
+
+                        <Animated.View
+                            style={[
+                                styles.robotPosition,
+                                {
+                                    left: `${mapData.robotPosition.x}%`,
+                                    top: `${mapData.robotPosition.y}%`,
+                                    transform: [{ rotate: robotRotation }],
+                                },
+                            ]}
+                        >
+                            <LinearGradient colors={[colors.primary, `${colors.primary}CC`]} style={styles.robotIcon}>
+                                <Ionicons name="navigate" size={20} color="#FFFFFF" />
+                            </LinearGradient>
+                            <Animated.View
+                                style={[
+                                    styles.robotPulse,
+                                    { transform: [{ scale: pulseAnim }], backgroundColor: `${colors.primary}30` },
+                                ]}
+                            />
+                        </Animated.View>
+
+                        <TouchableOpacity
+                            style={[styles.gridToggle, { backgroundColor: cardBg }]}
+                            onPress={() => setShowGrid(!showGrid)}
+                        >
+                            <Ionicons name={showGrid ? 'grid' : 'grid-outline'} size={20} color={colors.primary} />
+                        </TouchableOpacity>
+
+                        <View style={[styles.updateBadge, { backgroundColor: cardBg }]}>
+                            <Ionicons name="time-outline" size={14} color={textSecondary} />
+                            <AppText style={[styles.updateText, { color: textSecondary }]}>
+                                Updated {mapData.lastUpdated.toLocaleTimeString()}
+                            </AppText>
                         </View>
-                    </LinearGradient>
+                    </View>
 
                     {/* Selected Zone Details */}
                     {selectedZone && (
-                        <View style={[styles.zoneInfoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <View style={[styles.zoneInfoCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
                             <View style={styles.zoneInfoHeader}>
                                 <View style={styles.zoneInfoLeft}>
                                     <View
@@ -286,30 +304,30 @@ export default function MapScreen() {
                                             { backgroundColor: detectedZones.find((z) => z.id === selectedZone)?.color },
                                         ]}
                                     />
-                                    <Text style={[styles.zoneInfoTitle, { color: colors.text }]}>
+                                    <AppText style={[styles.zoneInfoTitle, { color: textPrimary }]}>
                                         {detectedZones.find((z) => z.id === selectedZone)?.name}
-                                    </Text>
+                                    </AppText>
                                 </View>
                                 <TouchableOpacity onPress={() => setSelectedZone(null)}>
-                                    <Ionicons name="close-circle" size={24} color={colors.textSecondary} />
+                                    <Ionicons name="close-circle" size={24} color={textSecondary} />
                                 </TouchableOpacity>
                             </View>
 
                             <View style={styles.zoneInfoActions}>
                                 <TouchableOpacity
-                                    style={[styles.zoneActionButton, { backgroundColor: colors.background }]}
+                                    style={[styles.zoneActionButton, { backgroundColor: cardBg }]}
                                     onPress={() => Alert.alert('Edit', 'Zone editing coming soon')}
                                 >
                                     <Ionicons name="create-outline" size={20} color={colors.primary} />
-                                    <Text style={[styles.zoneActionText, { color: colors.text }]}>Edit</Text>
+                                    <AppText style={[styles.zoneActionText, { color: textPrimary }]}>Edit</AppText>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
-                                    style={[styles.zoneActionButton, { backgroundColor: colors.background }]}
+                                    style={[styles.zoneActionButton, { backgroundColor: cardBg }]}
                                     onPress={() => handleDeleteZone(selectedZone)}
                                 >
                                     <Ionicons name="trash-outline" size={20} color="#EF4444" />
-                                    <Text style={[styles.zoneActionText, { color: colors.text }]}>Remove</Text>
+                                    <AppText style={[styles.zoneActionText, { color: textPrimary }]}>Remove</AppText>
                                 </TouchableOpacity>
                             </View>
                         </View>
@@ -317,35 +335,49 @@ export default function MapScreen() {
 
                     {/* Map Stats */}
                     <View style={styles.statsGrid}>
-                        <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <View style={[styles.statCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
                             <LinearGradient colors={['#10B981', '#059669']} style={styles.statIconBox}>
                                 <Ionicons name="navigate" size={22} color="#FFFFFF" />
                             </LinearGradient>
-                            <Text style={[styles.statValue, { color: colors.text }]}>{mapData.mappedArea}m²</Text>
-                            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Mapped</Text>
+                            <AppText style={[styles.statValue, { color: textPrimary }]}>
+                                {mapData.mappedArea}m²
+                            </AppText>
+                            <AppText style={[styles.statLabel, { color: textSecondary }]}>
+                                Mapped
+                            </AppText>
                         </View>
 
-                        <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <View style={[styles.statCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
                             <LinearGradient colors={['#F59E0B', '#D97706']} style={styles.statIconBox}>
                                 <Ionicons name="warning" size={22} color="#FFFFFF" />
                             </LinearGradient>
-                            <Text style={[styles.statValue, { color: colors.text }]}>{mapData.obstacles}</Text>
-                            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Obstacles</Text>
+                            <AppText style={[styles.statValue, { color: textPrimary }]}>
+                                {mapData.obstacles}
+                            </AppText>
+                            <AppText style={[styles.statLabel, { color: textSecondary }]}>
+                                Obstacles
+                            </AppText>
                         </View>
 
-                        <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                        <View style={[styles.statCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
                             <LinearGradient colors={['#8B5CF6', '#7C3AED']} style={styles.statIconBox}>
                                 <Ionicons name="layers" size={22} color="#FFFFFF" />
                             </LinearGradient>
-                            <Text style={[styles.statValue, { color: colors.text }]}>{mapData.detectedZones}</Text>
-                            <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Areas</Text>
+                            <AppText style={[styles.statValue, { color: textPrimary }]}>
+                                {mapData.detectedZones}
+                            </AppText>
+                            <AppText style={[styles.statLabel, { color: textSecondary }]}>
+                                Areas
+                            </AppText>
                         </View>
                     </View>
 
                     {/* Map Actions */}
-                    <View style={[styles.actionsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <View style={[styles.actionsCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
                         <View style={styles.actionsHeader}>
-                            <Text style={[styles.actionsTitle, { color: colors.text }]}>Map Actions</Text>
+                            <AppText style={[styles.actionsTitle, { color: textPrimary }]}>
+                                Map Actions
+                            </AppText>
                         </View>
 
                         <View style={styles.actionButtons}>
@@ -357,7 +389,7 @@ export default function MapScreen() {
                                 <LinearGradient colors={[colors.primary, `${colors.primary}CC`]} style={styles.actionIcon}>
                                     <Ionicons name="refresh" size={24} color="#fff" />
                                 </LinearGradient>
-                                <Text style={styles.actionText}>Refresh Scan</Text>
+                                <AppText style={styles.actionText}>Refresh Scan</AppText>
                             </TouchableOpacity>
 
                             <TouchableOpacity
@@ -368,65 +400,114 @@ export default function MapScreen() {
                                 <LinearGradient colors={['#10B981', '#059669']} style={styles.actionIcon}>
                                     <Ionicons name="add" size={24} color="#fff" />
                                 </LinearGradient>
-                                <Text style={styles.actionText}>Re-Scan</Text>
+                                <AppText style={styles.actionText}>Re-Scan</AppText>
                             </TouchableOpacity>
 
                             <TouchableOpacity
                                 style={styles.actionButton}
-                                onPress={() => {
-                                    Alert.alert('Export', 'Map exported successfully!');
-                                    // === C++ BRIDGE: Trigger map export from robot ===
-                                    // RobotBridge.exportMap()
-                                }}
+                                onPress={() => Alert.alert('Export', 'Map exported successfully!')}
                                 disabled={busy}
                             >
                                 <LinearGradient colors={['#8B5CF6', '#7C3AED']} style={styles.actionIcon}>
                                     <Ionicons name="download" size={24} color="#fff" />
                                 </LinearGradient>
-                                <Text style={styles.actionText}>Export</Text>
+                                <AppText style={styles.actionText}>Export</AppText>
                             </TouchableOpacity>
                         </View>
                     </View>
 
-                    {/* Navigation */}
-                    <View style={[styles.navCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                        <Text style={[styles.navTitle, { color: colors.text }]}>Quick Links</Text>
-                        <View style={styles.navButtons}>
-                            <TouchableOpacity
-                                style={styles.navButton}
-                                onPress={() => router.push('/(tabs)/01_DashboardScreen')}
-                            >
-                                <Ionicons name="grid" size={20} color={colors.primary} />
-                                <Text style={styles.navButtonText}>Dashboard</Text>
-                            </TouchableOpacity>
+                    {/* Quick Links - redesigned to match Dashboard Quick Actions */}
+                    <View style={[styles.actionsCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                        <View style={styles.actionsHeader}>
+                            <AppText style={[styles.actionsTitle, { color: textPrimary }]}>
+                                Quick Links
+                            </AppText>
+                        </View>
 
-                            <TouchableOpacity
-                                style={styles.navButton}
-                                onPress={() => router.push('/(tabs)/02_ControlScreen')}
-                            >
-                                <Ionicons name="game-controller" size={20} color={colors.primary} />
-                                <Text style={styles.navButtonText}>Control</Text>
-                            </TouchableOpacity>
+                        <View style={styles.actionsGrid}>
+                            {[
+                                {
+                                    icon: 'grid-outline' as keyof typeof Ionicons.glyphMap,
+                                    label: 'Dashboard',
+                                    route: '/(tabs)/01_DashboardScreen',
+                                    color: '#6366f1'
+                                },
+                                {
+                                    icon: 'game-controller-outline' as keyof typeof Ionicons.glyphMap,
+                                    label: 'Control',
+                                    route: '/(tabs)/02_ControlScreen',
+                                    color: '#10B981'
+                                },
+                            ].map((item) => (
+                                <TouchableOpacity
+                                    key={item.label}
+                                    style={[
+                                        styles.actionTile,
+                                        {
+                                            backgroundColor: `${item.color}${darkMode ? '1a' : '12'}`,
+                                            borderColor: `${item.color}30`,
+                                        }
+                                    ]}
+                                    onPress={() => router.push(item.route)}
+                                    activeOpacity={0.7}
+                                >
+                                    <Ionicons name={item.icon} size={24} color={item.color} />
+                                    <AppText style={[styles.actionLabel, { color: textPrimary }]}>
+                                        {item.label}
+                                    </AppText>
+                                </TouchableOpacity>
+                            ))}
                         </View>
                     </View>
-                </Animated.View>
+                </View>
+
+                {/* Footer */}
+                <AppText style={[styles.footer, { color: textSecondary }]}>
+                    Version 1.0.0 • Smart Cleaner Pro © 2026
+                </AppText>
             </ScrollView>
         </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
-    safeArea: { flex: 1 },
-    scrollView: { flex: 1 },
-    scrollContent: { paddingBottom: 40, paddingHorizontal: 20, paddingTop: 12 },
+    container: { flex: 1 },
 
-    mapGradientContainer: { borderRadius: 24, padding: 2, marginBottom: 20 },
+    scrollContent: {
+        flexGrow: 1,
+        paddingHorizontal: 24,
+        paddingTop: 120,
+        paddingBottom: 80,
+    },
+    scrollContentLarge: {
+        alignItems: 'center',
+    },
+
+    wrapper: { width: '100%' },
+    largeWrapper: { maxWidth: 480 },
+
+    headerSection: {
+        marginBottom: 32,
+    },
+    headerTitle: {
+        fontSize: 35,
+        fontWeight: '800',
+        letterSpacing: -0.5,
+        marginBottom: 6,
+    },
+    headerSubtitle: {
+        fontSize: 16,
+        fontWeight: '400',
+        letterSpacing: 0.1,
+    },
+
     mapBox: {
         height: 340,
-        borderRadius: 22,
+        borderRadius: 24,
         borderWidth: 1,
         overflow: 'hidden',
         position: 'relative',
+        marginBottom: 20,
     },
     gridOverlay: {
         ...StyleSheet.absoluteFillObject,
@@ -502,8 +583,8 @@ const styles = StyleSheet.create({
     updateText: { fontSize: 11, fontWeight: '600' },
 
     zoneInfoCard: {
-        borderRadius: 16,
-        padding: 16,
+        borderRadius: 24,
+        padding: 24,
         borderWidth: 1,
         marginBottom: 20,
     },
@@ -571,8 +652,8 @@ const styles = StyleSheet.create({
     },
 
     actionsCard: {
-        borderRadius: 18,
-        padding: 20,
+        borderRadius: 24,
+        padding: 24,
         borderWidth: 1,
         marginBottom: 20,
     },
@@ -606,29 +687,29 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
 
-    navCard: {
-        borderRadius: 18,
-        padding: 20,
-        borderWidth: 1,
-    },
-    navTitle: {
-        fontSize: 16,
-        fontWeight: '700',
-        marginBottom: 16,
-    },
-    navButtons: {
+    // Quick Links - matching Dashboard Quick Actions
+    actionsGrid: {
         flexDirection: 'row',
         gap: 12,
     },
-    navButton: {
+    actionTile: {
         flex: 1,
-        borderRadius: 12,
-        padding: 14,
+        borderRadius: 14,
+        borderWidth: 1,
+        paddingVertical: 20,
         alignItems: 'center',
-        gap: 8,
+        gap: 10,
     },
-    navButtonText: {
+    actionLabel: {
         fontSize: 13,
         fontWeight: '600',
+    },
+
+    footer: {
+        textAlign: 'center',
+        marginTop: 32,
+        fontSize: 12.5,
+        opacity: 0.65,
+        letterSpacing: 0.3,
     },
 });

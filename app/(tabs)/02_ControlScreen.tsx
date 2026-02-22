@@ -1,26 +1,26 @@
 // app/(tabs)/02_ControlScreen.tsx
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     View,
-    Text,
     TouchableOpacity,
     StyleSheet,
     ScrollView,
     Alert,
     Platform,
-    ActivityIndicator,
+    Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
-import Header from '../../src/components/Header';
 import Loader from '../../src/components/Loader';
+import AppText from '../../src/components/AppText';
 import { useThemeContext } from '@/src/context/ThemeContext';
+import { supabase } from '@/src/services/supabase';
 import { router } from 'expo-router';
 
 export default function ControlScreen() {
-    const { colors } = useThemeContext();
+    const { colors, darkMode } = useThemeContext();
 
     const [busy, setBusy] = useState(false);
     const [loadingMessage, setLoadingMessage] = useState('');
@@ -28,6 +28,43 @@ export default function ControlScreen() {
     const [cleaningMode, setCleaningMode] = useState<'auto' | 'spot' | 'edge'>('auto');
     const [fanSpeed, setFanSpeed] = useState<'quiet' | 'standard' | 'turbo'>('standard');
     const [manualMode, setManualMode] = useState(false);
+
+    // Added missing definition - same as in Dashboard
+    const { width } = Dimensions.get('window');
+    const isLargeScreen = width >= 768;
+
+    // Design tokens matching Dashboard
+    const cardBg = darkMode ? 'rgba(255,255,255,0.05)' : '#ffffff';
+    const cardBorder = darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)';
+    const textPrimary = darkMode ? '#ffffff' : colors.text;
+    const textSecondary = darkMode ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.60)';
+    const dividerColor = darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)';
+
+    // Fetch real robot status (same pattern as Dashboard)
+    const fetchStatus = useCallback(async () => {
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user?.id) return;
+
+            const { data, error } = await supabase
+                .from('robot_status')
+                .select('is_cleaning')
+                .eq('user_id', user.id)
+                .order('created_at', { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            if (!error && data) {
+                setIsRunning(data.is_cleaning ?? false);
+            }
+        } catch (err) {
+            console.error('[ControlScreen] fetchStatus error:', err);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchStatus();
+    }, [fetchStatus]);
 
     /* ---------------- Simulated / Real Robot Actions ---------------- */
     const simulateAction = useCallback(
@@ -50,6 +87,7 @@ export default function ControlScreen() {
 
                 if (onSuccess) onSuccess();
                 Alert.alert('Success', message.replace('...', ' completed!'));
+                fetchStatus(); // Refresh real status after action
             } catch (err) {
                 console.error(log + ' failed:', err);
                 Alert.alert('Error', errorMsg);
@@ -58,7 +96,7 @@ export default function ControlScreen() {
                 setLoadingMessage('');
             }
         },
-        []
+        [fetchStatus]
     );
 
     const handleStartCleaning = () =>
@@ -96,11 +134,7 @@ export default function ControlScreen() {
         // === C++ BRIDGE: Send real-time movement command to robot ===
         // Android (JNI): RobotBridge.move(direction)
         // iOS (Obj-C++): [RobotBridge move:direction]
-        // This should be instant/low-latency command to robot motors
-        // Example pseudo-code:
-        // await RobotBridge.move(direction);
 
-        // Optional: visual feedback toast (remove in production if not needed)
         Alert.alert('Manual Move', `Command sent: ${direction.toUpperCase()}`, [{ text: 'OK' }]);
     }, [busy]);
 
@@ -114,9 +148,6 @@ export default function ControlScreen() {
         // === C++ BRIDGE: Send real-time rotation command to robot ===
         // Android (JNI): RobotBridge.rotate(direction)
         // iOS (Obj-C++): [RobotBridge rotate:direction]
-        // Should control robot spin in place or turn
-        // Example pseudo-code:
-        // await RobotBridge.rotate(direction);
 
         Alert.alert('Manual Rotate', `Command sent: Rotate ${direction.toUpperCase()}`, [{ text: 'OK' }]);
     }, [busy]);
@@ -126,22 +157,32 @@ export default function ControlScreen() {
     }
 
     return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-            <Header title="Control Robot" subtitle="Manage cleaning operations" />
-
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             <ScrollView
-                style={styles.scrollView}
-                contentContainerStyle={styles.scrollContent}
+                contentContainerStyle={[
+                    styles.scrollContent,
+                    isLargeScreen && styles.scrollContentLarge,
+                ]}
                 showsVerticalScrollIndicator={false}
             >
-                <View style={styles.content}>
+                <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
+                    {/* Large Header - same as Dashboard */}
+                    <View style={styles.headerSection}>
+                        <AppText style={[styles.headerTitle, { color: textPrimary }]}>
+                            Control Robot
+                        </AppText>
+                        <AppText style={[styles.headerSubtitle, { color: textSecondary }]}>
+                            Manage cleaning operations
+                        </AppText>
+                    </View>
+
                     {/* Status Banner */}
                     <View
                         style={[
                             styles.statusBanner,
                             {
-                                backgroundColor: isRunning ? `${colors.primary}15` : colors.card,
-                                borderColor: isRunning ? colors.primary : colors.border,
+                                backgroundColor: isRunning ? `${colors.primary}15` : cardBg,
+                                borderColor: isRunning ? colors.primary : cardBorder,
                             },
                         ]}
                     >
@@ -149,26 +190,28 @@ export default function ControlScreen() {
                             <View
                                 style={[
                                     styles.statusIconContainer,
-                                    { backgroundColor: isRunning ? `${colors.primary}30` : colors.textSecondary + '30' },
+                                    { backgroundColor: isRunning ? `${colors.primary}30` : cardBorder },
                                 ]}
                             >
                                 <Ionicons
                                     name={isRunning ? 'flash' : 'pause'}
                                     size={24}
-                                    color={isRunning ? colors.primary : colors.textSecondary}
+                                    color={isRunning ? colors.primary : textSecondary}
                                 />
                             </View>
 
                             <View style={styles.statusInfo}>
-                                <Text style={[styles.statusTitle, { color: colors.text }]}>Robot Status</Text>
-                                <Text
+                                <AppText style={[styles.statusTitle, { color: textPrimary }]}>
+                                    Robot Status
+                                </AppText>
+                                <AppText
                                     style={[
                                         styles.statusValue,
-                                        { color: isRunning ? colors.primary : colors.textSecondary },
+                                        { color: isRunning ? colors.primary : textSecondary },
                                     ]}
                                 >
                                     {manualMode ? 'Manual Control Active' : isRunning ? 'Cleaning in Progress' : 'Idle'}
-                                </Text>
+                                </AppText>
                             </View>
                         </View>
 
@@ -180,11 +223,13 @@ export default function ControlScreen() {
                     </View>
 
                     {/* Primary Controls */}
-                    <View style={[styles.controlCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <View style={[styles.controlCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
                         <View style={styles.cardHeader}>
                             <View style={styles.cardTitleContainer}>
                                 <Ionicons name="game-controller" size={20} color={colors.primary} />
-                                <Text style={[styles.cardTitle, { color: colors.text }]}>Primary Controls</Text>
+                                <AppText style={[styles.cardTitle, { color: textPrimary }]}>
+                                    Primary Controls
+                                </AppText>
                             </View>
                         </View>
 
@@ -202,7 +247,7 @@ export default function ControlScreen() {
                                 <View style={[styles.primaryButtonIcon, { backgroundColor: '#10B981' }]}>
                                     <Ionicons name="play" size={32} color="#fff" />
                                 </View>
-                                <Text style={styles.primaryButtonText}>Start Adaptive Cleaning</Text>
+                                <AppText style={styles.primaryButtonText}>Start Adaptive Cleaning</AppText>
                             </TouchableOpacity>
 
                             <TouchableOpacity
@@ -218,7 +263,7 @@ export default function ControlScreen() {
                                 <View style={[styles.primaryButtonIcon, { backgroundColor: '#EF4444' }]}>
                                     <Ionicons name="stop" size={32} color="#fff" />
                                 </View>
-                                <Text style={styles.primaryButtonText}>Stop Cleaning</Text>
+                                <AppText style={styles.primaryButtonText}>Stop Cleaning</AppText>
                             </TouchableOpacity>
 
                             <TouchableOpacity
@@ -229,17 +274,19 @@ export default function ControlScreen() {
                                 <View style={[styles.primaryButtonIcon, { backgroundColor: colors.primary }]}>
                                     <Ionicons name="home" size={32} color="#fff" />
                                 </View>
-                                <Text style={styles.primaryButtonText}>Return to Dock</Text>
+                                <AppText style={styles.primaryButtonText}>Return to Dock</AppText>
                             </TouchableOpacity>
                         </View>
                     </View>
 
-                    {/* Cleaning Modes – No hardcoded areas – robot adapts via sensors/cameras */}
-                    <View style={[styles.controlCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    {/* Cleaning Modes */}
+                    <View style={[styles.controlCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
                         <View style={styles.cardHeader}>
                             <View style={styles.cardTitleContainer}>
                                 <Ionicons name="options" size={20} color={colors.primary} />
-                                <Text style={[styles.cardTitle, { color: colors.text }]}>Cleaning Mode</Text>
+                                <AppText style={[styles.cardTitle, { color: textPrimary }]}>
+                                    Cleaning Mode
+                                </AppText>
                             </View>
                         </View>
 
@@ -250,35 +297,29 @@ export default function ControlScreen() {
                                     style={[
                                         styles.modeButton,
                                         {
-                                            backgroundColor: colors.background,
-                                            borderColor: cleaningMode === mode ? colors.primary : colors.border,
+                                            backgroundColor: cardBg,
+                                            borderColor: cleaningMode === mode ? colors.primary : cardBorder,
                                         },
                                         cleaningMode === mode && { backgroundColor: `${colors.primary}15` },
                                     ]}
-                                    onPress={() => {
-                                        // === C++ BRIDGE: Send cleaning mode change to robot ===
-                                        // Android (JNI): RobotBridge.setCleaningMode(mode)
-                                        // iOS (Obj-C++): [RobotBridge setCleaningMode:mode]
-                                        // Mode 'auto' should tell robot to use sensors/cameras for full adaptive cleaning
-                                        setCleaningMode(mode as any);
-                                    }}
+                                    onPress={() => setCleaningMode(mode as any)}
                                     activeOpacity={0.7}
                                 >
                                     <Ionicons
                                         name={mode === 'auto' ? 'infinite' : mode === 'spot' ? 'locate' : 'grid'}
                                         size={24}
-                                        color={cleaningMode === mode ? colors.primary : colors.textSecondary}
+                                        color={cleaningMode === mode ? colors.primary : textSecondary}
                                     />
-                                    <Text
+                                    <AppText
                                         style={[
                                             styles.modeButtonText,
-                                            { color: cleaningMode === mode ? colors.primary : colors.text },
+                                            { color: cleaningMode === mode ? colors.primary : textPrimary },
                                         ]}
                                     >
                                         {mode === 'auto'
                                             ? 'Auto (Adaptive)'
                                             : mode.charAt(0).toUpperCase() + mode.slice(1)}
-                                    </Text>
+                                    </AppText>
                                     {cleaningMode === mode && (
                                         <View style={[styles.selectedBadge, { backgroundColor: colors.primary }]}>
                                             <Ionicons name="checkmark" size={12} color="#fff" />
@@ -288,21 +329,23 @@ export default function ControlScreen() {
                             ))}
                         </View>
 
-                        <Text style={[styles.modeDescription, { color: colors.textSecondary }]}>
+                        <AppText style={[styles.modeDescription, { color: textSecondary }]}>
                             {cleaningMode === 'auto'
                                 ? 'Robot uses sensors and cameras to intelligently map and clean the entire space.'
                                 : cleaningMode === 'spot'
                                     ? 'Focus on a specific dirty area detected by sensors.'
                                     : 'Clean along walls and edges using edge-detection sensors.'}
-                        </Text>
+                        </AppText>
                     </View>
 
                     {/* Fan Speed */}
-                    <View style={[styles.controlCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <View style={[styles.controlCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
                         <View style={styles.cardHeader}>
                             <View style={styles.cardTitleContainer}>
                                 <Ionicons name="speedometer" size={20} color={colors.primary} />
-                                <Text style={[styles.cardTitle, { color: colors.text }]}>Suction Power</Text>
+                                <AppText style={[styles.cardTitle, { color: textPrimary }]}>
+                                    Suction Power
+                                </AppText>
                             </View>
                         </View>
 
@@ -313,17 +356,12 @@ export default function ControlScreen() {
                                     style={[
                                         styles.speedButton,
                                         {
-                                            backgroundColor: colors.background,
-                                            borderColor: fanSpeed === speed ? colors.primary : colors.border,
+                                            backgroundColor: cardBg,
+                                            borderColor: fanSpeed === speed ? colors.primary : cardBorder,
                                         },
                                         fanSpeed === speed && { backgroundColor: `${colors.primary}15` },
                                     ]}
-                                    onPress={() => {
-                                        // === C++ BRIDGE: Send fan/suction speed change to robot ===
-                                        // Android (JNI): RobotBridge.setFanSpeed(speed)
-                                        // iOS (Obj-C++): [RobotBridge setFanSpeed:speed]
-                                        setFanSpeed(speed as any);
-                                    }}
+                                    onPress={() => setFanSpeed(speed as any)}
                                     activeOpacity={0.7}
                                 >
                                     <Ionicons
@@ -335,38 +373,40 @@ export default function ControlScreen() {
                                                     : 'volume-high'
                                         }
                                         size={28}
-                                        color={fanSpeed === speed ? colors.primary : colors.textSecondary}
+                                        color={fanSpeed === speed ? colors.primary : textSecondary}
                                     />
-                                    <Text
+                                    <AppText
                                         style={[
                                             styles.speedButtonText,
-                                            { color: fanSpeed === speed ? colors.primary : colors.text },
+                                            { color: fanSpeed === speed ? colors.primary : textPrimary },
                                         ]}
                                     >
                                         {speed.charAt(0).toUpperCase() + speed.slice(1)}
-                                    </Text>
-                                    <Text style={[styles.speedSubtext, { color: colors.textSecondary }]}>
+                                    </AppText>
+                                    <AppText style={[styles.speedSubtext, { color: textSecondary }]}>
                                         {speed === 'quiet' ? 'Low noise' : speed === 'standard' ? 'Balanced' : 'Max power'}
-                                    </Text>
+                                    </AppText>
                                 </TouchableOpacity>
                             ))}
                         </View>
                     </View>
 
-                    {/* Manual Controls – Fully functional joystick */}
-                    <View style={[styles.controlCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    {/* Manual Controls */}
+                    <View style={[styles.controlCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
                         <View style={styles.cardHeader}>
                             <View style={styles.cardTitleContainer}>
                                 <Ionicons name="navigate" size={20} color={colors.primary} />
-                                <Text style={[styles.cardTitle, { color: colors.text }]}>Manual Controls</Text>
+                                <AppText style={[styles.cardTitle, { color: textPrimary }]}>
+                                    Manual Controls
+                                </AppText>
                             </View>
 
                             <TouchableOpacity
                                 style={[
                                     styles.manualToggle,
                                     {
-                                        backgroundColor: manualMode ? colors.primary : colors.background,
-                                        borderColor: colors.border,
+                                        backgroundColor: manualMode ? colors.primary : cardBg,
+                                        borderColor: cardBorder,
                                     },
                                 ]}
                                 onPress={() => setManualMode(!manualMode)}
@@ -375,14 +415,13 @@ export default function ControlScreen() {
                                 <Ionicons
                                     name={manualMode ? 'toggle' : 'toggle-outline'}
                                     size={24}
-                                    color={manualMode ? '#fff' : colors.textSecondary}
+                                    color={manualMode ? '#fff' : textSecondary}
                                 />
                             </TouchableOpacity>
                         </View>
 
                         {manualMode ? (
                             <View style={styles.joystickContainer}>
-                                {/* Directional Pad – Fully functional */}
                                 <View style={styles.joystickGrid}>
                                     <View style={styles.joystickRow}>
                                         <View style={styles.joystickEmpty} />
@@ -406,7 +445,7 @@ export default function ControlScreen() {
                                         </TouchableOpacity>
 
                                         <TouchableOpacity
-                                            style={[styles.centerButton, { backgroundColor: colors.background, borderColor: colors.border }]}
+                                            style={[styles.centerButton, { backgroundColor: cardBg, borderColor: cardBorder }]}
                                             onPress={() => handleManualMove('stop')}
                                             activeOpacity={0.6}
                                         >
@@ -435,83 +474,88 @@ export default function ControlScreen() {
                                     </View>
                                 </View>
 
-                                {/* Rotation Controls */}
                                 <View style={styles.rotationControls}>
                                     <TouchableOpacity
-                                        style={[styles.rotationButton, { backgroundColor: colors.background, borderColor: colors.border }]}
+                                        style={[styles.rotationButton, { backgroundColor: cardBg, borderColor: cardBorder }]}
                                         onPress={() => handleRotate('left')}
                                         activeOpacity={0.7}
                                     >
                                         <Ionicons name="arrow-undo" size={24} color={colors.primary} />
-                                        <Text style={[styles.rotationText, { color: colors.text }]}>Left</Text>
+                                        <AppText style={[styles.rotationText, { color: textPrimary }]}>Left</AppText>
                                     </TouchableOpacity>
 
                                     <TouchableOpacity
-                                        style={[styles.rotationButton, { backgroundColor: colors.background, borderColor: colors.border }]}
+                                        style={[styles.rotationButton, { backgroundColor: cardBg, borderColor: cardBorder }]}
                                         onPress={() => handleRotate('right')}
                                         activeOpacity={0.7}
                                     >
                                         <Ionicons name="arrow-redo" size={24} color={colors.primary} />
-                                        <Text style={[styles.rotationText, { color: colors.text }]}>Right</Text>
+                                        <AppText style={[styles.rotationText, { color: textPrimary }]}>Right</AppText>
                                     </TouchableOpacity>
                                 </View>
 
-                                {/* Manual Info */}
                                 <View style={[styles.manualInfo, { backgroundColor: `${colors.primary}10` }]}>
                                     <Ionicons name="information-circle" size={16} color={colors.primary} />
-                                    <Text style={[styles.manualInfoText, { color: colors.text }]}>
+                                    <AppText style={[styles.manualInfoText, { color: textPrimary }]}>
                                         Use joystick to manually navigate. Robot adapts to obstacles via sensors & cameras.
-                                    </Text>
+                                    </AppText>
                                 </View>
                             </View>
                         ) : (
                             <View style={styles.comingSoonContainer}>
-                                <View style={[styles.joystickPlaceholder, { borderColor: colors.border }]}>
-                                    <Ionicons name="radio-button-on" size={48} color={colors.textSecondary} opacity={0.3} />
+                                <View style={[styles.joystickPlaceholder, { borderColor: cardBorder }]}>
+                                    <Ionicons name="radio-button-on" size={48} color={textSecondary} opacity={0.3} />
                                 </View>
-                                <Text style={[styles.comingSoonText, { color: colors.textSecondary }]}>
+                                <AppText style={[styles.comingSoonText, { color: textSecondary }]}>
                                     Enable manual mode
-                                </Text>
-                                <Text style={[styles.comingSoonSubtext, { color: colors.textSecondary }]}>
+                                </AppText>
+                                <AppText style={[styles.comingSoonSubtext, { color: textSecondary }]}>
                                     Toggle the switch above to access directional controls
-                                </Text>
+                                </AppText>
                             </View>
                         )}
                     </View>
 
                     {/* Quick Navigation */}
                     <View style={styles.navSection}>
-                        <Text style={[styles.navTitle, { color: colors.textSecondary }]}>Quick Navigation</Text>
+                        <AppText style={[styles.navTitle, { color: textSecondary }]}>
+                            Quick Navigation
+                        </AppText>
                         <View style={styles.navButtons}>
                             <TouchableOpacity
-                                style={[styles.navButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+                                style={[styles.navButton, { backgroundColor: cardBg, borderColor: cardBorder }]}
                                 onPress={() => router.push('/(tabs)/01_DashboardScreen')}
                                 activeOpacity={0.7}
                             >
                                 <Ionicons name="grid" size={24} color={colors.primary} />
-                                <Text style={[styles.navButtonText, { color: colors.text }]}>Dashboard</Text>
+                                <AppText style={[styles.navButtonText, { color: textPrimary }]}>Dashboard</AppText>
                             </TouchableOpacity>
 
                             <TouchableOpacity
-                                style={[styles.navButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+                                style={[styles.navButton, { backgroundColor: cardBg, borderColor: cardBorder }]}
                                 onPress={() => router.push('/(tabs)/04_ScheduleScreen')}
                                 activeOpacity={0.7}
                             >
                                 <Ionicons name="calendar" size={24} color={colors.primary} />
-                                <Text style={[styles.navButtonText, { color: colors.text }]}>Schedule</Text>
+                                <AppText style={[styles.navButtonText, { color: textPrimary }]}>Schedule</AppText>
                             </TouchableOpacity>
 
                             <TouchableOpacity
-                                style={[styles.navButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+                                style={[styles.navButton, { backgroundColor: cardBg, borderColor: cardBorder }]}
                                 onPress={() => router.push('/(tabs)/03_MapScreen')}
                                 activeOpacity={0.7}
                             >
                                 <Ionicons name="map" size={24} color={colors.primary} />
-                                <Text style={[styles.navButtonText, { color: colors.text }]}>Map</Text>
+                                <AppText style={[styles.navButtonText, { color: textPrimary }]}>Map</AppText>
                             </TouchableOpacity>
                         </View>
                     </View>
                 </View>
+
+                {/* Footer - same as Dashboard */}
+                <AppText style={[styles.footer, { color: textSecondary }]}>
+                    Version 1.0.0 • Smart Cleaner Pro © 2026
+                </AppText>
             </ScrollView>
         </SafeAreaView>
     );
@@ -522,63 +566,42 @@ export default function ControlScreen() {
 /* ──────────────────────────────────────────────────────────────────────── */
 
 const styles = StyleSheet.create({
-    safeArea: { flex: 1 },
-    scrollView: { flex: 1 },
-    scrollContent: { paddingBottom: 40 },
+    container: { flex: 1 },
 
-    content: {
-        paddingHorizontal: 20,
-        paddingTop: 12,
+    scrollContent: {
+        flexGrow: 1,
+        paddingHorizontal: 24,
+        paddingTop: 25,
+        paddingBottom: 80,
     },
-
-    /* Status Banner */
-    statusBanner: {
-        borderRadius: 16,
-        padding: 20,
-        borderWidth: 2,
-        marginBottom: 20,
-        marginTop: 8,
-    },
-    statusBannerContent: {
-        flexDirection: 'row',
+    scrollContentLarge: {
         alignItems: 'center',
-        gap: 12,
-    },
-    statusIconContainer: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    statusInfo: { flex: 1 },
-    statusTitle: {
-        fontSize: 14,
-        fontWeight: '500',
-        marginBottom: 4,
-    },
-    statusValue: {
-        fontSize: 18,
-        fontWeight: '700',
-    },
-    statusBadge: {
-        position: 'absolute',
-        top: 16,
-        right: 16,
-    },
-    pulsingDot: {
-        width: 12,
-        height: 12,
-        borderRadius: 6,
-        backgroundColor: '#10B981',
     },
 
-    /* Control Cards */
+    wrapper: { width: '100%' },
+    largeWrapper: { maxWidth: 480 },
+
+    headerSection: {
+        marginBottom: 32,
+    },
+    headerTitle: {
+        fontSize: 32,
+        fontWeight: '800',
+        letterSpacing: -0.5,
+        marginBottom: 6,
+    },
+    headerSubtitle: {
+        fontSize: 16,
+        fontWeight: '400',
+        letterSpacing: 0.1,
+    },
+
+    // Cards - same as Dashboard
     controlCard: {
-        borderRadius: 16,
-        padding: 20,
+        borderRadius: 24,
+        padding: 24,
         borderWidth: 1,
-        marginBottom: 16,
+        marginBottom: 20,
     },
     cardHeader: {
         flexDirection: 'row',
@@ -595,16 +618,48 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: '700',
     },
-    manualToggle: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
+
+    // Status Banner
+    statusBanner: {
+        borderRadius: 24,
+        padding: 24,
+        borderWidth: 1,
+        marginBottom: 20,
+    },
+    statusBannerContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    statusIconContainer: {
+        width: 52,
+        height: 52,
+        borderRadius: 14,
         alignItems: 'center',
         justifyContent: 'center',
-        borderWidth: 1,
+    },
+    statusInfo: { flex: 1 },
+    statusTitle: {
+        fontSize: 14,
+        fontWeight: '500',
+        marginBottom: 4,
+    },
+    statusValue: {
+        fontSize: 17,
+        fontWeight: '700',
+    },
+    statusBadge: {
+        position: 'absolute',
+        top: 20,
+        right: 20,
+    },
+    pulsingDot: {
+        width: 12,
+        height: 12,
+        borderRadius: 6,
     },
 
-    /* Primary Controls */
+    // Primary Controls
     primaryControls: {
         gap: 12,
     },
@@ -639,7 +694,7 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
 
-    /* Mode Options */
+    // Mode Options
     modeOptions: {
         flexDirection: 'row',
         gap: 12,
@@ -648,7 +703,7 @@ const styles = StyleSheet.create({
         flex: 1,
         padding: 16,
         borderRadius: 12,
-        borderWidth: 2,
+        borderWidth: 1,
         alignItems: 'center',
         gap: 8,
         position: 'relative',
@@ -674,7 +729,7 @@ const styles = StyleSheet.create({
         textAlign: 'center',
     },
 
-    /* Speed Options */
+    // Speed Options
     speedOptions: {
         flexDirection: 'row',
         gap: 12,
@@ -683,7 +738,7 @@ const styles = StyleSheet.create({
         flex: 1,
         padding: 16,
         borderRadius: 12,
-        borderWidth: 2,
+        borderWidth: 1,
         alignItems: 'center',
         gap: 6,
     },
@@ -697,7 +752,7 @@ const styles = StyleSheet.create({
         fontWeight: '500',
     },
 
-    /* Joystick Controls */
+    // Manual Controls
     joystickContainer: {
         gap: 20,
     },
@@ -726,7 +781,7 @@ const styles = StyleSheet.create({
         borderRadius: 35,
         alignItems: 'center',
         justifyContent: 'center',
-        borderWidth: 2,
+        borderWidth: 1,
     },
     rotationControls: {
         flexDirection: 'row',
@@ -761,7 +816,6 @@ const styles = StyleSheet.create({
         lineHeight: 16,
     },
 
-    /* Coming Soon */
     comingSoonContainer: {
         alignItems: 'center',
         paddingVertical: 24,
@@ -787,7 +841,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
     },
 
-    /* Navigation */
+    // Quick Navigation
     navSection: {
         marginTop: 8,
     },
@@ -813,5 +867,14 @@ const styles = StyleSheet.create({
     navButtonText: {
         fontSize: 13,
         fontWeight: '600',
+    },
+
+    // Footer
+    footer: {
+        textAlign: 'center',
+        marginTop: 32,
+        fontSize: 12.5,
+        opacity: 0.65,
+        letterSpacing: 0.3,
     },
 });
