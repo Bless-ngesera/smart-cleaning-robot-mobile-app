@@ -22,33 +22,43 @@ export default function TabLayout() {
     const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
     useEffect(() => {
-        const checkSession = async () => {
+        let authSubscription: { unsubscribe: () => void } | null = null;
+
+        const checkSessionAndListen = async () => {
             try {
+                // Initial session check
                 const { data: { session } } = await supabase.auth.getSession();
                 if (!session) {
                     router.replace('/LoginScreen');
                 }
             } catch (err) {
-                console.error('Session check failed:', err);
+                console.error('Initial session check failed:', err);
                 router.replace('/LoginScreen');
             } finally {
                 setIsCheckingAuth(false);
             }
+
+            // Listen for auth changes
+            const { data } = supabase.auth.onAuthStateChange((event, session) => {
+                if (!session) {
+                    router.replace('/LoginScreen');
+                }
+            });
+
+            authSubscription = data.subscription;
         };
 
-        checkSession();
+        checkSessionAndListen();
 
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-            if (!session) {
-                router.replace('/LoginScreen');
+        return () => {
+            if (authSubscription) {
+                authSubscription.unsubscribe();
             }
-        });
-
-        return () => subscription.unsubscribe();
+        };
     }, []);
 
     if (isCheckingAuth) {
-        return null;
+        return null; // Or show a full-screen loader if you prefer
     }
 
     return (
@@ -61,14 +71,14 @@ export default function TabLayout() {
                     backgroundColor: colors.card,
                     borderTopColor: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
                     borderTopWidth: 1,
-                    height: 60,                    // tighter, more modern
-                    paddingBottom: 6,
-                    paddingTop: 4,
-                    elevation: darkMode ? 0 : 3,   // subtle in light mode only
+                    height: 64,                    // Slightly taller for premium feel
+                    paddingBottom: 8,
+                    paddingTop: 6,
+                    elevation: darkMode ? 0 : 4,
                     shadowColor: darkMode ? 'transparent' : '#000',
-                    shadowOpacity: 0.06,
-                    shadowRadius: 6,
-                    shadowOffset: { width: 0, height: -3 },
+                    shadowOpacity: 0.08,
+                    shadowRadius: 8,
+                    shadowOffset: { width: 0, height: -4 },
                 },
                 tabBarLabelStyle: {
                     fontSize: 11.5,
@@ -77,13 +87,13 @@ export default function TabLayout() {
                     letterSpacing: 0.1,
                 },
                 tabBarIconStyle: {
-                    marginBottom: -1,
+                    marginBottom: -2,
                 },
                 tabBarItemStyle: {
                     paddingVertical: 4,
                 },
-                // Active tab gets a subtle background tint + dot indicator feel
-                tabBarActiveBackgroundColor: darkMode ? `${colors.primary}12` : `${colors.primary}10`,
+                // Active tab gets subtle background + scale effect feel
+                tabBarActiveBackgroundColor: darkMode ? `${colors.primary}15` : `${colors.primary}10`,
             }}
         >
             <Tabs.Screen

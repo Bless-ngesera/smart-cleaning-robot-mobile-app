@@ -8,7 +8,6 @@
     "scheme": "smartcleaningrobotmobileapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.yourname.smartcleaningrobot",
@@ -22,7 +21,6 @@
         "NSLocalNetworkUsageDescription": "This app needs local network access to communicate with your robot over Wi-Fi."
       }
     },
-
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -51,17 +49,18 @@
               "scheme": "smartcleaningrobot"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
-
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png",
       "bundler": "metro"
     },
-
     "plugins": [
       "expo-router",
       [
@@ -82,17 +81,18 @@
         "react-native-ble-plx",
         {
           "isBackgroundEnabled": true,
-          "modes": ["central"],
+          "modes": [
+            "central"
+          ],
           "bluetoothAlwaysPermission": "Allow Smart Cleaning Robot to connect to and control your cleaning device via Bluetooth."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
-
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
-
     "extra": {
       "eas": {
         "projectId": "your-eas-project-id-here-if-using-eas"
