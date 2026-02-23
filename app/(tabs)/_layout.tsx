@@ -1,8 +1,9 @@
 // app/(tabs)/_layout.tsx
+
 import React, { useEffect, useState } from 'react';
-import { Tabs } from 'expo-router';
+import { Tabs, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { Platform } from 'react-native';
 
 import { useThemeContext } from '@/src/context/ThemeContext';
 import { supabase } from '@/src/services/supabase';
@@ -26,10 +27,13 @@ export default function TabLayout() {
 
         const checkSessionAndListen = async () => {
             try {
-                // Initial session check
-                const { data: { session } } = await supabase.auth.getSession();
+                const {
+                    data: { session },
+                } = await supabase.auth.getSession();
+
                 if (!session) {
                     router.replace('/LoginScreen');
+                    return;
                 }
             } catch (err) {
                 console.error('Initial session check failed:', err);
@@ -38,12 +42,13 @@ export default function TabLayout() {
                 setIsCheckingAuth(false);
             }
 
-            // Listen for auth changes
-            const { data } = supabase.auth.onAuthStateChange((event, session) => {
-                if (!session) {
-                    router.replace('/LoginScreen');
+            const { data } = supabase.auth.onAuthStateChange(
+                (_, session) => {
+                    if (!session) {
+                        router.replace('/LoginScreen');
+                    }
                 }
-            });
+            );
 
             authSubscription = data.subscription;
         };
@@ -51,56 +56,70 @@ export default function TabLayout() {
         checkSessionAndListen();
 
         return () => {
-            if (authSubscription) {
-                authSubscription.unsubscribe();
-            }
+            authSubscription?.unsubscribe();
         };
     }, []);
 
-    if (isCheckingAuth) {
-        return null; // Or show a full-screen loader if you prefer
-    }
+    if (isCheckingAuth) return null;
+
+    const TAB_HEIGHT = 72; // Fixed height (no safe area padding)
 
     return (
         <Tabs
             screenOptions={{
                 headerShown: false,
+
                 tabBarActiveTintColor: colors.primary,
-                tabBarInactiveTintColor: darkMode ? 'rgba(255,255,255,0.50)' : 'rgba(0,0,0,0.50)',
+                tabBarInactiveTintColor: darkMode
+                    ? 'rgba(255,255,255,0.55)'
+                    : 'rgba(0,0,0,0.55)',
+
                 tabBarStyle: {
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+
+                    height: TAB_HEIGHT,
                     backgroundColor: colors.card,
-                    borderTopColor: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
+
                     borderTopWidth: 1,
-                    height: 64,                    // Slightly taller for premium feel
-                    paddingBottom: 8,
-                    paddingTop: 6,
-                    elevation: darkMode ? 0 : 4,
-                    shadowColor: darkMode ? 'transparent' : '#000',
-                    shadowOpacity: 0.08,
-                    shadowRadius: 8,
+                    borderTopColor: darkMode
+                        ? 'rgba(255,255,255,0.08)'
+                        : 'rgba(0,0,0,0.08)',
+
+                    elevation: darkMode ? 0 : 12,
+                    shadowColor: '#000',
+                    shadowOpacity: darkMode ? 0 : 0.1,
+                    shadowRadius: 14,
                     shadowOffset: { width: 0, height: -4 },
                 },
+
                 tabBarLabelStyle: {
-                    fontSize: 11.5,
+                    fontSize: 12,
                     fontWeight: '600',
-                    marginBottom: 2,
-                    letterSpacing: 0.1,
+                    letterSpacing: 0.3,
+                    marginBottom: Platform.OS === 'ios' ? 6 : 4,
                 },
+
                 tabBarIconStyle: {
-                    marginBottom: -2,
+                    marginTop: 6,
                 },
+
                 tabBarItemStyle: {
-                    paddingVertical: 4,
+                    justifyContent: 'center',
                 },
-                // Active tab gets subtle background + scale effect feel
-                tabBarActiveBackgroundColor: darkMode ? `${colors.primary}15` : `${colors.primary}10`,
+
+                tabBarActiveBackgroundColor: darkMode
+                    ? `${colors.primary}20`
+                    : `${colors.primary}14`,
             }}
         >
             <Tabs.Screen
                 name="01_DashboardScreen"
                 options={{
                     title: 'Dashboard',
-                    tabBarIcon: ({ color, size }) => (
+                    tabBarIcon: ({ color }) => (
                         <Ionicons name={tabIcons.dashboard} size={24} color={color} />
                     ),
                 }}
@@ -110,7 +129,7 @@ export default function TabLayout() {
                 name="02_ControlScreen"
                 options={{
                     title: 'Control',
-                    tabBarIcon: ({ color, size }) => (
+                    tabBarIcon: ({ color }) => (
                         <Ionicons name={tabIcons.control} size={24} color={color} />
                     ),
                 }}
@@ -120,7 +139,7 @@ export default function TabLayout() {
                 name="03_MapScreen"
                 options={{
                     title: 'Map',
-                    tabBarIcon: ({ color, size }) => (
+                    tabBarIcon: ({ color }) => (
                         <Ionicons name={tabIcons.map} size={24} color={color} />
                     ),
                 }}
@@ -130,7 +149,7 @@ export default function TabLayout() {
                 name="04_ScheduleScreen"
                 options={{
                     title: 'Schedule',
-                    tabBarIcon: ({ color, size }) => (
+                    tabBarIcon: ({ color }) => (
                         <Ionicons name={tabIcons.schedule} size={24} color={color} />
                     ),
                 }}
@@ -140,7 +159,7 @@ export default function TabLayout() {
                 name="05_ProfileScreen"
                 options={{
                     title: 'Profile',
-                    tabBarIcon: ({ color, size }) => (
+                    tabBarIcon: ({ color }) => (
                         <Ionicons name={tabIcons.profile} size={24} color={color} />
                     ),
                 }}
