@@ -1,4 +1,16 @@
 // app/(tabs)/02_ControlScreen.tsx
+//
+// ============================================================
+// C++ INTEGRATION OVERVIEW
+// ------------------------------------------------------------
+// This file controls the robot through simulated actions.
+// When you're ready to integrate real hardware via native C++ bridge:
+//
+//   1. Replace setTimeout delays with actual RobotBridge calls
+//   2. Add real-time status updates from hardware
+//   3. All C++ integration points are clearly marked below
+// ============================================================
+
 import React, { useState, useEffect, useCallback } from 'react';
 import {
     View,
@@ -19,6 +31,22 @@ import { useThemeContext } from '@/src/context/ThemeContext';
 import { supabase } from '@/src/services/supabase';
 import { router } from 'expo-router';
 
+// === C++ BRIDGE / TYPE DEFINITIONS ===
+// For native robot control integration (JNI/Obj-C++):
+// declare module 'react-native' {
+//   interface NativeModulesStatic {
+//     RobotBridge: {
+//       startCleaning(mode: string): Promise<void>;
+//       stopCleaning(): Promise<void>;
+//       returnToDock(): Promise<void>;
+//       move(direction: string): Promise<void>;
+//       rotate(direction: string): Promise<void>;
+//       setFanSpeed(speed: string): Promise<void>;
+//       getRobotStatus(): Promise<{ isRunning: boolean }>;
+//     }
+//   }
+// }
+
 export default function ControlScreen() {
     const { colors, darkMode } = useThemeContext();
 
@@ -29,7 +57,7 @@ export default function ControlScreen() {
     const [fanSpeed, setFanSpeed] = useState<'quiet' | 'standard' | 'turbo'>('standard');
     const [manualMode, setManualMode] = useState(false);
 
-    // Added missing definition - same as in Dashboard
+    // Responsive design - same as Dashboard
     const { width } = Dimensions.get('window');
     const isLargeScreen = width >= 768;
 
@@ -38,13 +66,16 @@ export default function ControlScreen() {
     const cardBorder = darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)';
     const textPrimary = darkMode ? '#ffffff' : colors.text;
     const textSecondary = darkMode ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.60)';
-    const dividerColor = darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)';
 
-    // Fetch real robot status (same pattern as Dashboard)
+    // === C++ BRIDGE / FETCH REAL ROBOT STATUS ===
     const fetchStatus = useCallback(async () => {
         try {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user?.id) return;
+
+            // === C++ INTEGRATION POINT ===
+            // Get status from hardware: const status = await RobotBridge.getRobotStatus();
+            // setIsRunning(status.isRunning);
 
             const { data, error } = await supabase
                 .from('robot_status')
@@ -66,7 +97,32 @@ export default function ControlScreen() {
         fetchStatus();
     }, [fetchStatus]);
 
-    /* ---------------- Simulated / Real Robot Actions ---------------- */
+    /* ---------------- Update Robot Status in Database - FIXED ---------------- */
+    const updateRobotStatus = useCallback(async (isCleaning: boolean) => {
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user?.id) return;
+
+            const { error } = await supabase
+                .from('robot_status')
+                .upsert({
+                    user_id: user.id,
+                    is_cleaning: isCleaning,
+                    battery_level: 85, // You can update this based on real data
+                    status: isCleaning ? 'Online' : 'Offline',
+                    connection_type: 'wifi',
+                    updated_at: new Date().toISOString(),
+                }, {
+                    onConflict: 'user_id',
+                });
+
+            if (error) throw error;
+        } catch (err) {
+            console.error('[ControlScreen] updateRobotStatus error:', err);
+        }
+    }, []);
+
+    /* ---------------- Simulated / Real Robot Actions - FIXED ---------------- */
     const simulateAction = useCallback(
         async (
             message: string,
@@ -78,18 +134,31 @@ export default function ControlScreen() {
             setLoadingMessage(message);
 
             try {
-                console.log(log);
+                console.log('[ControlScreen]', log);
 
                 // === C++ BRIDGE: Replace this delay with real RobotBridge call ===
-                // Android (JNI): await RobotBridge.startCleaning() / stopCleaning() / returnToDock()
-                // iOS (Obj-C++): await [RobotBridge startCleaning] / [RobotBridge stopCleaning] / [RobotBridge returnToDock]
+                // Android (JNI): await RobotBridge.startCleaning(cleaningMode) / stopCleaning() / returnToDock()
+                // iOS (Obj-C++): await [RobotBridge startCleaning:cleaningMode] / [RobotBridge stopCleaning] / [RobotBridge returnToDock]
                 await new Promise((resolve) => setTimeout(resolve, 1200));
 
                 if (onSuccess) onSuccess();
+
+                // Add haptic feedback on success
+                if (Platform.OS === 'ios') {
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                }
+
                 Alert.alert('Success', message.replace('...', ' completed!'));
-                fetchStatus(); // Refresh real status after action
-            } catch (err) {
-                console.error(log + ' failed:', err);
+
+                // Refresh real status after action
+                await fetchStatus();
+            } catch (err: any) {
+                console.error('[ControlScreen]', log, 'failed:', err);
+
+                if (Platform.OS === 'ios') {
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                }
+
                 Alert.alert('Error', errorMsg);
             } finally {
                 setBusy(false);
@@ -99,58 +168,145 @@ export default function ControlScreen() {
         [fetchStatus]
     );
 
-    const handleStartCleaning = () =>
+    /* ---------------- Primary Control Actions - FIXED ---------------- */
+    const handleStartCleaning = useCallback(() => {
+        if (busy || isRunning || manualMode) return;
+
+        if (Platform.OS === 'ios') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        }
+
         simulateAction(
             'Starting intelligent cleaning...',
-            'Start cleaning (adaptive mode)',
+            `Start cleaning in ${cleaningMode} mode`,
             'Failed to start cleaning.',
-            () => setIsRunning(true)
+            async () => {
+                setIsRunning(true);
+                await updateRobotStatus(true);
+            }
         );
+    }, [busy, isRunning, manualMode, cleaningMode, simulateAction, updateRobotStatus]);
 
-    const handleStopCleaning = () =>
+    const handleStopCleaning = useCallback(() => {
+        if (busy || !isRunning) return;
+
+        if (Platform.OS === 'ios') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        }
+
         simulateAction(
             'Stopping cleaning...',
             'Stop cleaning',
             'Failed to stop cleaning.',
-            () => setIsRunning(false)
+            async () => {
+                setIsRunning(false);
+                await updateRobotStatus(false);
+            }
         );
+    }, [busy, isRunning, simulateAction, updateRobotStatus]);
 
-    const handleReturnToDock = () =>
+    const handleReturnToDock = useCallback(() => {
+        if (busy) return;
+
+        if (Platform.OS === 'ios') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        }
+
         simulateAction(
             'Returning to dock...',
             'Return to dock',
             'Failed to dock robot.',
-            () => setIsRunning(false)
+            async () => {
+                setIsRunning(false);
+                setManualMode(false);
+                await updateRobotStatus(false);
+            }
         );
+    }, [busy, simulateAction, updateRobotStatus]);
 
-    /* ---------------- Manual Control Actions ---------------- */
+    /* ---------------- Manual Control Actions - FIXED ---------------- */
     const handleManualMove = useCallback((direction: 'forward' | 'backward' | 'left' | 'right' | 'stop') => {
-        if (busy) return;
+        if (busy || !manualMode) return;
 
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        if (Platform.OS === 'ios') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        }
 
-        console.log(`Manual move command: ${direction}`);
+        console.log('[ControlScreen] Manual move command:', direction);
 
         // === C++ BRIDGE: Send real-time movement command to robot ===
-        // Android (JNI): RobotBridge.move(direction)
-        // iOS (Obj-C++): [RobotBridge move:direction]
+        // Android (JNI): await RobotBridge.move(direction)
+        // iOS (Obj-C++): await [RobotBridge move:direction]
 
-        Alert.alert('Manual Move', `Command sent: ${direction.toUpperCase()}`, [{ text: 'OK' }]);
-    }, [busy]);
+        // Show brief feedback without blocking UI
+        const directionLabel = direction.charAt(0).toUpperCase() + direction.slice(1);
+        // Alert removed for smoother UX - just log the action
+        console.log(`[ControlScreen] Moving: ${directionLabel}`);
+    }, [busy, manualMode]);
 
     const handleRotate = useCallback((direction: 'left' | 'right') => {
-        if (busy) return;
+        if (busy || !manualMode) return;
 
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        if (Platform.OS === 'ios') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
 
-        console.log(`Manual rotate command: ${direction}`);
+        console.log('[ControlScreen] Manual rotate command:', direction);
 
         // === C++ BRIDGE: Send real-time rotation command to robot ===
-        // Android (JNI): RobotBridge.rotate(direction)
-        // iOS (Obj-C++): [RobotBridge rotate:direction]
+        // Android (JNI): await RobotBridge.rotate(direction)
+        // iOS (Obj-C++): await [RobotBridge rotate:direction]
 
-        Alert.alert('Manual Rotate', `Command sent: Rotate ${direction.toUpperCase()}`, [{ text: 'OK' }]);
-    }, [busy]);
+        console.log(`[ControlScreen] Rotating: ${direction}`);
+    }, [busy, manualMode]);
+
+    /* ---------------- Handle Mode/Speed Changes - FIXED ---------------- */
+    const handleModeChange = useCallback((mode: 'auto' | 'spot' | 'edge') => {
+        if (Platform.OS === 'ios') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+
+        setCleaningMode(mode);
+        console.log('[ControlScreen] Cleaning mode changed to:', mode);
+
+        // === C++ INTEGRATION POINT ===
+        // Update hardware mode: await RobotBridge.setCleaningMode(mode);
+    }, []);
+
+    const handleFanSpeedChange = useCallback((speed: 'quiet' | 'standard' | 'turbo') => {
+        if (Platform.OS === 'ios') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+
+        setFanSpeed(speed);
+        console.log('[ControlScreen] Fan speed changed to:', speed);
+
+        // === C++ INTEGRATION POINT ===
+        // Update hardware fan speed: await RobotBridge.setFanSpeed(speed);
+    }, []);
+
+    const handleManualModeToggle = useCallback(() => {
+        if (Platform.OS === 'ios') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        }
+
+        const newManualMode = !manualMode;
+
+        if (newManualMode && isRunning) {
+            Alert.alert(
+                'Stop Cleaning First',
+                'Please stop the automatic cleaning before enabling manual mode.',
+                [{ text: 'OK' }]
+            );
+            return;
+        }
+
+        setManualMode(newManualMode);
+        console.log('[ControlScreen] Manual mode:', newManualMode ? 'enabled' : 'disabled');
+
+        // === C++ INTEGRATION POINT ===
+        // Enable/disable manual mode: await RobotBridge.setManualMode(newManualMode);
+    }, [manualMode, isRunning]);
 
     if (busy) {
         return <Loader message={loadingMessage} />;
@@ -247,7 +403,9 @@ export default function ControlScreen() {
                                 <View style={[styles.primaryButtonIcon, { backgroundColor: '#10B981' }]}>
                                     <Ionicons name="play" size={32} color="#fff" />
                                 </View>
-                                <AppText style={styles.primaryButtonText}>Start Adaptive Cleaning</AppText>
+                                <AppText style={[styles.primaryButtonText, { color: textPrimary }]}>
+                                    Start Adaptive Cleaning
+                                </AppText>
                             </TouchableOpacity>
 
                             <TouchableOpacity
@@ -263,7 +421,9 @@ export default function ControlScreen() {
                                 <View style={[styles.primaryButtonIcon, { backgroundColor: '#EF4444' }]}>
                                     <Ionicons name="stop" size={32} color="#fff" />
                                 </View>
-                                <AppText style={styles.primaryButtonText}>Stop Cleaning</AppText>
+                                <AppText style={[styles.primaryButtonText, { color: textPrimary }]}>
+                                    Stop Cleaning
+                                </AppText>
                             </TouchableOpacity>
 
                             <TouchableOpacity
@@ -274,7 +434,9 @@ export default function ControlScreen() {
                                 <View style={[styles.primaryButtonIcon, { backgroundColor: colors.primary }]}>
                                     <Ionicons name="home" size={32} color="#fff" />
                                 </View>
-                                <AppText style={styles.primaryButtonText}>Return to Dock</AppText>
+                                <AppText style={[styles.primaryButtonText, { color: textPrimary }]}>
+                                    Return to Dock
+                                </AppText>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -291,7 +453,7 @@ export default function ControlScreen() {
                         </View>
 
                         <View style={styles.modeOptions}>
-                            {['auto', 'spot', 'edge'].map((mode) => (
+                            {(['auto', 'spot', 'edge'] as const).map((mode) => (
                                 <TouchableOpacity
                                     key={mode}
                                     style={[
@@ -302,7 +464,7 @@ export default function ControlScreen() {
                                         },
                                         cleaningMode === mode && { backgroundColor: `${colors.primary}15` },
                                     ]}
-                                    onPress={() => setCleaningMode(mode as any)}
+                                    onPress={() => handleModeChange(mode)}
                                     activeOpacity={0.7}
                                 >
                                     <Ionicons
@@ -350,7 +512,7 @@ export default function ControlScreen() {
                         </View>
 
                         <View style={styles.speedOptions}>
-                            {['quiet', 'standard', 'turbo'].map((speed) => (
+                            {(['quiet', 'standard', 'turbo'] as const).map((speed) => (
                                 <TouchableOpacity
                                     key={speed}
                                     style={[
@@ -361,7 +523,7 @@ export default function ControlScreen() {
                                         },
                                         fanSpeed === speed && { backgroundColor: `${colors.primary}15` },
                                     ]}
-                                    onPress={() => setFanSpeed(speed as any)}
+                                    onPress={() => handleFanSpeedChange(speed)}
                                     activeOpacity={0.7}
                                 >
                                     <Ionicons
@@ -409,7 +571,7 @@ export default function ControlScreen() {
                                         borderColor: cardBorder,
                                     },
                                 ]}
-                                onPress={() => setManualMode(!manualMode)}
+                                onPress={handleManualModeToggle}
                                 activeOpacity={0.7}
                             >
                                 <Ionicons
@@ -504,7 +666,7 @@ export default function ControlScreen() {
                         ) : (
                             <View style={styles.comingSoonContainer}>
                                 <View style={[styles.joystickPlaceholder, { borderColor: cardBorder }]}>
-                                    <Ionicons name="radio-button-on" size={48} color={textSecondary} opacity={0.3} />
+                                    <Ionicons name="radio-button-on" size={48} color={textSecondary} style={{ opacity: 0.3 }} />
                                 </View>
                                 <AppText style={[styles.comingSoonText, { color: textSecondary }]}>
                                     Enable manual mode
@@ -524,7 +686,12 @@ export default function ControlScreen() {
                         <View style={styles.navButtons}>
                             <TouchableOpacity
                                 style={[styles.navButton, { backgroundColor: cardBg, borderColor: cardBorder }]}
-                                onPress={() => router.push('/(tabs)/01_DashboardScreen')}
+                                onPress={() => {
+                                    if (Platform.OS === 'ios') {
+                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                    }
+                                    router.push('/(tabs)/01_DashboardScreen');
+                                }}
                                 activeOpacity={0.7}
                             >
                                 <Ionicons name="grid" size={24} color={colors.primary} />
@@ -533,7 +700,12 @@ export default function ControlScreen() {
 
                             <TouchableOpacity
                                 style={[styles.navButton, { backgroundColor: cardBg, borderColor: cardBorder }]}
-                                onPress={() => router.push('/(tabs)/04_ScheduleScreen')}
+                                onPress={() => {
+                                    if (Platform.OS === 'ios') {
+                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                    }
+                                    router.push('/(tabs)/04_ScheduleScreen');
+                                }}
                                 activeOpacity={0.7}
                             >
                                 <Ionicons name="calendar" size={24} color={colors.primary} />
@@ -542,7 +714,12 @@ export default function ControlScreen() {
 
                             <TouchableOpacity
                                 style={[styles.navButton, { backgroundColor: cardBg, borderColor: cardBorder }]}
-                                onPress={() => router.push('/(tabs)/03_MapScreen')}
+                                onPress={() => {
+                                    if (Platform.OS === 'ios') {
+                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                    }
+                                    router.push('/(tabs)/03_MapScreen');
+                                }}
                                 activeOpacity={0.7}
                             >
                                 <Ionicons name="map" size={24} color={colors.primary} />
@@ -617,6 +794,16 @@ const styles = StyleSheet.create({
     cardTitle: {
         fontSize: 18,
         fontWeight: '700',
+    },
+
+    // Manual toggle
+    manualToggle: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        borderWidth: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
 
     // Status Banner

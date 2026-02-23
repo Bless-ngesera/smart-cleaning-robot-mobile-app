@@ -1,4 +1,16 @@
 // app/(tabs)/03_MapScreen.tsx
+//
+// ============================================================
+// C++ INTEGRATION OVERVIEW
+// ------------------------------------------------------------
+// This file displays the robot's real-time map data.
+// When you're ready to integrate real hardware via native C++ bridge:
+//
+//   1. Add real-time SLAM (Simultaneous Localization and Mapping) data
+//   2. Stream live obstacle detection and zone mapping
+//   3. All C++ integration points are clearly marked below
+// ============================================================
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View,
@@ -8,16 +20,32 @@ import {
     Alert,
     Animated,
     Dimensions,
+    Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 
 import Loader from '../../src/components/Loader';
 import AppText from '../../src/components/AppText';
 import { useThemeContext } from '@/src/context/ThemeContext';
 import { supabase } from '@/src/services/supabase';
 import { router } from 'expo-router';
+
+// === C++ BRIDGE / TYPE DEFINITIONS ===
+// For native SLAM integration (JNI/Obj-C++):
+// declare module 'react-native' {
+//   interface NativeModulesStatic {
+//     RobotBridge: {
+//       getSLAMData(): Promise<MapData>;
+//       getDetectedZones(): Promise<DetectedZone[]>;
+//       getRobotPosition(): Promise<{ x: number; y: number }>;
+//       startMapping(): Promise<void>;
+//       exportMap(): Promise<string>;
+//     }
+//   }
+// }
 
 type MapData = {
     mappedArea: number;
@@ -64,9 +92,8 @@ export default function MapScreen() {
     const cardBorder = darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)';
     const textPrimary = darkMode ? '#ffffff' : colors.text;
     const textSecondary = darkMode ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.60)';
-    const dividerColor = darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)';
 
-    // Animations (unchanged)
+    // Animations
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const scaleAnim = useRef(new Animated.Value(0.95)).current;
     const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -95,8 +122,9 @@ export default function MapScreen() {
             pulseAnimation.stop();
             robotAnimation.stop();
         };
-    }, []);
+    }, [fadeAnim, scaleAnim, pulseAnim, robotAnim]);
 
+    /* ---------------- Fetch Real Map Data from Supabase - FIXED ---------------- */
     const fetchMap = useCallback(async () => {
         setBusy(true);
         setLoadingMessage('Scanning environment...');
@@ -104,6 +132,12 @@ export default function MapScreen() {
         try {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user?.id) throw new Error('No authenticated user');
+
+            // === C++ INTEGRATION POINT ===
+            // Get real SLAM data from hardware:
+            // const slamData = await RobotBridge.getSLAMData();
+            // const zones = await RobotBridge.getDetectedZones();
+            // const position = await RobotBridge.getRobotPosition();
 
             const { data, error } = await supabase
                 .from('robot_status')
@@ -113,23 +147,53 @@ export default function MapScreen() {
                 .limit(1)
                 .maybeSingle();
 
-            if (error) throw error;
+            if (error && error.code !== 'PGRST116') {
+                throw error;
+            }
 
+            // Generate realistic zones based on real or simulated data
             const newZones: DetectedZone[] = [
-                { id: 'z1', name: 'Open Area A', color: '#10B981', x: 5, y: 5, width: 50, height: 45 },
-                { id: 'z2', name: 'Furniture Cluster', color: '#F59E0B', x: 60, y: 10, width: 30, height: 35 },
-                { id: 'z3', name: 'Narrow Corridor', color: '#3B82F6', x: 55, y: 50, width: 40, height: 20 },
+                {
+                    id: 'zone_1',
+                    name: 'Living Room',
+                    color: '#10B981',
+                    x: 5,
+                    y: 5,
+                    width: 50,
+                    height: 45
+                },
+                {
+                    id: 'zone_2',
+                    name: 'Kitchen Area',
+                    color: '#F59E0B',
+                    x: 60,
+                    y: 10,
+                    width: 30,
+                    height: 35
+                },
+                {
+                    id: 'zone_3',
+                    name: 'Hallway',
+                    color: '#3B82F6',
+                    x: 55,
+                    y: 50,
+                    width: 40,
+                    height: 20
+                },
             ];
 
+            // Use real data if available, otherwise use simulated data
+            const mappedArea = data?.mapped_area ?? 142;
+            const obstacles = data?.obstacles ?? 3;
+            const robotX = data?.robot_x ?? (45 + Math.random() * 10);
+            const robotY = data?.robot_y ?? (45 + Math.random() * 10);
+
             setMapData({
-                mappedArea: data?.mapped_area ?? Math.floor(Math.random() * 50) + 100,
-                obstacles: data?.obstacles ?? Math.floor(Math.random() * 5) + 1,
-                detectedZones: data?.detected_zones ?? newZones.length,
+                mappedArea,
+                obstacles,
+                detectedZones: newZones.length,
                 lastUpdated: data?.last_updated ? new Date(data.last_updated) : new Date(),
-                robotPosition: {
-                    x: data?.robot_x ?? 45 + Math.random() * 10,
-                    y: data?.robot_y ?? 45 + Math.random() * 10,
-                },
+                robotPosition: { x: robotX, y: robotY },
                 cleanedAreas: [
                     { x: 10, y: 15, width: 35, height: 30 },
                     { x: 55, y: 40, width: 25, height: 25 },
@@ -138,9 +202,18 @@ export default function MapScreen() {
 
             setDetectedZones(newZones);
 
+            if (Platform.OS === 'ios') {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            }
+
             Alert.alert('Success', 'Environment scanned and map updated!');
         } catch (err: any) {
-            console.error('Map fetch failed:', err);
+            console.error('[MapScreen] fetchMap failed:', err);
+
+            if (Platform.OS === 'ios') {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            }
+
             Alert.alert('Error', err.message || 'Failed to scan environment.');
         } finally {
             setBusy(false);
@@ -151,31 +224,113 @@ export default function MapScreen() {
         fetchMap();
     }, [fetchMap]);
 
-    const handleZoneSelect = (zoneId: string) => {
-        setSelectedZone(selectedZone === zoneId ? null : zoneId);
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    };
+    /* ---------------- Handle Zone Selection - FIXED ---------------- */
+    const handleZoneSelect = useCallback((zoneId: string) => {
+        if (Platform.OS === 'ios') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
 
-    const handleDeleteZone = (zoneId: string) => {
-        Alert.alert('Delete Zone', 'Remove this detected area?', [
+        setSelectedZone(selectedZone === zoneId ? null : zoneId);
+    }, [selectedZone]);
+
+    /* ---------------- Handle Delete Zone - FIXED ---------------- */
+    const handleDeleteZone = useCallback((zoneId: string) => {
+        Alert.alert('Delete Zone', 'Remove this detected area from the map?', [
             { text: 'Cancel', style: 'cancel' },
             {
                 text: 'Delete',
                 style: 'destructive',
                 onPress: () => {
-                    setDetectedZones(detectedZones.filter((z) => z.id !== zoneId));
+                    if (Platform.OS === 'ios') {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    }
+
+                    // === C++ INTEGRATION POINT ===
+                    // Remove zone from hardware map: await RobotBridge.removeZone(zoneId);
+
+                    setDetectedZones(prev => prev.filter((z) => z.id !== zoneId));
                     setSelectedZone(null);
-                    setMapData((prev) => ({ ...prev, detectedZones: prev.detectedZones - 1 }));
-                    Alert.alert('Success', 'Area removed');
+                    setMapData((prev) => ({
+                        ...prev,
+                        detectedZones: prev.detectedZones - 1
+                    }));
+
+                    Alert.alert('Success', 'Area removed from map');
                 },
             },
         ]);
-    };
+    }, []);
 
-    const handleAddZone = () => {
-        Alert.alert('Add Area', 'Robot will re-scan to detect new areas automatically.');
-    };
+    /* ---------------- Handle Add Zone - FIXED ---------------- */
+    const handleAddZone = useCallback(() => {
+        if (Platform.OS === 'ios') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        }
 
+        Alert.alert(
+            'Re-Scan Environment',
+            'Robot will perform a new scan to detect and map areas automatically using sensors and cameras.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Start Scan',
+                    onPress: () => {
+                        // === C++ INTEGRATION POINT ===
+                        // Trigger new SLAM scan: await RobotBridge.startMapping();
+
+                        fetchMap();
+                    }
+                }
+            ]
+        );
+    }, [fetchMap]);
+
+    /* ---------------- Handle Export Map - FIXED ---------------- */
+    const handleExportMap = useCallback(async () => {
+        if (Platform.OS === 'ios') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+
+        setBusy(true);
+        setLoadingMessage('Exporting map data...');
+
+        try {
+            // === C++ INTEGRATION POINT ===
+            // Export map from hardware: const mapFile = await RobotBridge.exportMap();
+
+            // Simulate export delay
+            await new Promise(resolve => setTimeout(resolve, 1500));
+
+            if (Platform.OS === 'ios') {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            }
+
+            Alert.alert(
+                'Export Complete',
+                `Map data exported successfully!\n\nMapped Area: ${mapData.mappedArea}m²\nDetected Zones: ${mapData.detectedZones}\nObstacles: ${mapData.obstacles}`
+            );
+        } catch (err: any) {
+            console.error('[MapScreen] Export failed:', err);
+
+            if (Platform.OS === 'ios') {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            }
+
+            Alert.alert('Error', 'Failed to export map data.');
+        } finally {
+            setBusy(false);
+        }
+    }, [mapData]);
+
+    /* ---------------- Handle Grid Toggle - FIXED ---------------- */
+    const handleGridToggle = useCallback(() => {
+        if (Platform.OS === 'ios') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+        setShowGrid(prev => !prev);
+    }, []);
+
+    /* ---------------- Robot Rotation Animation ---------------- */
     const robotRotation = robotAnim.interpolate({
         inputRange: [0, 1],
         outputRange: ['0deg', '360deg'],
@@ -206,7 +361,17 @@ export default function MapScreen() {
                     </View>
 
                     {/* Map Container */}
-                    <View style={[styles.mapBox, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                    <Animated.View
+                        style={[
+                            styles.mapBox,
+                            {
+                                backgroundColor: cardBg,
+                                borderColor: cardBorder,
+                                opacity: fadeAnim,
+                                transform: [{ scale: scaleAnim }],
+                            }
+                        ]}
+                    >
                         {showGrid && (
                             <View style={styles.gridOverlay}>
                                 {[...Array(12)].map((_, i) => (
@@ -235,6 +400,7 @@ export default function MapScreen() {
                                     },
                                 ]}
                                 onPress={() => handleZoneSelect(zone.id)}
+                                activeOpacity={0.7}
                             >
                                 <AppText style={[styles.zoneName, { color: zone.color }]}>
                                     {zone.name}
@@ -244,7 +410,7 @@ export default function MapScreen() {
 
                         {mapData.cleanedAreas.map((area, i) => (
                             <View
-                                key={i}
+                                key={`cleaned-${i}`}
                                 style={[
                                     styles.cleanedArea,
                                     {
@@ -279,19 +445,20 @@ export default function MapScreen() {
                         </Animated.View>
 
                         <TouchableOpacity
-                            style={[styles.gridToggle, { backgroundColor: cardBg }]}
-                            onPress={() => setShowGrid(!showGrid)}
+                            style={[styles.gridToggle, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1 }]}
+                            onPress={handleGridToggle}
+                            activeOpacity={0.7}
                         >
                             <Ionicons name={showGrid ? 'grid' : 'grid-outline'} size={20} color={colors.primary} />
                         </TouchableOpacity>
 
-                        <View style={[styles.updateBadge, { backgroundColor: cardBg }]}>
+                        <View style={[styles.updateBadge, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1 }]}>
                             <Ionicons name="time-outline" size={14} color={textSecondary} />
                             <AppText style={[styles.updateText, { color: textSecondary }]}>
-                                Updated {mapData.lastUpdated.toLocaleTimeString()}
+                                Updated {mapData.lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </AppText>
                         </View>
-                    </View>
+                    </Animated.View>
 
                     {/* Selected Zone Details */}
                     {selectedZone && (
@@ -308,23 +475,38 @@ export default function MapScreen() {
                                         {detectedZones.find((z) => z.id === selectedZone)?.name}
                                     </AppText>
                                 </View>
-                                <TouchableOpacity onPress={() => setSelectedZone(null)}>
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        if (Platform.OS === 'ios') {
+                                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                        }
+                                        setSelectedZone(null);
+                                    }}
+                                    activeOpacity={0.7}
+                                >
                                     <Ionicons name="close-circle" size={24} color={textSecondary} />
                                 </TouchableOpacity>
                             </View>
 
                             <View style={styles.zoneInfoActions}>
                                 <TouchableOpacity
-                                    style={[styles.zoneActionButton, { backgroundColor: cardBg }]}
-                                    onPress={() => Alert.alert('Edit', 'Zone editing coming soon')}
+                                    style={[styles.zoneActionButton, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1 }]}
+                                    onPress={() => {
+                                        if (Platform.OS === 'ios') {
+                                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                        }
+                                        Alert.alert('Edit Zone', 'Zone editing feature coming soon!');
+                                    }}
+                                    activeOpacity={0.7}
                                 >
                                     <Ionicons name="create-outline" size={20} color={colors.primary} />
                                     <AppText style={[styles.zoneActionText, { color: textPrimary }]}>Edit</AppText>
                                 </TouchableOpacity>
 
                                 <TouchableOpacity
-                                    style={[styles.zoneActionButton, { backgroundColor: cardBg }]}
+                                    style={[styles.zoneActionButton, { backgroundColor: cardBg, borderColor: cardBorder, borderWidth: 1 }]}
                                     onPress={() => handleDeleteZone(selectedZone)}
+                                    activeOpacity={0.7}
                                 >
                                     <Ionicons name="trash-outline" size={20} color="#EF4444" />
                                     <AppText style={[styles.zoneActionText, { color: textPrimary }]}>Remove</AppText>
@@ -385,33 +567,36 @@ export default function MapScreen() {
                                 style={styles.actionButton}
                                 onPress={fetchMap}
                                 disabled={busy}
+                                activeOpacity={0.7}
                             >
                                 <LinearGradient colors={[colors.primary, `${colors.primary}CC`]} style={styles.actionIcon}>
                                     <Ionicons name="refresh" size={24} color="#fff" />
                                 </LinearGradient>
-                                <AppText style={styles.actionText}>Refresh Scan</AppText>
+                                <AppText style={[styles.actionText, { color: textPrimary }]}>Refresh Scan</AppText>
                             </TouchableOpacity>
 
                             <TouchableOpacity
                                 style={styles.actionButton}
                                 onPress={handleAddZone}
                                 disabled={busy}
+                                activeOpacity={0.7}
                             >
                                 <LinearGradient colors={['#10B981', '#059669']} style={styles.actionIcon}>
                                     <Ionicons name="add" size={24} color="#fff" />
                                 </LinearGradient>
-                                <AppText style={styles.actionText}>Re-Scan</AppText>
+                                <AppText style={[styles.actionText, { color: textPrimary }]}>Re-Scan</AppText>
                             </TouchableOpacity>
 
                             <TouchableOpacity
                                 style={styles.actionButton}
-                                onPress={() => Alert.alert('Export', 'Map exported successfully!')}
+                                onPress={handleExportMap}
                                 disabled={busy}
+                                activeOpacity={0.7}
                             >
                                 <LinearGradient colors={['#8B5CF6', '#7C3AED']} style={styles.actionIcon}>
                                     <Ionicons name="download" size={24} color="#fff" />
                                 </LinearGradient>
-                                <AppText style={styles.actionText}>Export</AppText>
+                                <AppText style={[styles.actionText, { color: textPrimary }]}>Export</AppText>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -448,7 +633,12 @@ export default function MapScreen() {
                                             borderColor: `${item.color}30`,
                                         }
                                     ]}
-                                    onPress={() => router.push(item.route)}
+                                    onPress={() => {
+                                        if (Platform.OS === 'ios') {
+                                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                        }
+                                        router.push(item.route);
+                                    }}
                                     activeOpacity={0.7}
                                 >
                                     <Ionicons name={item.icon} size={24} color={item.color} />
@@ -555,6 +745,8 @@ const styles = StyleSheet.create({
         borderRadius: 30,
         top: -10,
         left: -10,
+        width: 60,
+        height: 60,
         opacity: 0.5,
     },
     gridToggle: {
@@ -613,10 +805,12 @@ const styles = StyleSheet.create({
         gap: 12,
     },
     zoneActionButton: {
+        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'center',
         gap: 8,
-        padding: 10,
+        padding: 12,
         borderRadius: 10,
     },
     zoneActionText: { fontSize: 14, fontWeight: '600' },
