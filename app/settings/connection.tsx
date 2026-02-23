@@ -2,7 +2,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
     View,
-    Text,
     TextInput,
     TouchableOpacity,
     StyleSheet,
@@ -11,6 +10,7 @@ import {
     Platform,
     PermissionsAndroid,
     Animated,
+    Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,18 +20,17 @@ import Constants from 'expo-constants';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 
-import Header from '../../src/components/Header';
+import Loader from '../../src/components/Loader';
+import AppText from '../../src/components/AppText';
 import Button from '../../src/components/Button';
 import { useThemeContext } from '@/src/context/ThemeContext';
 
 type ConnectionType = 'wifi' | 'ble' | 'none';
 
-// ====================== BLE CONFIG ======================
-// This screen REQUIRES a Development Build (not Expo Go)
 const IS_EXPO_GO = Constants.appOwnership === 'expo';
 
 export default function ConnectionScreen() {
-    const { colors } = useThemeContext();
+    const { colors, darkMode } = useThemeContext();
 
     const [connectionType, setConnectionType] = useState<ConnectionType>('none');
     const [wifiIp, setWifiIp] = useState('');
@@ -44,6 +43,17 @@ export default function ConnectionScreen() {
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const bleManagerRef = useRef<any>(null);
     const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Same as Dashboard
+    const { width } = Dimensions.get('window');
+    const isLargeScreen = width >= 768;
+
+    // Design tokens matching Dashboard
+    const cardBg = darkMode ? 'rgba(255,255,255,0.05)' : '#ffffff';
+    const cardBorder = darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)';
+    const textPrimary = darkMode ? '#ffffff' : colors.text;
+    const textSecondary = darkMode ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.60)';
+    const dividerColor = darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)';
 
     // Load saved connection
     useEffect(() => {
@@ -64,7 +74,7 @@ export default function ConnectionScreen() {
         })();
     }, []);
 
-    // Cleanup on unmount
+    // Cleanup
     useEffect(() => {
         return () => {
             scanTimeoutRef.current && clearTimeout(scanTimeoutRef.current);
@@ -106,7 +116,7 @@ export default function ConnectionScreen() {
         ]);
     };
 
-    // ==================== Wi-Fi ====================
+    // Wi-Fi Test
     const testWifiConnection = async () => {
         if (!wifiIp.trim()) {
             Alert.alert('Missing IP', 'Please enter the robot IP address');
@@ -146,8 +156,8 @@ export default function ConnectionScreen() {
         }
     };
 
-    // ==================== BLE ====================
-    const initBleManager = async (): Promise<any | null> => {
+    // BLE Helpers
+    const initBleManager = async () => {
         if (IS_EXPO_GO) {
             Alert.alert('Not Supported', 'Bluetooth requires a Development Build.\n\nRun:\nnpx expo run:android\nor\nnpx expo run:ios');
             return null;
@@ -165,7 +175,7 @@ export default function ConnectionScreen() {
         }
     };
 
-    const requestBlePermissions = async (): Promise<boolean> => {
+    const requestBlePermissions = async () => {
         if (Platform.OS !== 'android') return true;
 
         const perms = Platform.Version >= 31
@@ -214,7 +224,7 @@ export default function ConnectionScreen() {
 
         try {
             await manager.connectToDevice(device.id);
-            await manager.discoverAllServicesAndCharacteristicsForDevice(device.id); // optional but recommended
+            await manager.discoverAllServicesAndCharacteristicsForDevice(device.id);
 
             await saveConnection('ble', undefined, device.id);
             setSelectedBleDevice(device.id);
@@ -239,56 +249,81 @@ export default function ConnectionScreen() {
         } catch {}
     };
 
-    // ==================== UI ====================
     return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-            <Header title="Connection Setup" subtitle="Smart Cleaner Pro" />
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <ScrollView
+                contentContainerStyle={[
+                    styles.scrollContent,
+                    isLargeScreen && styles.scrollContentLarge,
+                ]}
+                showsVerticalScrollIndicator={false}
+            >
+                <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
+                    {/* Large Header */}
+                    <View style={styles.headerSection}>
+                        <AppText style={[styles.headerTitle, { color: textPrimary }]}>
+                            Connection Setup
+                        </AppText>
+                        <AppText style={[styles.headerSubtitle, { color: textSecondary }]}>
+                            Connect to your Smart Cleaner Robot
+                        </AppText>
+                    </View>
 
-            <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
-                <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
                     {/* Instructions */}
-                    <LinearGradient colors={['#10B98110', '#10B98105']} style={[styles.card, { backgroundColor: colors.card }]}>
-                        <Text style={[styles.cardTitle, { color: colors.text }]}>How to Connect</Text>
+                    <View style={[styles.sectionCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                        <AppText style={[styles.sectionTitle, { color: textPrimary }]}>
+                            How to Connect
+                        </AppText>
                         <View style={styles.instructionItem}>
                             <Ionicons name="wifi" size={24} color={colors.primary} />
-                            <Text style={[styles.instructionText, { color: colors.text }]}>
+                            <AppText style={[styles.instructionText, { color: textPrimary }]}>
                                 Wi-Fi: Enter the robot's IP address (found in robot settings or router) and test.
-                            </Text>
+                            </AppText>
                         </View>
                         <View style={styles.instructionItem}>
                             <Ionicons name="bluetooth" size={24} color={colors.primary} />
-                            <Text style={[styles.instructionText, { color: colors.text }]}>
-                                Bluetooth: Put robot in pairing mode → Scan → Connect
-                            </Text>
+                            <AppText style={[styles.instructionText, { color: textPrimary }]}>
+                                Bluetooth: Put robot in pairing mode → Scan → Connect (requires Development Build)
+                            </AppText>
                         </View>
-                    </LinearGradient>
+                    </View>
 
                     {/* Current Status */}
-                    <View style={[styles.statusCard, { backgroundColor: colors.card }]}>
-                        <Text style={[styles.statusTitle, { color: colors.text }]}>Current Connection</Text>
+                    <View style={[styles.sectionCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                        <AppText style={[styles.sectionTitle, { color: textPrimary }]}>
+                            Current Connection
+                        </AppText>
                         <View style={styles.statusRow}>
                             <Ionicons
                                 name={connectionType === 'wifi' ? 'wifi' : connectionType === 'ble' ? 'bluetooth' : 'wifi-off'}
                                 size={32}
-                                color={connectionType !== 'none' ? colors.primary : colors.textSecondary}
+                                color={connectionType !== 'none' ? colors.primary : textSecondary}
                             />
-                            <Text style={[styles.statusText, { color: colors.text }]}>
+                            <AppText style={[styles.statusText, { color: textPrimary }]}>
                                 {connectionType === 'none'
                                     ? 'No connection saved'
                                     : connectionType === 'wifi'
-                                        ? `Wi-Fi • ${wifiIp}`
+                                        ? `Wi-Fi • ${wifiIp || 'Not set'}`
                                         : 'Bluetooth • Connected'}
-                            </Text>
+                            </AppText>
                         </View>
 
                         {connectionType !== 'none' && (
-                            <Button title="Forget Connection" variant="destructive" size="small" onPress={forgetConnection} style={{ marginTop: 12 }} />
+                            <Button
+                                title="Forget Connection"
+                                variant="destructive"
+                                size="small"
+                                onPress={forgetConnection}
+                                style={{ marginTop: 12 }}
+                            />
                         )}
                     </View>
 
                     {/* Choose Method */}
-                    <View style={[styles.card, { backgroundColor: colors.card }]}>
-                        <Text style={[styles.cardTitle, { color: colors.text }]}>Choose Connection Method</Text>
+                    <View style={[styles.sectionCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                        <AppText style={[styles.sectionTitle, { color: textPrimary }]}>
+                            Choose Connection Method
+                        </AppText>
 
                         <TouchableOpacity
                             style={[styles.option, connectionType === 'wifi' && styles.optionActive]}
@@ -298,7 +333,7 @@ export default function ConnectionScreen() {
                             }}
                         >
                             <Ionicons name="wifi" size={24} color={colors.primary} />
-                            <Text style={[styles.optionText, { color: colors.text }]}>Wi-Fi</Text>
+                            <AppText style={[styles.optionText, { color: textPrimary }]}>Wi-Fi</AppText>
                         </TouchableOpacity>
 
                         <TouchableOpacity
@@ -309,22 +344,24 @@ export default function ConnectionScreen() {
                             }}
                         >
                             <Ionicons name="bluetooth" size={24} color={colors.primary} />
-                            <Text style={[styles.optionText, { color: colors.text }]}>Bluetooth (Development Build only)</Text>
+                            <AppText style={[styles.optionText, { color: textPrimary }]}>Bluetooth (Development Build only)</AppText>
                         </TouchableOpacity>
                     </View>
 
                     {/* Wi-Fi Section */}
                     {connectionType === 'wifi' && (
-                        <View style={[styles.card, { backgroundColor: colors.card }]}>
-                            <Text style={[styles.sectionTitle, { color: colors.text }]}>Wi-Fi Settings</Text>
+                        <View style={[styles.sectionCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                            <AppText style={[styles.sectionTitle, { color: textPrimary }]}>
+                                Wi-Fi Settings
+                            </AppText>
                             <View style={styles.inputWrapper}>
-                                <Ionicons name="globe-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
+                                <Ionicons name="globe-outline" size={20} color={textSecondary} style={styles.inputIcon} />
                                 <TextInput
                                     placeholder="Robot IP (e.g. 192.168.1.150)"
                                     value={wifiIp}
                                     onChangeText={setWifiIp}
-                                    placeholderTextColor={colors.textSecondary}
-                                    style={[styles.input, { color: colors.text, borderColor: colors.border }]}
+                                    placeholderTextColor={textSecondary}
+                                    style={[styles.input, { color: textPrimary, borderColor: cardBorder }]}
                                     keyboardType="numeric"
                                     autoCapitalize="none"
                                 />
@@ -341,8 +378,10 @@ export default function ConnectionScreen() {
 
                     {/* BLE Section */}
                     {connectionType === 'ble' && (
-                        <View style={[styles.card, { backgroundColor: colors.card }]}>
-                            <Text style={[styles.sectionTitle, { color: colors.text }]}>Bluetooth Devices</Text>
+                        <View style={[styles.sectionCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                            <AppText style={[styles.sectionTitle, { color: textPrimary }]}>
+                                Bluetooth Devices
+                            </AppText>
 
                             <Button
                                 title={isScanning ? 'Scanning...' : 'Scan for Robot'}
@@ -362,91 +401,182 @@ export default function ConnectionScreen() {
                                     >
                                         <Ionicons name="bluetooth" size={22} color={colors.primary} />
                                         <View style={{ marginLeft: 12 }}>
-                                            <Text style={[styles.deviceName, { color: colors.text }]}>
+                                            <AppText style={[styles.deviceName, { color: textPrimary }]}>
                                                 {device.name || 'Unnamed Robot'}
-                                            </Text>
-                                            <Text style={{ color: colors.textSecondary, fontSize: 12 }}>{device.id}</Text>
+                                            </AppText>
+                                            <AppText style={{ color: textSecondary, fontSize: 12 }}>{device.id}</AppText>
                                         </View>
                                     </TouchableOpacity>
                                 ))
                             ) : (
-                                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                                <AppText style={[styles.emptyText, { color: textSecondary }]}>
                                     {isScanning ? 'Searching for robot...' : 'No devices found.\nMake sure robot is in pairing mode.'}
-                                </Text>
+                                </AppText>
                             )}
                         </View>
                     )}
 
-                    <Button title="Done" icon="checkmark-circle" variant="outline" onPress={() => router.back()} fullWidth style={{ marginTop: 24 }} />
-                </ScrollView>
+                    <Button
+                        title="Done"
+                        icon="checkmark-circle"
+                        variant="outline"
+                        onPress={() => router.back()}
+                        fullWidth
+                        style={{ marginTop: 24 }}
+                    />
+                </View>
 
-                {/* Floating status */}
-                {statusMessage && (
-                    <View style={[styles.floatingMessage, { backgroundColor: colors.card }]}>
-                        <Text style={{ color: colors.text }}>{statusMessage}</Text>
-                    </View>
-                )}
-            </Animated.View>
+                {/* Footer */}
+                <AppText style={[styles.footer, { color: textSecondary }]}>
+                    Version 1.0.0 • Smart Cleaner Pro © 2026
+                </AppText>
+            </ScrollView>
+
+            {/* Floating status */}
+            {statusMessage && (
+                <View style={[styles.floatingMessage, { backgroundColor: cardBg }]}>
+                    <AppText style={{ color: textPrimary }}>{statusMessage}</AppText>
+                </View>
+            )}
         </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
-    scrollContent: { padding: 20, paddingBottom: 100 },
-    card: {
-        borderRadius: 16,
-        padding: 16,
-        marginBottom: 20,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
-        elevation: 3,
+
+    scrollContent: {
+        flexGrow: 1,
+        paddingHorizontal: 24,
+        paddingTop: 120,
+        paddingBottom: 80,
     },
-    cardTitle: { fontSize: 18, fontWeight: '600', marginBottom: 12 },
-    sectionTitle: { fontSize: 16, fontWeight: '600', marginBottom: 12 },
-    instructionItem: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12, gap: 12 },
-    instructionText: { fontSize: 14, lineHeight: 20, flex: 1 },
-    statusCard: { borderRadius: 16, padding: 16, alignItems: 'center' },
-    statusTitle: { fontSize: 16, fontWeight: '600', marginBottom: 8 },
-    statusRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-    statusText: { fontSize: 16, fontWeight: '500' },
+    scrollContentLarge: {
+        alignItems: 'center',
+    },
+
+    wrapper: { width: '100%' },
+    largeWrapper: { maxWidth: 480 },
+
+    headerSection: {
+        marginBottom: 32,
+    },
+    headerTitle: {
+        fontSize: 35,
+        fontWeight: '800',
+        letterSpacing: -0.5,
+        marginBottom: 6,
+    },
+    headerSubtitle: {
+        fontSize: 16,
+        fontWeight: '400',
+        letterSpacing: 0.1,
+    },
+
+    sectionCard: {
+        borderRadius: 24,
+        padding: 24,
+        borderWidth: 1,
+        marginBottom: 20,
+    },
+    sectionHeader: {
+        marginBottom: 16,
+    },
+    sectionTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+    },
+
+    instructionItem: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        marginBottom: 12,
+        gap: 12,
+    },
+    instructionText: {
+        fontSize: 14,
+        lineHeight: 20,
+        flex: 1,
+    },
+
+    statusRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        marginTop: 8,
+    },
+    statusText: {
+        fontSize: 16,
+        fontWeight: '500',
+    },
+
     option: {
         flexDirection: 'row',
         alignItems: 'center',
         padding: 16,
         borderRadius: 12,
         marginBottom: 8,
-        backgroundColor: '#ffffff08',
-    },
-    optionActive: { backgroundColor: '#10B98115' },
-    optionText: { fontSize: 16, marginLeft: 12 },
-    inputWrapper: { position: 'relative', marginBottom: 16 },
-    inputIcon: { position: 'absolute', left: 16, top: 16, zIndex: 1 },
-    input: {
+        backgroundColor: cardBg,
         borderWidth: 1,
-        borderRadius: 12,
-        padding: 16,
+        borderColor: cardBorder,
+    },
+    optionActive: {
+        borderColor: colors.primary,
+        backgroundColor: `${colors.primary}15`,
+    },
+    optionText: {
+        fontSize: 16,
+        marginLeft: 12,
+    },
+
+    inputWrapper: {
+        position: 'relative',
+        marginBottom: 16,
+    },
+    inputIcon: {
+        position: 'absolute',
+        left: 16,
+        top: 16,
+        zIndex: 1,
+    },
+    input: {
+        height: 52,
+        borderRadius: 14,
+        borderWidth: 1,
         paddingLeft: 52,
+        paddingRight: 16,
         fontSize: 16,
     },
+
     deviceItem: {
         flexDirection: 'row',
         alignItems: 'center',
         padding: 16,
         borderRadius: 12,
         marginBottom: 8,
-        backgroundColor: '#ffffff08',
+        backgroundColor: cardBg,
+        borderWidth: 1,
+        borderColor: cardBorder,
     },
-    deviceActive: { backgroundColor: '#10B98120' },
-    deviceName: { fontSize: 16, fontWeight: '500' },
-    emptyText: { textAlign: 'center', paddingVertical: 40, lineHeight: 22 },
+    deviceActive: {
+        borderColor: colors.primary,
+        backgroundColor: `${colors.primary}15`,
+    },
+    deviceName: {
+        fontSize: 16,
+        fontWeight: '500',
+    },
+    emptyText: {
+        textAlign: 'center',
+        paddingVertical: 40,
+        lineHeight: 22,
+    },
+
     floatingMessage: {
         position: 'absolute',
         bottom: 24,
-        left: 20,
-        right: 20,
+        left: 24,
+        right: 24,
         padding: 16,
         borderRadius: 12,
         alignItems: 'center',
@@ -455,5 +585,13 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.2,
         shadowRadius: 10,
         elevation: 6,
+    },
+
+    footer: {
+        textAlign: 'center',
+        marginTop: 32,
+        fontSize: 12.5,
+        opacity: 0.65,
+        letterSpacing: 0.3,
     },
 });

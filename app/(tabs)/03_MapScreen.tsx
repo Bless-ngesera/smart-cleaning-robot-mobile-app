@@ -476,7 +476,7 @@ const styles = StyleSheet.create({
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
-        paddingTop: 120,
+        paddingTop: 25,
         paddingBottom: 80,
     },
     scrollContentLarge: {
@@ -490,7 +490,7 @@ const styles = StyleSheet.create({
         marginBottom: 32,
     },
     headerTitle: {
-        fontSize: 35,
+        fontSize: 32,
         fontWeight: '800',
         letterSpacing: -0.5,
         marginBottom: 6,
