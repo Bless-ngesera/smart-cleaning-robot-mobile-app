@@ -1,15 +1,35 @@
 // app/settings/support.tsx
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Linking, Alert } from 'react-native';
+import {
+    View,
+    TouchableOpacity,
+    StyleSheet,
+    ScrollView,
+    Linking,
+    Alert,
+    Dimensions,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useThemeContext } from '@/src/context/ThemeContext';
-import Header from '../../src/components/Header';
 import { Ionicons } from '@expo/vector-icons';
 
-export default function HelpSupport() {
-    const { colors } = useThemeContext();
+import AppText from '../../src/components/AppText';
+import { useThemeContext } from '@/src/context/ThemeContext';
 
-    const openLink = async (url) => {
+export default function HelpSupport() {
+    const { colors, darkMode } = useThemeContext();
+
+    // Same as Dashboard
+    const { width } = Dimensions.get('window');
+    const isLargeScreen = width >= 768;
+
+    // Design tokens matching Dashboard
+    const cardBg = darkMode ? 'rgba(255,255,255,0.05)' : '#ffffff';
+    const cardBorder = darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)';
+    const textPrimary = darkMode ? '#ffffff' : colors.text;
+    const textSecondary = darkMode ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.60)';
+    const dividerColor = darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)';
+
+    const openLink = async (url: string) => {
         try {
             const supported = await Linking.canOpenURL(url);
             if (supported) {
@@ -23,123 +43,190 @@ export default function HelpSupport() {
     };
 
     return (
-        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
-            <Header title="Help & Support" subtitle="We're here to help" />
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+            <ScrollView
+                contentContainerStyle={[
+                    styles.scrollContent,
+                    isLargeScreen && styles.scrollContentLarge,
+                ]}
+                showsVerticalScrollIndicator={false}
+            >
+                <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
+                    {/* Large Header */}
+                    <View style={styles.headerSection}>
+                        <AppText style={[styles.headerTitle, { color: textPrimary }]}>
+                            Help & Support
+                        </AppText>
+                        <AppText style={[styles.headerSubtitle, { color: textSecondary }]}>
+                            We're here to help
+                        </AppText>
+                    </View>
 
-            <ScrollView style={styles.scroll} contentContainerStyle={styles.content}>
-                {/* Frequently Asked Questions */}
-                <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Frequently Asked Questions</Text>
+                    {/* Frequently Asked Questions */}
+                    <View style={[styles.sectionCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                        <AppText style={[styles.sectionTitle, { color: textPrimary }]}>
+                            Frequently Asked Questions
+                        </AppText>
 
-                    <TouchableOpacity style={styles.row} onPress={() => openLink('https://example.com/faq#connect')}>
-                        <Ionicons name="bluetooth-outline" size={24} color={colors.primary} />
-                        <Text style={[styles.rowText, { color: colors.text }]}>How do I connect my robot via Bluetooth or Wi-Fi?</Text>
-                        <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-                    </TouchableOpacity>
+                        <TouchableOpacity style={styles.row} onPress={() => openLink('https://example.com/faq#connect')}>
+                            <Ionicons name="bluetooth-outline" size={24} color={colors.primary} />
+                            <AppText style={[styles.rowText, { color: textPrimary }]}>
+                                How do I connect my robot via Bluetooth or Wi-Fi?
+                            </AppText>
+                            <Ionicons name="chevron-forward" size={20} color={textSecondary} />
+                        </TouchableOpacity>
 
-                    <TouchableOpacity style={styles.row} onPress={() => openLink('https://example.com/faq#cleaning')}>
-                        <Ionicons name="sparkles-outline" size={24} color={colors.primary} />
-                        <Text style={[styles.rowText, { color: colors.text }]}>Why is my robot not cleaning properly or missing spots?</Text>
-                        <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-                    </TouchableOpacity>
+                        <View style={[styles.rowDivider, { backgroundColor: dividerColor }]} />
 
-                    <TouchableOpacity style={styles.row} onPress={() => openLink('https://example.com/faq#battery')}>
-                        <Ionicons name="battery-half-outline" size={24} color={colors.primary} />
-                        <Text style={[styles.rowText, { color: colors.text }]}>How do I improve battery life or fix low battery warnings?</Text>
-                        <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-                    </TouchableOpacity>
+                        <TouchableOpacity style={styles.row} onPress={() => openLink('https://example.com/faq#cleaning')}>
+                            <Ionicons name="sparkles-outline" size={24} color={colors.primary} />
+                            <AppText style={[styles.rowText, { color: textPrimary }]}>
+                                Why is my robot not cleaning properly or missing spots?
+                            </AppText>
+                            <Ionicons name="chevron-forward" size={20} color={textSecondary} />
+                        </TouchableOpacity>
 
-                    <TouchableOpacity style={styles.row} onPress={() => openLink('https://example.com/faq#map')}>
-                        <Ionicons name="map-outline" size={24} color={colors.primary} />
-                        <Text style={[styles.rowText, { color: colors.text }]}>Why is the map not accurate or robot getting stuck?</Text>
-                        <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-                    </TouchableOpacity>
+                        <View style={[styles.rowDivider, { backgroundColor: dividerColor }]} />
 
-                    {/* === C++ INTEGRATION POINT: Add robot-specific troubleshooting ===
-              If you want to include direct robot diagnostics or firmware-related FAQs:
-              - Add rows like "How to reset robot firmware" or "Run robot self-diagnostic"
-              - On press: either open link or trigger C++ command via bridge
-              Example:
-              <TouchableOpacity style={styles.row} onPress={() => RobotBridge.runDiagnostic()}>
-                <Ionicons name="cog-outline" size={24} color={colors.primary} />
-                <AppText style={styles.rowText}>Run robot self-diagnostic</AppText>
-                <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-              </TouchableOpacity>
-          */}
+                        <TouchableOpacity style={styles.row} onPress={() => openLink('https://example.com/faq#battery')}>
+                            <Ionicons name="battery-half-outline" size={24} color={colors.primary} />
+                            <AppText style={[styles.rowText, { color: textPrimary }]}>
+                                How do I improve battery life or fix low battery warnings?
+                            </AppText>
+                            <Ionicons name="chevron-forward" size={20} color={textSecondary} />
+                        </TouchableOpacity>
+
+                        <View style={[styles.rowDivider, { backgroundColor: dividerColor }]} />
+
+                        <TouchableOpacity style={styles.row} onPress={() => openLink('https://example.com/faq#map')}>
+                            <Ionicons name="map-outline" size={24} color={colors.primary} />
+                            <AppText style={[styles.rowText, { color: textPrimary }]}>
+                                Why is the map not accurate or robot getting stuck?
+                            </AppText>
+                            <Ionicons name="chevron-forward" size={20} color={textSecondary} />
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Contact Us */}
+                    <View style={[styles.sectionCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                        <AppText style={[styles.sectionTitle, { color: textPrimary }]}>
+                            Contact Us
+                        </AppText>
+
+                        <TouchableOpacity style={styles.row} onPress={() => openLink('mailto:support@smartcleaner.com')}>
+                            <Ionicons name="mail-outline" size={24} color={colors.primary} />
+                            <AppText style={[styles.rowText, { color: textPrimary }]}>
+                                Email Support
+                            </AppText>
+                            <Ionicons name="chevron-forward" size={20} color={textSecondary} />
+                        </TouchableOpacity>
+
+                        <View style={[styles.rowDivider, { backgroundColor: dividerColor }]} />
+
+                        <TouchableOpacity style={styles.row} onPress={() => openLink('tel:+256700123456')}>
+                            <Ionicons name="call-outline" size={24} color={colors.primary} />
+                            <AppText style={[styles.rowText, { color: textPrimary }]}>
+                                Call Support (+256 700 123 456)
+                            </AppText>
+                            <Ionicons name="chevron-forward" size={20} color={textSecondary} />
+                        </TouchableOpacity>
+
+                        <View style={[styles.rowDivider, { backgroundColor: dividerColor }]} />
+
+                        <TouchableOpacity style={styles.row} onPress={() => openLink('https://wa.me/256700123456')}>
+                            <Ionicons name="logo-whatsapp" size={24} color={colors.primary} />
+                            <AppText style={[styles.rowText, { color: textPrimary }]}>
+                                WhatsApp Support
+                            </AppText>
+                            <Ionicons name="chevron-forward" size={20} color={textSecondary} />
+                        </TouchableOpacity>
+                    </View>
+
+                    {/* Footer note */}
+                    <AppText style={[styles.footerNote, { color: textSecondary }]}>
+                        Response time: usually within 1–2 hours during business hours (8 AM – 8 PM EAT)
+                    </AppText>
+
+                    {/* App footer */}
+                    <AppText style={[styles.footer, { color: textSecondary }]}>
+                        Version 1.0.0 • Smart Cleaner Pro © 2026
+                    </AppText>
                 </View>
-
-                {/* Contact Us */}
-                <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Contact Us</Text>
-
-                    <TouchableOpacity style={styles.row} onPress={() => openLink('mailto:support@smartcleaner.com')}>
-                        <Ionicons name="mail-outline" size={24} color={colors.primary} />
-                        <Text style={[styles.rowText, { color: colors.text }]}>Email Support</Text>
-                        <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.row} onPress={() => openLink('tel:+256700123456')}>
-                        <Ionicons name="call-outline" size={24} color={colors.primary} />
-                        <Text style={[styles.rowText, { color: colors.text }]}>Call Support (+256 700 123 456)</Text>
-                        <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.row} onPress={() => openLink('https://wa.me/256700123456')}>
-                        <Ionicons name="logo-whatsapp" size={24} color={colors.primary} />
-                        <Text style={[styles.rowText, { color: colors.text }]}>WhatsApp Support</Text>
-                        <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-                    </TouchableOpacity>
-
-                    {/* === C++ INTEGRATION POINT: Add robot-specific contact ===
-              If you want a button to send robot logs/diagnostics directly to support:
-              - On press: collect logs via C++ bridge → attach to email or send via API
-              Example:
-              <TouchableOpacity style={styles.row} onPress={() => sendRobotLogsToSupport()}>
-                <Ionicons name="document-text-outline" size={24} color={colors.primary} />
-                <AppText style={styles.rowText}>Send robot diagnostic logs to support</AppText>
-                <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-              </TouchableOpacity>
-          */}
-                </View>
-
-                <Text style={[styles.footer, { color: colors.textSecondary }]}>
-                    Response time: usually within 1–2 hours during business hours (8 AM – 8 PM EAT)
-                </Text>
             </ScrollView>
         </SafeAreaView>
     );
 }
 
 const styles = StyleSheet.create({
-    scroll: { flex: 1 },
-    content: { padding: 24, paddingBottom: 40 },
-    card: {
-        borderRadius: 16,
-        padding: 16,
+    container: { flex: 1 },
+
+    scrollContent: {
+        flexGrow: 1,
+        paddingHorizontal: 24,
+        paddingTop: 120,
+        paddingBottom: 80,
+    },
+    scrollContentLarge: {
+        alignItems: 'center',
+    },
+
+    wrapper: { width: '100%' },
+    largeWrapper: { maxWidth: 480 },
+
+    headerSection: {
+        marginBottom: 32,
+    },
+    headerTitle: {
+        fontSize: 35,
+        fontWeight: '800',
+        letterSpacing: -0.5,
+        marginBottom: 6,
+    },
+    headerSubtitle: {
+        fontSize: 16,
+        fontWeight: '400',
+        letterSpacing: 0.1,
+    },
+
+    sectionCard: {
+        borderRadius: 24,
+        padding: 24,
         borderWidth: 1,
-        marginBottom: 24,
+        marginBottom: 20,
     },
     sectionTitle: {
         fontSize: 18,
-        fontWeight: '600',
+        fontWeight: '700',
         marginBottom: 16,
     },
+
     row: {
         flexDirection: 'row',
         alignItems: 'center',
         paddingVertical: 16,
         gap: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: 'rgba(0,0,0,0.05)',
+    },
+    rowDivider: {
+        height: 1,
+        marginLeft: 40,
     },
     rowText: {
         flex: 1,
         fontSize: 16,
         fontWeight: '500',
     },
-    footer: {
+
+    footerNote: {
         textAlign: 'center',
         fontSize: 14,
-        marginTop: 16,
+        marginTop: 24,
+        marginBottom: 16,
+        lineHeight: 20,
+    },
+    footer: {
+        textAlign: 'center',
+        fontSize: 12.5,
+        opacity: 0.65,
+        letterSpacing: 0.3,
     },
 });
