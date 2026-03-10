@@ -15,13 +15,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 
 import Header from '../src/components/Header';
 import Loader from '../src/components/Loader';
 import Button from '../src/components/Button';
 import AppText from '../src/components/AppText';
 import { useThemeContext } from '@/src/context/ThemeContext';
-import { supabase } from '@/src/services/supabase';
+import authService from '@/src/services/auth';
+import {supabase} from "@/src/services/supabase";
 
 const { width } = Dimensions.get('window');
 const isLargeScreen = width >= 768;
@@ -42,27 +44,29 @@ export default function LoginScreen() {
 
     const passwordRef = useRef<TextInput>(null);
 
+    // Check for existing session on mount
     useEffect(() => {
         let mounted = true;
 
         const checkSession = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (mounted && session) {
+            const { session } = await authService.getSession();
+            if (mounted && session?.user?.email_confirmed_at) {
                 router.replace('/(tabs)/01_DashboardScreen');
             }
         };
 
         checkSession();
 
-        const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-            if (mounted && session) {
+        // Listen for auth changes
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            if (mounted && session?.user?.email_confirmed_at) {
                 router.replace('/(tabs)/01_DashboardScreen');
             }
         });
 
         return () => {
             mounted = false;
-            listener.subscription.unsubscribe();
+            subscription.unsubscribe();
         };
     }, []);
 
@@ -76,54 +80,135 @@ export default function LoginScreen() {
         ]).start();
     };
 
-    const handleLogin = async () => {
-        if (loading) return;
-
+    const validateForm = (): boolean => {
+        let isValid = true;
         setEmailError('');
         setPasswordError('');
 
-        let valid = true;
-
+        // Email validation
         if (!email.trim()) {
             setEmailError('Email is required');
             shake(emailShake);
-            valid = false;
-        } else if (!/\S+@\S+\.\S+/.test(email.trim())) {
-            setEmailError('Enter a valid email');
+            isValid = false;
+        } else if (!authService.validateEmail(email.trim())) {
+            setEmailError('Enter a valid email address');
             shake(emailShake);
-            valid = false;
+            isValid = false;
         }
 
+        // Password validation
         if (!password.trim()) {
             setPasswordError('Password is required');
             shake(passwordShake);
-            valid = false;
+            isValid = false;
         } else if (password.length < 6) {
-            setPasswordError('Minimum 6 characters');
+            setPasswordError('Password must be at least 6 characters');
             shake(passwordShake);
-            valid = false;
+            isValid = false;
         }
 
-        if (!valid) return;
+        return isValid;
+    };
+
+    const handleLogin = async () => {
+        if (loading) return;
+
+        // Haptic feedback
+        if (Platform.OS === 'ios') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+
+        if (!validateForm()) return;
 
         setLoading(true);
 
         try {
-            const { error } = await supabase.auth.signInWithPassword({
-                email: email.trim(),
-                password,
-            });
+            const response = await authService.signIn(email.trim(), password);
 
-            if (error) throw error;
+            if (response.success) {
+                // Success haptic
+                if (Platform.OS === 'ios') {
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                }
+
+                // Navigation is handled by the auth state listener in _layout.tsx
+                // but we'll do it here too as a fallback
+                router.replace('/(tabs)/01_DashboardScreen');
+            } else {
+                // Handle specific error cases
+                if (response.error?.message.includes('verify your email')) {
+                    Alert.alert(
+                        'Email Not Verified',
+                        response.error.message,
+                        [
+                            { text: 'OK', style: 'cancel' },
+                            {
+                                text: 'Resend Email',
+                                onPress: () => handleResendConfirmation(),
+                            },
+                        ]
+                    );
+
+                    // Shake fields for visual feedback
+                    shake(emailShake);
+                    shake(passwordShake);
+                } else {
+                    // General error
+                    setEmailError('Invalid credentials');
+                    setPasswordError('Invalid credentials');
+                    shake(emailShake);
+                    shake(passwordShake);
+
+                    // Error haptic
+                    if (Platform.OS === 'ios') {
+                        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                    }
+
+                    Alert.alert('Login Failed', response.error?.message || 'Please check your credentials and try again.');
+                }
+            }
         } catch (err: any) {
-            setEmailError('Invalid credentials');
-            setPasswordError('Invalid credentials');
-            shake(emailShake);
-            shake(passwordShake);
-            Alert.alert('Sign In Failed', 'Incorrect email or password. Please try again.');
+            console.error('Login error:', err);
+
+            // Error haptic
+            if (Platform.OS === 'ios') {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            }
+
+            Alert.alert('Error', 'An unexpected error occurred. Please try again.');
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleResendConfirmation = async () => {
+        try {
+            const response = await authService.resendConfirmationEmail(email.trim());
+            if (response.success) {
+                Alert.alert(
+                    'Email Sent',
+                    'Confirmation email has been resent. Please check your inbox.'
+                );
+            } else {
+                Alert.alert('Error', response.error?.message || 'Failed to resend email');
+            }
+        } catch (err: any) {
+            Alert.alert('Error', err.message || 'Failed to resend email');
+        }
+    };
+
+    const handleForgotPassword = () => {
+        if (Platform.OS === 'ios') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+        router.push('/ForgotPasswordScreen');
+    };
+
+    const handleSignUp = () => {
+        if (Platform.OS === 'ios') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+        router.push('/SignupScreen');
     };
 
     if (loading) return <Loader message="Signing you in..." />;
@@ -149,7 +234,11 @@ export default function LoginScreen() {
                             subtitle="Sign in to control your Smart Cleaner Pro"
                         />
 
-                        <View style={styles.card}>
+                        <View style={[styles.card, {
+                            backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : '#ffffff',
+                            borderColor: darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
+                            borderWidth: 1
+                        }]}>
                             <Field
                                 label="Email Address"
                                 value={email}
@@ -196,7 +285,7 @@ export default function LoginScreen() {
 
                             <TouchableOpacity
                                 style={styles.forgot}
-                                onPress={() => router.push('/ForgotPasswordScreen')}
+                                onPress={handleForgotPassword}
                             >
                                 <AppText
                                     style={[
@@ -215,8 +304,8 @@ export default function LoginScreen() {
                                 variant="primary"
                                 fullWidth
                                 loading={loading}
-                                disabled={loading}
-                                style={{ marginTop: 16 }} // reduced
+                                disabled={loading || !email || !password}
+                                style={{ marginTop: 16 }}
                             />
 
                             <View style={styles.divider}>
@@ -251,7 +340,7 @@ export default function LoginScreen() {
                                             : 'rgba(59,130,246,0.12)',
                                     },
                                 ]}
-                                onPress={() => router.push('/SignupScreen')}
+                                onPress={handleSignUp}
                             >
                                 <Ionicons
                                     name="person-add-outline"
@@ -271,7 +360,7 @@ export default function LoginScreen() {
                         </View>
                     </View>
 
-                    <AppText style={styles.footer}>
+                    <AppText style={[styles.footer, { color: darkMode ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }]}>
                         Version 1.0.0 • Smart Cleaner Pro © 2026
                     </AppText>
                 </ScrollView>
@@ -319,13 +408,17 @@ function Field({
             ? 'rgba(255,255,255,0.75)'
             : 'rgba(0,0,0,0.60)';
 
+    const backgroundColor = error
+        ? darkMode ? 'rgba(239,68,68,0.1)' : 'rgba(239,68,68,0.05)'
+        : darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)';
+
     return (
         <View style={styles.field}>
             <AppText
                 style={[
                     styles.label,
                     {
-                        color: darkMode ? 'rgba(255,255,255,0.88)' : 'rgba(0,0,0,0.80)',
+                        color: error ? '#ef4444' : (darkMode ? 'rgba(255,255,255,0.88)' : 'rgba(0,0,0,0.80)'),
                         fontWeight: '500',
                     },
                 ]}
@@ -352,7 +445,7 @@ function Field({
                             {
                                 borderColor,
                                 color: darkMode ? '#ffffff' : colors.text,
-                                backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                                backgroundColor,
                             },
                         ]}
                         placeholderTextColor={darkMode ? 'rgba(255,255,255,0.40)' : 'rgba(0,0,0,0.40)'}
@@ -378,8 +471,8 @@ const styles = StyleSheet.create({
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
-        paddingTop: 32,          // reduced
-        paddingBottom: 60,       // reduced
+        paddingTop: 32,
+        paddingBottom: 60,
         justifyContent: 'center',
     },
 
@@ -389,16 +482,16 @@ const styles = StyleSheet.create({
 
     card: {
         borderRadius: 24,
-        padding: 24,             // reduced from 28
+        padding: 24,
         borderWidth: 1,
     },
 
     field: {
-        marginBottom: 20,        // reduced from 28
+        marginBottom: 20,
     },
 
     label: {
-        marginBottom: 6,         // reduced from 8
+        marginBottom: 6,
         fontSize: 14.5,
         fontWeight: '500',
     },
@@ -406,7 +499,7 @@ const styles = StyleSheet.create({
     inputWrapper: { position: 'relative' },
 
     input: {
-        height: 54,              // reduced from 58
+        height: 54,
         borderWidth: 1.5,
         borderRadius: 14,
         paddingLeft: 48,
@@ -418,7 +511,7 @@ const styles = StyleSheet.create({
     inputIconLeft: {
         position: 'absolute',
         left: 14,
-        top: 16,                 // adjusted for height 54
+        top: 16,
         zIndex: 1,
     },
 
@@ -432,7 +525,7 @@ const styles = StyleSheet.create({
     forgot: {
         alignSelf: 'flex-end',
         marginTop: 2,
-        marginBottom: 20,        // reduced from 28
+        marginBottom: 20,
         paddingVertical: 6,
     },
 
@@ -444,7 +537,7 @@ const styles = StyleSheet.create({
     divider: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginVertical: 24,      // reduced from 32
+        marginVertical: 24,
     },
 
     line: {
@@ -464,7 +557,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         height: 54,
         borderRadius: 14,
-        marginTop: 8,            // reduced from 12
+        marginTop: 8,
     },
 
     createAccountText: {
@@ -481,7 +574,7 @@ const styles = StyleSheet.create({
 
     footer: {
         textAlign: 'center',
-        marginTop: 32,           // reduced from 40
+        marginTop: 32,
         fontSize: 12.5,
         opacity: 0.65,
         letterSpacing: 0.3,

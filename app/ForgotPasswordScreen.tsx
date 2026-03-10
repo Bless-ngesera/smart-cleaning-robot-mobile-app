@@ -15,13 +15,14 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 
 import Header from '../src/components/Header';
 import Loader from '../src/components/Loader';
 import Button from '../src/components/Button';
 import AppText from '../src/components/AppText';
 import { useThemeContext } from '@/src/context/ThemeContext';
-import { supabase } from '@/src/services/supabase';
+import authService from '@/src/services/auth';
 
 const { width } = Dimensions.get('window');
 const isLargeScreen = width >= 768;
@@ -47,48 +48,120 @@ export default function ForgotPasswordScreen() {
         ]).start();
     };
 
-    const validateAndReset = async () => {
+    const validateEmail = (): boolean => {
         setEmailError('');
 
         if (!email.trim()) {
             setEmailError('Email is required');
             shakeField();
-            return;
+            return false;
         }
 
-        if (!/\S+@\S+\.\S+/.test(email.trim())) {
+        if (!authService.validateEmail(email.trim())) {
             setEmailError('Enter a valid email address');
             shakeField();
-            return;
+            return false;
+        }
+
+        return true;
+    };
+
+    const handleResetPassword = async () => {
+        if (loading) return;
+
+        // Haptic feedback
+        if (Platform.OS === 'ios') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+
+        if (!validateEmail()) return;
+
+        setLoading(true);
+
+        try {
+            const response = await authService.forgotPassword(email.trim());
+
+            if (response.success) {
+                // Success haptic
+                if (Platform.OS === 'ios') {
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                }
+
+                setSent(true);
+
+                // Show success message
+                Alert.alert(
+                    'Reset Link Sent',
+                    response.data?.message || 'Check your email (including spam/junk) for the password reset link.'
+                );
+            } else {
+                throw new Error(response.error?.message);
+            }
+        } catch (err: any) {
+            console.error('Forgot password error:', err);
+
+            // Error haptic
+            if (Platform.OS === 'ios') {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            }
+
+            const errorMessage = err.message || 'Failed to send reset link. Please try again.';
+
+            if (errorMessage.includes('not found')) {
+                setEmailError('No account found with this email');
+                shakeField();
+            }
+
+            Alert.alert('Error', errorMessage);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleResendEmail = async () => {
+        if (loading) return;
+
+        // Haptic feedback
+        if (Platform.OS === 'ios') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
 
         setLoading(true);
 
         try {
-            const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-                redirectTo: 'yourapp://reset-password', // ← update to your actual deep link
-            });
+            const response = await authService.forgotPassword(email.trim());
 
-            if (error) throw error;
+            if (response.success) {
+                if (Platform.OS === 'ios') {
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                }
 
-            setSent(true);
-            Alert.alert(
-                'Reset Link Sent',
-                'Check your email (including spam/junk) for the password reset link.'
-            );
-        } catch (err: any) {
-            let message = 'Failed to send reset link. Please try again.';
-            if (err.message?.includes('rate limit')) {
-                message = 'Too many requests — please wait a few minutes';
-            } else if (err.message?.includes('not found')) {
-                message = 'No account found with this email';
-                setEmailError('Email not found');
-                shakeField();
+                Alert.alert('Success', 'Reset link has been resent. Please check your email.');
+            } else {
+                throw new Error(response.error?.message);
             }
-            Alert.alert('Error', message);
+        } catch (err: any) {
+            if (Platform.OS === 'ios') {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            }
+            Alert.alert('Error', err.message || 'Failed to resend email');
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleBackToLogin = () => {
+        if (Platform.OS === 'ios') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+        router.replace('/LoginScreen');
+    };
+
+    const handleGoBack = () => {
+        if (Platform.OS === 'ios') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+        router.back();
     };
 
     if (loading) {
@@ -113,57 +186,75 @@ export default function ForgotPasswordScreen() {
                     <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
                         <Header
                             title="Reset Password"
-                            subtitle="We'll send you a link to reset your password"
+                            subtitle={sent ? "We've sent you a reset link" : "We'll send you a link to reset your password"}
                         />
 
-                        <View style={styles.card}>
+                        <View style={[styles.card, {
+                            backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : '#ffffff',
+                            borderColor: darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
+                            borderWidth: 1
+                        }]}>
                             {sent ? (
                                 <View style={styles.successContainer}>
-                                    <Ionicons name="checkmark-circle" size={64} color={colors.primary} />
+                                    <View style={[styles.successIcon, { backgroundColor: `${colors.primary}20` }]}>
+                                        <Ionicons name="checkmark-circle" size={64} color={colors.primary} />
+                                    </View>
+
                                     <AppText
-                                        style={{
-                                            color: darkMode ? '#ffffff' : colors.text,
-                                            fontSize: 22,
-                                            fontWeight: '700',
-                                            textAlign: 'center',
-                                            marginTop: 20,
-                                            marginBottom: 12,
-                                        }}
+                                        style={[
+                                            styles.successTitle,
+                                            { color: darkMode ? '#ffffff' : colors.text }
+                                        ]}
                                     >
                                         Check Your Email
                                     </AppText>
+
                                     <AppText
-                                        style={{
-                                            color: darkMode ? 'rgba(255,255,255,0.85)' : colors.textSecondary,
-                                            textAlign: 'center',
-                                            fontSize: 15.5,
-                                            lineHeight: 22,
-                                        }}
+                                        style={[
+                                            styles.successMessage,
+                                            { color: darkMode ? 'rgba(255,255,255,0.85)' : colors.textSecondary }
+                                        ]}
                                     >
-                                        We sent a password reset link to{'\n'}
-                                        <AppText style={{ color: colors.primary, fontWeight: '600' }}>
-                                            {email}
-                                        </AppText>
-                                    </AppText>
-                                    <AppText
-                                        style={{
-                                            color: darkMode ? 'rgba(255,255,255,0.65)' : colors.textSecondary,
-                                            textAlign: 'center',
-                                            fontSize: 13.5,
-                                            marginTop: 12,
-                                        }}
-                                    >
-                                        Check inbox & spam folder. Link expires in 24 hours.
+                                        We sent a password reset link to
                                     </AppText>
 
-                                    <Button
-                                        title="Back to Login"
-                                        icon="arrow-back-outline"
-                                        onPress={() => router.replace('/LoginScreen')}
-                                        variant="outline"
-                                        fullWidth
-                                        style={{ marginTop: 28 }}
-                                    />
+                                    <View style={[styles.emailChip, {
+                                        backgroundColor: darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                                        borderColor: darkMode ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)',
+                                    }]}>
+                                        <Ionicons name="mail-outline" size={16} color={colors.primary} />
+                                        <AppText style={[styles.emailText, { color: colors.primary }]}>
+                                            {email}
+                                        </AppText>
+                                    </View>
+
+                                    <AppText
+                                        style={[
+                                            styles.successNote,
+                                            { color: darkMode ? 'rgba(255,255,255,0.65)' : colors.textSecondary }
+                                        ]}
+                                    >
+                                        Check your inbox and spam folder. The link will expire in 1 hour for security.
+                                    </AppText>
+
+                                    <View style={styles.successActions}>
+                                        <Button
+                                            title="Resend Email"
+                                            onPress={handleResendEmail}
+                                            variant="outline"
+                                            fullWidth
+                                            style={styles.resendButton}
+                                        />
+
+                                        <Button
+                                            title="Back to Login"
+                                            icon="arrow-back-outline"
+                                            onPress={handleBackToLogin}
+                                            variant="primary"
+                                            fullWidth
+                                            style={styles.backButton}
+                                        />
+                                    </View>
                                 </View>
                             ) : (
                                 <>
@@ -183,35 +274,39 @@ export default function ForgotPasswordScreen() {
                                         autoCapitalize="none"
                                         autoCorrect={false}
                                         returnKeyType="done"
-                                        onSubmitEditing={validateAndReset}
+                                        onSubmitEditing={handleResetPassword}
                                         refInput={emailRef}
                                     />
 
-                                    <AppText
-                                        style={[
-                                            styles.infoText,
-                                            {
-                                                color: darkMode ? 'rgba(255,255,255,0.78)' : 'rgba(0,0,0,0.70)',
-                                            },
-                                        ]}
-                                    >
-                                        Enter the email associated with your account and we'll send you a reset link.
-                                    </AppText>
+                                    <View style={[styles.infoBox, {
+                                        backgroundColor: darkMode ? 'rgba(59,130,246,0.1)' : 'rgba(59,130,246,0.05)',
+                                        borderColor: darkMode ? 'rgba(59,130,246,0.2)' : 'rgba(59,130,246,0.1)',
+                                    }]}>
+                                        <Ionicons name="information-circle-outline" size={20} color={colors.primary} />
+                                        <AppText
+                                            style={[
+                                                styles.infoText,
+                                                { color: darkMode ? 'rgba(255,255,255,0.85)' : colors.textSecondary },
+                                            ]}
+                                        >
+                                            Enter the email address you used to create your account. We'll send you a link to reset your password.
+                                        </AppText>
+                                    </View>
 
                                     <Button
                                         title="Send Reset Link"
                                         icon="mail-outline"
-                                        onPress={validateAndReset}
+                                        onPress={handleResetPassword}
                                         variant="primary"
                                         fullWidth
                                         loading={loading}
-                                        disabled={loading}
+                                        disabled={loading || !email}
                                         style={{ marginTop: 16 }}
                                     />
 
                                     <TouchableOpacity
                                         style={styles.backLink}
-                                        onPress={() => router.back()}
+                                        onPress={handleGoBack}
                                     >
                                         <Ionicons name="arrow-back-outline" size={20} color={colors.primary} />
                                         <AppText
@@ -228,7 +323,7 @@ export default function ForgotPasswordScreen() {
                         </View>
                     </View>
 
-                    <AppText style={styles.footer}>
+                    <AppText style={[styles.footer, { color: darkMode ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }]}>
                         Version 1.0.0 • Smart Cleaner Pro © 2026
                     </AppText>
                 </ScrollView>
@@ -276,13 +371,17 @@ function Field({
             ? 'rgba(255,255,255,0.75)'
             : 'rgba(0,0,0,0.60)';
 
+    const backgroundColor = error
+        ? darkMode ? 'rgba(239,68,68,0.1)' : 'rgba(239,68,68,0.05)'
+        : darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)';
+
     return (
         <View style={styles.field}>
             <AppText
                 style={[
                     styles.label,
                     {
-                        color: darkMode ? 'rgba(255,255,255,0.88)' : 'rgba(0,0,0,0.80)',
+                        color: error ? '#ef4444' : (darkMode ? 'rgba(255,255,255,0.88)' : 'rgba(0,0,0,0.80)'),
                         fontWeight: '500',
                     },
                 ]}
@@ -309,7 +408,7 @@ function Field({
                             {
                                 borderColor,
                                 color: darkMode ? '#ffffff' : colors.text,
-                                backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                                backgroundColor,
                             },
                         ]}
                         placeholderTextColor={darkMode ? 'rgba(255,255,255,0.40)' : 'rgba(0,0,0,0.40)'}
@@ -335,8 +434,8 @@ const styles = StyleSheet.create({
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
-        paddingTop: 32,          // reduced
-        paddingBottom: 60,       // reduced
+        paddingTop: 32,
+        paddingBottom: 60,
         justifyContent: 'center',
     },
 
@@ -346,16 +445,16 @@ const styles = StyleSheet.create({
 
     card: {
         borderRadius: 24,
-        padding: 24,             // reduced from 28
+        padding: 24,
         borderWidth: 1,
     },
 
     field: {
-        marginBottom: 20,        // reduced from 28
+        marginBottom: 20,
     },
 
     label: {
-        marginBottom: 6,         // reduced from 8
+        marginBottom: 6,
         fontSize: 14.5,
         fontWeight: '500',
     },
@@ -363,7 +462,7 @@ const styles = StyleSheet.create({
     inputWrapper: { position: 'relative' },
 
     input: {
-        height: 54,              // reduced from 58
+        height: 54,
         borderWidth: 1.5,
         borderRadius: 14,
         paddingLeft: 48,
@@ -374,8 +473,8 @@ const styles = StyleSheet.create({
 
     inputIconLeft: {
         position: 'absolute',
-        left: 14,                // adjusted
-        top: 16,                 // adjusted for height 54
+        left: 14,
+        top: 16,
         zIndex: 1,
     },
 
@@ -393,24 +492,93 @@ const styles = StyleSheet.create({
         fontWeight: '500',
     },
 
+    infoBox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        padding: 16,
+        borderRadius: 14,
+        borderWidth: 1,
+        marginVertical: 16,
+    },
+
     infoText: {
-        fontSize: 14,
-        textAlign: 'center',
-        lineHeight: 20,
-        marginVertical: 20,      // reduced from 28
+        flex: 1,
+        fontSize: 13.5,
+        lineHeight: 18,
     },
 
     successContainer: {
         alignItems: 'center',
-        paddingVertical: 16,     // reduced
+        paddingVertical: 8,
+    },
+
+    successIcon: {
+        width: 100,
+        height: 100,
+        borderRadius: 50,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 20,
+    },
+
+    successTitle: {
+        fontSize: 24,
+        fontWeight: '700',
+        textAlign: 'center',
+        marginBottom: 8,
+    },
+
+    successMessage: {
+        fontSize: 15,
+        textAlign: 'center',
+        marginBottom: 12,
+    },
+
+    emailChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 20,
+        borderWidth: 1,
+        marginBottom: 20,
+    },
+
+    emailText: {
+        fontSize: 16,
+        fontWeight: '600',
+    },
+
+    successNote: {
+        fontSize: 13,
+        textAlign: 'center',
+        lineHeight: 18,
+        marginBottom: 28,
+        paddingHorizontal: 20,
+    },
+
+    successActions: {
+        width: '100%',
+        gap: 12,
+    },
+
+    resendButton: {
+        marginBottom: 8,
+    },
+
+    backButton: {
+        marginTop: 4,
     },
 
     backLink: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        marginTop: 20,           // reduced from 28
+        marginTop: 20,
         paddingVertical: 10,
+        gap: 8,
     },
 
     backLinkText: {
@@ -420,7 +588,7 @@ const styles = StyleSheet.create({
 
     footer: {
         textAlign: 'center',
-        marginTop: 32,           // reduced from 40
+        marginTop: 32,
         fontSize: 12.5,
         opacity: 0.65,
         letterSpacing: 0.3,

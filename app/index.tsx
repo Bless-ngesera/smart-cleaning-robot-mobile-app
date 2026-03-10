@@ -1,24 +1,63 @@
+// app/index.tsx
+
 import { useEffect, useState } from "react";
 import { useRouter } from "expo-router";
-import "./global.css";
+import { supabase } from "@/src/services/supabase";
+import { View, ActivityIndicator } from "react-native";
 
 export default function Index() {
     const router = useRouter();
-    const [ready, setReady] = useState(false);
+    const [isReady, setIsReady] = useState(false);
 
     useEffect(() => {
-        const timeout = setTimeout(() => {
-            setReady(true);
-        }, 0); // wait for layout to mount
-
-        return () => clearTimeout(timeout);
+        checkInitialRoute();
     }, []);
 
-    useEffect(() => {
-        if (ready) {
-            router.replace("/LoginScreen");
+    const checkInitialRoute = async () => {
+        try {
+            // Check for existing session
+            const { data: { session } } = await supabase.auth.getSession();
+
+            let initialRoute = '/LoginScreen';
+
+            if (session) {
+                // Check if email is verified
+                if (session.user.email_confirmed_at) {
+                    initialRoute = '/(tabs)/01_DashboardScreen';
+                } else {
+                    initialRoute = '/verified-account';
+                }
+            }
+
+            // Small delay to ensure navigation is ready
+            setTimeout(() => {
+                router.replace(initialRoute);
+                setIsReady(true);
+            }, 100);
+
+        } catch (error) {
+            console.error('Error checking auth session:', error);
+            // On error, default to login screen
+            setTimeout(() => {
+                router.replace('/LoginScreen');
+                setIsReady(true);
+            }, 100);
         }
-    }, [ready]);
+    };
+
+    // Show loading indicator while determining route
+    if (!isReady) {
+        return (
+            <View style={{
+                flex: 1,
+                justifyContent: 'center',
+                alignItems: 'center',
+                backgroundColor: '#000'
+            }}>
+                <ActivityIndicator size="large" color="#6366f1" />
+            </View>
+        );
+    }
 
     return null;
 }

@@ -1,16 +1,22 @@
 {
   "expo": {
-    "name": "smart-cleaning-robot-mobile-app",
+    "name": "Smart Cleaner Pro",
     "slug": "smart-cleaning-robot-mobile-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "smartcleaningrobotmobileapp",
+    "scheme": "smartcleaner",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.yourname.smartcleaningrobot",
+      "bundleIdentifier": "com.yourname.smartcleanerpro",
+      "buildNumber": "1.0.0",
       "infoPlist": {
         "UIBackgroundModes": [
           "bluetooth-central",
@@ -18,7 +24,12 @@
         ],
         "NSBluetoothAlwaysUsageDescription": "This app needs Bluetooth to connect and control your smart cleaning robot.",
         "NSBluetoothPeripheralUsageDescription": "This app needs Bluetooth to connect and control your smart cleaning robot.",
-        "NSLocalNetworkUsageDescription": "This app needs local network access to communicate with your robot over Wi-Fi."
+        "NSLocalNetworkUsageDescription": "This app needs local network access to communicate with your robot over Wi-Fi.",
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": ["smartcleaner"]
+          }
+        ]
       }
     },
     "android": {
@@ -28,7 +39,8 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "package": "com.yourname.smartcleaningrobot",
+      "package": "com.yourname.smartcleanerpro",
+      "versionCode": 1,
       "permissions": [
         "android.permission.BLUETOOTH",
         "android.permission.BLUETOOTH_ADMIN",
@@ -44,20 +56,27 @@
       "intentFilters": [
         {
           "action": "VIEW",
+          "autoVerify": true,
           "data": [
             {
-              "scheme": "smartcleaningrobot"
+              "scheme": "https",
+              "host": "*.smartcleanerpro.com",
+              "pathPrefix": "/reset-password"
+            },
+            {
+              "scheme": "https",
+              "host": "*.smartcleanerpro.com",
+              "pathPrefix": "/verified-account"
+            },
+            {
+              "scheme": "smartcleaner"
             }
           ],
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
+          "category": ["BROWSABLE", "DEFAULT"]
         }
       ]
     },
     "web": {
-      "output": "static",
       "favicon": "./assets/images/favicon.png",
       "bundler": "metro"
     },
@@ -69,10 +88,7 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
-          "dark": {
-            "backgroundColor": "#000000"
-          }
+          "backgroundColor": "#ffffff"
         }
       ],
       "expo-font",
@@ -81,13 +97,17 @@
         "react-native-ble-plx",
         {
           "isBackgroundEnabled": true,
-          "modes": [
-            "central"
-          ],
-          "bluetoothAlwaysPermission": "Allow Smart Cleaning Robot to connect to and control your cleaning device via Bluetooth."
+          "modes": ["central", "peripheral"],
+          "bluetoothAlwaysPermission": "Allow Smart Cleaner Pro to connect to and control your cleaning device via Bluetooth."
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-barcode-scanner",
+        {
+          "cameraPermission": "Allow Smart Cleaner Pro to access your camera to scan robot QR codes."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

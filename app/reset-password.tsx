@@ -1,4 +1,4 @@
-// app/SignupScreen.tsx
+// app/reset-password.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
@@ -23,65 +23,69 @@ import Button from '../src/components/Button';
 import AppText from '../src/components/AppText';
 import { useThemeContext } from '@/src/context/ThemeContext';
 import authService from '@/src/services/auth';
-import { supabase } from '@/src/services/supabase'; // ← ADD THIS IMPORT
 
 const { width } = Dimensions.get('window');
 const isLargeScreen = width >= 768;
 
-export default function SignupScreen() {
+export default function ResetPasswordScreen() {
     const { colors, darkMode } = useThemeContext();
 
-    const [fullName, setFullName] = useState('');
-    const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-    const [acceptedTerms, setAcceptedTerms] = useState(false);
+    const [isValidSession, setIsValidSession] = useState(true);
+    const [checkingSession, setCheckingSession] = useState(true);
 
     // Error states
-    const [nameError, setNameError] = useState('');
-    const [emailError, setEmailError] = useState('');
     const [passwordError, setPasswordError] = useState('');
     const [confirmError, setConfirmError] = useState('');
 
     // Animation refs
-    const nameShake = useRef(new Animated.Value(0)).current;
-    const emailShake = useRef(new Animated.Value(0)).current;
     const passwordShake = useRef(new Animated.Value(0)).current;
     const confirmShake = useRef(new Animated.Value(0)).current;
 
     // Input refs
-    const emailRef = useRef<TextInput>(null);
-    const passRef = useRef<TextInput>(null);
     const confirmRef = useRef<TextInput>(null);
 
-    // Check for existing session on mount
+    // Validation state
+    const [isValid, setIsValid] = useState(false);
+
+    // Check if we have a valid session (user clicked email link)
     useEffect(() => {
-        let mounted = true;
-
-        const checkSession = async () => {
-            const { session } = await authService.getSession();
-            if (mounted && session?.user?.email_confirmed_at) {
-                router.replace('/(tabs)/01_DashboardScreen');
-            }
-        };
-
         checkSession();
-
-        // This line needs the supabase import
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-            if (mounted && session?.user?.email_confirmed_at) {
-                router.replace('/(tabs)/01_DashboardScreen');
-            }
-        });
-
-        return () => {
-            mounted = false;
-            subscription.unsubscribe();
-        };
     }, []);
+
+    // Validate password on change
+    useEffect(() => {
+        validateForm();
+    }, [password, confirmPassword]);
+
+    const checkSession = async () => {
+        try {
+            const { session } = await authService.getSession();
+
+            if (!session) {
+                setIsValidSession(false);
+                Alert.alert(
+                    'Invalid or Expired Link',
+                    'This password reset link is invalid or has expired. Please request a new one.',
+                    [
+                        {
+                            text: 'Go to Forgot Password',
+                            onPress: () => router.replace('/ForgotPasswordScreen'),
+                        }
+                    ]
+                );
+            }
+        } catch (error) {
+            console.error('Session check error:', error);
+            setIsValidSession(false);
+        } finally {
+            setCheckingSession(false);
+        }
+    };
 
     const shakeField = (anim: Animated.Value) => {
         Animated.sequence([
@@ -93,68 +97,35 @@ export default function SignupScreen() {
         ]).start();
     };
 
-    const validateForm = (): boolean => {
-        let isValid = true;
-        setNameError('');
-        setEmailError('');
+    const validateForm = () => {
+        let valid = true;
         setPasswordError('');
         setConfirmError('');
 
-        // Full name validation
-        if (!fullName.trim()) {
-            setNameError('Full name is required');
-            shakeField(nameShake);
-            isValid = false;
-        } else if (fullName.trim().length < 2) {
-            setNameError('Name must be at least 2 characters');
-            shakeField(nameShake);
-            isValid = false;
-        }
-
-        // Email validation using authService
-        if (!email.trim()) {
-            setEmailError('Email is required');
-            shakeField(emailShake);
-            isValid = false;
-        } else if (!authService.validateEmail(email.trim())) {
-            setEmailError('Enter a valid email address');
-            shakeField(emailShake);
-            isValid = false;
-        }
-
         // Password validation using authService
         const passwordValidation = authService.validatePassword(password);
-        if (!password.trim()) {
+        if (!password) {
             setPasswordError('Password is required');
-            shakeField(passwordShake);
-            isValid = false;
+            valid = false;
         } else if (!passwordValidation.isValid) {
             setPasswordError(passwordValidation.errors[0]);
-            shakeField(passwordShake);
-            isValid = false;
+            valid = false;
         }
 
         // Confirm password validation
-        if (!confirmPassword.trim()) {
+        if (!confirmPassword) {
             setConfirmError('Please confirm your password');
-            shakeField(confirmShake);
-            isValid = false;
+            valid = false;
         } else if (confirmPassword !== password) {
             setConfirmError('Passwords do not match');
-            shakeField(confirmShake);
-            isValid = false;
+            valid = false;
         }
 
-        // Terms acceptance
-        if (!acceptedTerms) {
-            Alert.alert('Terms Required', 'Please accept the Terms of Service and Privacy Policy to continue.');
-            isValid = false;
-        }
-
-        return isValid;
+        setIsValid(valid);
+        return valid;
     };
 
-    const handleSignUp = async () => {
+    const handleResetPassword = async () => {
         if (loading) return;
 
         // Haptic feedback
@@ -162,16 +133,17 @@ export default function SignupScreen() {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
 
-        if (!validateForm()) return;
+        if (!validateForm()) {
+            // Shake fields that have errors
+            if (passwordError) shakeField(passwordShake);
+            if (confirmError) shakeField(confirmShake);
+            return;
+        }
 
         setLoading(true);
 
         try {
-            const response = await authService.signUp(
-                email.trim(),
-                password,
-                fullName.trim()
-            );
+            const response = await authService.resetPassword(password);
 
             if (response.success) {
                 // Success haptic
@@ -179,67 +151,85 @@ export default function SignupScreen() {
                     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                 }
 
-                // Check if email confirmation is required
-                if (response.data?.needsEmailConfirmation) {
-                    Alert.alert(
-                        'Verify Your Email',
-                        'We\'ve sent a confirmation link to your email. Please check your inbox and click the link to verify your account.',
-                        [
-                            {
-                                text: 'OK',
-                                onPress: () => router.replace('/LoginScreen'),
-                            }
-                        ]
-                    );
-                } else {
-                    // If no confirmation needed (unlikely), go to dashboard
-                    router.replace('/(tabs)/01_DashboardScreen');
-                }
+                Alert.alert(
+                    'Password Updated',
+                    'Your password has been changed successfully. Please log in with your new password.',
+                    [
+                        {
+                            text: 'Go to Login',
+                            onPress: () => router.replace('/LoginScreen'),
+                        }
+                    ]
+                );
             } else {
                 throw new Error(response.error?.message);
             }
         } catch (err: any) {
-            console.error('Signup error:', err);
+            console.error('Reset password error:', err);
 
             // Error haptic
             if (Platform.OS === 'ios') {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             }
 
-            // Handle specific error cases
-            const errorMessage = err.message || 'Unable to create account. Please try again.';
-
-            if (errorMessage.includes('already registered')) {
-                setEmailError('This email is already registered');
-                shakeField(emailShake);
-            } else if (errorMessage.includes('password')) {
-                setPasswordError(errorMessage);
-                shakeField(passwordShake);
-            }
-
-            Alert.alert('Signup Failed', errorMessage);
+            Alert.alert('Error', err.message || 'Failed to reset password. Please try again.');
         } finally {
             setLoading(false);
         }
     };
 
-    const handleLogin = () => {
+    const handleBackToLogin = () => {
         if (Platform.OS === 'ios') {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
-        router.push('/LoginScreen');
+        router.replace('/LoginScreen');
     };
 
-    const toggleTerms = () => {
-        if (Platform.OS === 'ios') {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        }
-        setAcceptedTerms(!acceptedTerms);
+    // Password strength indicators
+    const getPasswordStrength = () => {
+        if (!password) return null;
+
+        const hasUpperCase = /[A-Z]/.test(password);
+        const hasLowerCase = /[a-z]/.test(password);
+        const hasNumbers = /\d/.test(password);
+        const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+        const isLongEnough = password.length >= 8;
+
+        const strength = [hasUpperCase, hasLowerCase, hasNumbers, hasSpecialChar, isLongEnough]
+            .filter(Boolean).length;
+
+        if (strength <= 2) return { label: 'Weak', color: '#ef4444' };
+        if (strength <= 4) return { label: 'Medium', color: '#f59e0b' };
+        return { label: 'Strong', color: '#10b981' };
     };
 
-    if (loading) {
-        return <Loader message="Creating your account..." />;
+    if (checkingSession) {
+        return <Loader message="Verifying reset link..." />;
     }
+
+    if (!isValidSession) {
+        return (
+            <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+                <View style={styles.centered}>
+                    <Ionicons name="alert-circle-outline" size={64} color="#ef4444" />
+                    <AppText style={[styles.errorTitle, { color: darkMode ? '#ffffff' : colors.text }]}>
+                        Invalid Reset Link
+                    </AppText>
+                    <AppText style={[styles.errorMessage, { color: darkMode ? 'rgba(255,255,255,0.7)' : colors.textSecondary }]}>
+                        This password reset link has expired or is invalid.
+                    </AppText>
+                    <Button
+                        title="Request New Link"
+                        onPress={() => router.replace('/ForgotPasswordScreen')}
+                        variant="primary"
+                        style={styles.errorButton}
+                    />
+                </View>
+            </SafeAreaView>
+        );
+    }
+
+    const passwordStrength = getPasswordStrength();
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -258,8 +248,8 @@ export default function SignupScreen() {
                 >
                     <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
                         <Header
-                            title="Create Account"
-                            subtitle="Join Smart Cleaner Pro today"
+                            title="Create New Password"
+                            subtitle="Enter your new password below"
                         />
 
                         <View style={[styles.card, {
@@ -267,44 +257,9 @@ export default function SignupScreen() {
                             borderColor: darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
                             borderWidth: 1
                         }]}>
+                            {/* New Password Field */}
                             <Field
-                                label="Full Name"
-                                value={fullName}
-                                onChangeText={(t: string) => {
-                                    setFullName(t);
-                                    if (nameError) setNameError('');
-                                }}
-                                error={nameError}
-                                icon="person-outline"
-                                colors={colors}
-                                darkMode={darkMode}
-                                shake={nameShake}
-                                returnKeyType="next"
-                                onSubmitEditing={() => emailRef.current?.focus()}
-                                autoCapitalize="words"
-                            />
-
-                            <Field
-                                label="Email Address"
-                                value={email}
-                                onChangeText={(t: string) => {
-                                    setEmail(t);
-                                    if (emailError) setEmailError('');
-                                }}
-                                error={emailError}
-                                icon="mail-outline"
-                                colors={colors}
-                                darkMode={darkMode}
-                                shake={emailShake}
-                                keyboardType="email-address"
-                                autoCapitalize="none"
-                                returnKeyType="next"
-                                onSubmitEditing={() => passRef.current?.focus()}
-                                refInput={emailRef}
-                            />
-
-                            <Field
-                                label="Password"
+                                label="New Password"
                                 value={password}
                                 onChangeText={(t: string) => {
                                     setPassword(t);
@@ -327,9 +282,25 @@ export default function SignupScreen() {
                                 }
                                 returnKeyType="next"
                                 onSubmitEditing={() => confirmRef.current?.focus()}
-                                refInput={passRef}
                             />
 
+                            {/* Password Strength Indicator */}
+                            {password.length > 0 && passwordStrength && (
+                                <View style={styles.strengthContainer}>
+                                    <View style={styles.strengthBarContainer}>
+                                        <View style={[styles.strengthBar, {
+                                            width: passwordStrength.label === 'Weak' ? '33%' :
+                                                passwordStrength.label === 'Medium' ? '66%' : '100%',
+                                            backgroundColor: passwordStrength.color,
+                                        }]} />
+                                    </View>
+                                    <AppText style={[styles.strengthText, { color: passwordStrength.color }]}>
+                                        {passwordStrength.label} password
+                                    </AppText>
+                                </View>
+                            )}
+
+                            {/* Confirm Password Field */}
                             <Field
                                 label="Confirm Password"
                                 value={confirmPassword}
@@ -353,93 +324,92 @@ export default function SignupScreen() {
                                     </TouchableOpacity>
                                 }
                                 returnKeyType="done"
-                                onSubmitEditing={handleSignUp}
+                                onSubmitEditing={handleResetPassword}
                                 refInput={confirmRef}
                             />
 
-                            {/* Password strength indicator */}
-                            {password.length > 0 && password.length < 6 && (
-                                <View style={styles.passwordHint}>
-                                    <Ionicons name="information-circle-outline" size={16} color="#F59E0B" />
-                                    <AppText style={styles.passwordHintText}>
-                                        Use at least 6 characters with uppercase letters and numbers for a stronger password
-                                    </AppText>
-                                </View>
-                            )}
-
-                            {/* Terms and Conditions with Checkbox */}
-                            <TouchableOpacity
-                                style={styles.termsContainer}
-                                onPress={toggleTerms}
-                                activeOpacity={0.7}
-                            >
-                                <View style={[styles.checkbox, { borderColor: acceptedTerms ? colors.primary : (darkMode ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)') }]}>
-                                    {acceptedTerms && (
-                                        <Ionicons name="checkmark" size={16} color={colors.primary} />
-                                    )}
-                                </View>
-                                <AppText
-                                    style={[
-                                        styles.termsText,
-                                        { color: darkMode ? 'rgba(255,255,255,0.75)' : 'rgba(0,0,0,0.70)' },
-                                    ]}
-                                >
-                                    I agree to the{' '}
-                                    <AppText style={[styles.termsLink, { color: colors.primary }]}>
-                                        Terms of Service
-                                    </AppText>
-                                    {' and '}
-                                    <AppText style={[styles.termsLink, { color: colors.primary }]}>
-                                        Privacy Policy
-                                    </AppText>
+                            {/* Password Requirements */}
+                            <View style={styles.requirementsContainer}>
+                                <AppText style={[styles.requirementsTitle, { color: darkMode ? 'rgba(255,255,255,0.8)' : colors.textSecondary }]}>
+                                    Password must contain:
                                 </AppText>
-                            </TouchableOpacity>
+
+                                <View style={styles.requirementRow}>
+                                    <Ionicons
+                                        name={password.length >= 6 ? 'checkmark-circle' : 'ellipse-outline'}
+                                        size={18}
+                                        color={password.length >= 6 ? '#10B981' : (darkMode ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)')}
+                                    />
+                                    <AppText style={[styles.requirementText, {
+                                        color: password.length >= 6 ? '#10B981' : (darkMode ? 'rgba(255,255,255,0.5)' : colors.textSecondary)
+                                    }]}>
+                                        At least 6 characters
+                                    </AppText>
+                                </View>
+
+                                <View style={styles.requirementRow}>
+                                    <Ionicons
+                                        name={/[A-Z]/.test(password) ? 'checkmark-circle' : 'ellipse-outline'}
+                                        size={18}
+                                        color={/[A-Z]/.test(password) ? '#10B981' : (darkMode ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)')}
+                                    />
+                                    <AppText style={[styles.requirementText, {
+                                        color: /[A-Z]/.test(password) ? '#10B981' : (darkMode ? 'rgba(255,255,255,0.5)' : colors.textSecondary)
+                                    }]}>
+                                        One uppercase letter
+                                    </AppText>
+                                </View>
+
+                                <View style={styles.requirementRow}>
+                                    <Ionicons
+                                        name={/[0-9]/.test(password) ? 'checkmark-circle' : 'ellipse-outline'}
+                                        size={18}
+                                        color={/[0-9]/.test(password) ? '#10B981' : (darkMode ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)')}
+                                    />
+                                    <AppText style={[styles.requirementText, {
+                                        color: /[0-9]/.test(password) ? '#10B981' : (darkMode ? 'rgba(255,255,255,0.5)' : colors.textSecondary)
+                                    }]}>
+                                        One number
+                                    </AppText>
+                                </View>
+
+                                <View style={styles.requirementRow}>
+                                    <Ionicons
+                                        name={password === confirmPassword && password.length > 0 ? 'checkmark-circle' : 'ellipse-outline'}
+                                        size={18}
+                                        color={password === confirmPassword && password.length > 0 ? '#10B981' : (darkMode ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)')}
+                                    />
+                                    <AppText style={[styles.requirementText, {
+                                        color: password === confirmPassword && password.length > 0 ? '#10B981' : (darkMode ? 'rgba(255,255,255,0.5)' : colors.textSecondary)
+                                    }]}>
+                                        Passwords match
+                                    </AppText>
+                                </View>
+                            </View>
 
                             <Button
-                                title="Create Account"
-                                icon="person-add-outline"
-                                onPress={handleSignUp}
+                                title="Reset Password"
+                                icon="lock-open-outline"
+                                onPress={handleResetPassword}
                                 variant="primary"
                                 fullWidth
                                 loading={loading}
-                                disabled={loading || !fullName || !email || !password || !confirmPassword || !acceptedTerms}
-                                style={{ marginTop: 16 }}
+                                disabled={!isValid || loading}
+                                style={{ marginTop: 24 }}
                             />
-
-                            <View style={styles.divider}>
-                                <View
-                                    style={[
-                                        styles.line,
-                                        { backgroundColor: darkMode ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.14)' },
-                                    ]}
-                                />
-                                <AppText
-                                    style={[
-                                        styles.orText,
-                                        { color: darkMode ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)' },
-                                    ]}
-                                >
-                                    OR
-                                </AppText>
-                                <View
-                                    style={[
-                                        styles.line,
-                                        { backgroundColor: darkMode ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.14)' },
-                                    ]}
-                                />
-                            </View>
 
                             <TouchableOpacity
                                 style={styles.backLink}
-                                onPress={handleLogin}
+                                onPress={handleBackToLogin}
                             >
+                                <Ionicons name="arrow-back-outline" size={20} color={colors.primary} />
                                 <AppText
                                     style={[
                                         styles.backLinkText,
                                         { color: colors.primary },
                                     ]}
                                 >
-                                    Already have an account? Sign in
+                                    Back to Login
                                 </AppText>
                             </TouchableOpacity>
                         </View>
@@ -565,6 +535,13 @@ const styles = StyleSheet.create({
 
     largeWrapper: { maxWidth: 480 },
 
+    centered: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 32,
+    },
+
     card: {
         borderRadius: 24,
         padding: 24,
@@ -588,7 +565,7 @@ const styles = StyleSheet.create({
         borderWidth: 1.5,
         borderRadius: 14,
         paddingLeft: 48,
-        paddingRight: 52,
+        paddingRight: 50,
         fontSize: 16,
         fontWeight: '400',
     },
@@ -614,80 +591,82 @@ const styles = StyleSheet.create({
         fontWeight: '500',
     },
 
-    passwordHint: {
+    errorTitle: {
+        fontSize: 22,
+        fontWeight: '700',
+        textAlign: 'center',
+        marginTop: 20,
+        marginBottom: 12,
+    },
+
+    errorMessage: {
+        fontSize: 15,
+        textAlign: 'center',
+        marginBottom: 24,
+        lineHeight: 22,
+    },
+
+    errorButton: {
+        minWidth: 200,
+    },
+
+    strengthContainer: {
+        marginTop: -8,
+        marginBottom: 16,
+    },
+
+    strengthBarContainer: {
+        height: 4,
+        backgroundColor: 'rgba(0,0,0,0.1)',
+        borderRadius: 2,
+        marginBottom: 6,
+    },
+
+    strengthBar: {
+        height: 4,
+        borderRadius: 2,
+    },
+
+    strengthText: {
+        fontSize: 12,
+        fontWeight: '600',
+        textAlign: 'right',
+    },
+
+    requirementsContainer: {
+        marginTop: 8,
+        marginBottom: 8,
+        gap: 8,
+    },
+
+    requirementsTitle: {
+        fontSize: 13,
+        fontWeight: '500',
+        marginBottom: 4,
+    },
+
+    requirementRow: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
-        marginTop: -8,
-        marginBottom: 16,
-        paddingHorizontal: 4,
     },
 
-    passwordHintText: {
-        flex: 1,
-        fontSize: 12,
-        color: '#F59E0B',
-        lineHeight: 16,
-    },
-
-    termsContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-        marginVertical: 20,
-        paddingHorizontal: 4,
-    },
-
-    checkbox: {
-        width: 24,
-        height: 24,
-        borderRadius: 6,
-        borderWidth: 2,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-
-    termsText: {
-        flex: 1,
-        fontSize: 14,
-        lineHeight: 20,
-    },
-
-    termsLink: {
-        fontSize: 14,
-        fontWeight: '600',
-        textDecorationLine: 'underline',
-    },
-
-    divider: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginVertical: 24,
-    },
-
-    line: {
-        flex: 1,
-        height: 1.2,
-    },
-
-    orText: {
-        fontSize: 14,
-        fontWeight: '500',
-        marginHorizontal: 18,
+    requirementText: {
+        fontSize: 13,
     },
 
     backLink: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        marginTop: 8,
+        marginTop: 20,
         paddingVertical: 10,
+        gap: 8,
     },
 
     backLinkText: {
         fontSize: 16,
         fontWeight: '600',
-        textDecorationLine: 'underline',
     },
 
     footer: {
