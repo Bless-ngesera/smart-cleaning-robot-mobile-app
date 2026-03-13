@@ -1,5 +1,5 @@
-// app/(tabs)/settings/account.tsx  (or wherever this file lives)
-import React, { useState, useEffect } from 'react';
+// app/(tabs)/settings/account.tsx
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View,
     TextInput,
@@ -9,25 +9,74 @@ import {
     TouchableOpacity,
     Dimensions,
     Platform,
+    Animated,
+    Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import Animated, { FadeInDown } from 'react-native-reanimated';
+import Animated_, { FadeInDown } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
-import DateTimePicker from '@react-native-community/datetimepicker';
 
 import Loader from '@/src/components/Loader';
 import AppText from '@/src/components/AppText';
 import Button from '@/src/components/Button';
 import { useThemeContext } from '@/src/context/ThemeContext';
+import authService from '@/src/services/auth';
 import { supabase } from '@/src/services/supabase';
+import { useAuth } from '@/src/context/AuthContext';
 import { router } from 'expo-router';
 
-const AnimatedCard = Animated.createAnimatedComponent(View);
+const AnimatedCard = Animated_.createAnimatedComponent(View);
+
+const { width } = Dimensions.get('window');
+const isLargeScreen = width >= 768;
+
+// Password requirements (same as SignupScreen)
+interface PasswordRequirement {
+    id: string;
+    label: string;
+    validator: (password: string) => boolean;
+}
+
+const passwordRequirements: PasswordRequirement[] = [
+    {
+        id: 'length',
+        label: 'At least 6 characters',
+        validator: (pwd) => pwd.length >= 6,
+    },
+    {
+        id: 'uppercase',
+        label: 'At least one uppercase letter',
+        validator: (pwd) => /[A-Z]/.test(pwd),
+    },
+    {
+        id: 'lowercase',
+        label: 'At least one lowercase letter',
+        validator: (pwd) => /[a-z]/.test(pwd),
+    },
+    {
+        id: 'number',
+        label: 'At least one number',
+        validator: (pwd) => /[0-9]/.test(pwd),
+    },
+    {
+        id: 'special',
+        label: 'At least one special character (!@#$%^&*)',
+        validator: (pwd) => /[!@#$%^&*(),.?":{}|<>]/.test(pwd),
+    },
+];
 
 export default function AccountSettings() {
     const { colors, darkMode } = useThemeContext();
+    const { user } = useAuth();
 
+    // Design tokens - FIXED: defined inside component
+    const cardBg = darkMode ? 'rgba(255,255,255,0.05)' : '#ffffff';
+    const cardBorder = darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)';
+    const textPrimary = darkMode ? '#ffffff' : colors.text;
+    const textSecondary = darkMode ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.60)';
+
+    // Form state
     const [fullName, setFullName] = useState('');
     const [email, setEmail] = useState('');
     const [currentPassword, setCurrentPassword] = useState('');
@@ -35,31 +84,142 @@ export default function AccountSettings() {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [deletePassword, setDeletePassword] = useState('');
 
-    const [show, setShow] = useState({ current: false, new: false, confirm: false, delete: false });
+    // Visibility toggles
+    const [show, setShow] = useState({
+        current: false,
+        new: false,
+        confirm: false,
+        delete: false
+    });
 
+    // Focus states for password warnings
+    const [isNewPasswordFocused, setIsNewPasswordFocused] = useState(false);
+    const [isConfirmPasswordFocused, setIsConfirmPasswordFocused] = useState(false);
+
+    // Warning visibility
+    const [showPasswordWarning, setShowPasswordWarning] = useState(false);
+    const warningAnim = useRef(new Animated.Value(0)).current;
+    const warningTimerRef = useRef<NodeJS.Timeout | null>(null); // FIXED: proper Timeout type
+
+    // Loading states
     const [loading, setLoading] = useState(true);
     const [savingName, setSavingName] = useState(false);
     const [savingPassword, setSavingPassword] = useState(false);
     const [deleting, setDeleting] = useState(false);
 
-    // Same as Dashboard
-    const { width } = Dimensions.get('window');
-    const isLargeScreen = width >= 768;
+    // Error states
+    const [newPasswordError, setNewPasswordError] = useState('');
+    const [confirmError, setConfirmError] = useState('');
 
-    // Design tokens matching Dashboard
-    const cardBg = darkMode ? 'rgba(255,255,255,0.05)' : '#ffffff';
-    const cardBorder = darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)';
-    const textPrimary = darkMode ? '#ffffff' : colors.text;
-    const textSecondary = darkMode ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.60)';
-    const dividerColor = darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)';
+    // Animation refs for shake effects
+    const newPasswordShake = useRef(new Animated.Value(0)).current;
+    const confirmShake = useRef(new Animated.Value(0)).current;
 
+    // Mounted ref for cleanup
+    const mountedRef = useRef(true);
+
+    // Password requirements status
+    const getRequirementStatus = useCallback((pwd: string) => {
+        return passwordRequirements.map(req => ({
+            ...req,
+            met: req.validator(pwd),
+        }));
+    }, []);
+
+    const areAllRequirementsMet = useCallback((pwd: string) => {
+        return passwordRequirements.every(req => req.validator(pwd));
+    }, []);
+
+    const requirementStatus = getRequirementStatus(newPassword);
+    const allRequirementsMet = areAllRequirementsMet(newPassword);
+
+    /* ---------------------------------------------------------- */
+    /* WARNING VISIBILITY MANAGEMENT (same as SignupScreen) */
+    /* ---------------------------------------------------------- */
+    const showWarning = useCallback(() => {
+        if (warningTimerRef.current) {
+            clearTimeout(warningTimerRef.current);
+            warningTimerRef.current = null;
+        }
+
+        setShowPasswordWarning(true);
+        Animated.timing(warningAnim, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+        }).start();
+
+        warningTimerRef.current = setTimeout(() => {
+            if (mountedRef.current) {
+                Animated.timing(warningAnim, {
+                    toValue: 0,
+                    duration: 300,
+                    useNativeDriver: true,
+                }).start(() => {
+                    setShowPasswordWarning(false);
+                });
+            }
+        }, 10000);
+    }, []);
+
+    const hideWarning = useCallback(() => {
+        if (warningTimerRef.current) {
+            clearTimeout(warningTimerRef.current);
+            warningTimerRef.current = null;
+        }
+
+        Animated.timing(warningAnim, {
+            toValue: 0,
+            duration: 300,
+            useNativeDriver: true,
+        }).start(() => {
+            setShowPasswordWarning(false);
+        });
+    }, []);
+
+    // Check requirements and show warning if not met
+    useEffect(() => {
+        if (newPassword && !allRequirementsMet && isNewPasswordFocused) {
+            showWarning();
+        } else if (allRequirementsMet) {
+            hideWarning();
+        }
+    }, [newPassword, allRequirementsMet, isNewPasswordFocused]);
+
+    // Cleanup timers on unmount
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+            if (warningTimerRef.current) {
+                clearTimeout(warningTimerRef.current);
+            }
+        };
+    }, []);
+
+    /* ---------------------------------------------------------- */
+    /* SHAKE ANIMATION */
+    /* ---------------------------------------------------------- */
+    const shakeField = useCallback((anim: Animated.Value) => {
+        Animated.sequence([
+            Animated.timing(anim, { toValue: 10, duration: 60, useNativeDriver: true }),
+            Animated.timing(anim, { toValue: -10, duration: 60, useNativeDriver: true }),
+            Animated.timing(anim, { toValue: 5, duration: 50, useNativeDriver: true }),
+            Animated.timing(anim, { toValue: -5, duration: 50, useNativeDriver: true }),
+            Animated.timing(anim, { toValue: 0, duration: 60, useNativeDriver: true }),
+        ]).start();
+    }, []);
+
+    /* ---------------------------------------------------------- */
+    /* LOAD USER DATA */
+    /* ---------------------------------------------------------- */
     useEffect(() => {
         const loadUser = async () => {
             try {
-                const { data: { user } } = await supabase.auth.getUser();
-                if (user) {
-                    setEmail(user.email || 'No email');
-                    setFullName((user.user_metadata?.full_name as string) || '');
+                const { user: currentUser } = await authService.getCurrentUser();
+                if (currentUser) {
+                    setEmail(currentUser.email || 'No email');
+                    setFullName(currentUser.user_metadata?.full_name || '');
                 } else {
                     router.replace('/LoginScreen');
                 }
@@ -77,8 +237,13 @@ export default function AccountSettings() {
         if (Platform.OS !== 'web') Haptics.selectionAsync();
     };
 
+    /* ---------------------------------------------------------- */
+    /* SAVE NAME */
+    /* ---------------------------------------------------------- */
     const saveName = async () => {
-        if (!fullName.trim()) return Alert.alert('Error', 'Full name cannot be empty');
+        if (!fullName.trim()) {
+            return Alert.alert('Error', 'Full name cannot be empty');
+        }
         haptic();
         setSavingName(true);
         try {
@@ -94,42 +259,111 @@ export default function AccountSettings() {
         }
     };
 
-    const updatePassword = async () => {
-        if (!currentPassword) return Alert.alert('Error', 'Current password required');
-        if (newPassword.length < 6) return Alert.alert('Error', 'New password must be at least 6 characters');
-        if (newPassword !== confirmPassword) return Alert.alert('Error', 'Passwords do not match');
+    /* ---------------------------------------------------------- */
+    /* UPDATE PASSWORD - ENHANCED WITH VALIDATION */
+    /* ---------------------------------------------------------- */
+    const validatePasswordForm = useCallback((): boolean => {
+        let valid = true;
+        setNewPasswordError('');
+        setConfirmError('');
 
+        if (!currentPassword) {
+            Alert.alert('Error', 'Current password is required');
+            valid = false;
+        }
+
+        if (!newPassword) {
+            setNewPasswordError('New password is required');
+            shakeField(newPasswordShake);
+            valid = false;
+        } else if (!allRequirementsMet) {
+            setNewPasswordError('Please meet all password requirements');
+            shakeField(newPasswordShake);
+            showWarning();
+            valid = false;
+        }
+
+        if (!confirmPassword) {
+            setConfirmError('Please confirm your new password');
+            shakeField(confirmShake);
+            valid = false;
+        } else if (confirmPassword !== newPassword) {
+            setConfirmError('Passwords do not match');
+            shakeField(confirmShake);
+            valid = false;
+        }
+
+        return valid;
+    }, [currentPassword, newPassword, confirmPassword, allRequirementsMet, showWarning]);
+
+    const updatePassword = async () => {
         haptic();
+
+        if (!validatePasswordForm()) return;
+
         setSavingPassword(true);
+        Keyboard.dismiss();
+
         try {
-            // Verify current password
-            const { error: authError } = await supabase.auth.signInWithPassword({
-                email,
-                password: currentPassword,
-            });
-            if (authError) throw new Error('Current password is incorrect');
+            // Verify current password first
+            const signInResponse = await authService.signIn(email, currentPassword);
+
+            if (!signInResponse.success) {
+                throw new Error('Current password is incorrect');
+            }
 
             // Update password
-            const { error } = await supabase.auth.updateUser({ password: newPassword });
-            if (error) throw error;
+            const response = await authService.resetPassword(newPassword);
 
-            Alert.alert('Success', 'Password updated successfully');
+            if (!response.success) {
+                throw new Error(response.error?.message);
+            }
+
+            Alert.alert(
+                'Success',
+                'Password updated successfully. Please use your new password next time you log in.'
+            );
+
+            // Clear form
             setCurrentPassword('');
             setNewPassword('');
             setConfirmPassword('');
+            setNewPasswordError('');
+            setConfirmError('');
+            hideWarning();
+
         } catch (e: any) {
-            Alert.alert('Error', e.message || 'Failed to update password');
+            console.error('Password update error:', e);
+
+            // Handle specific error cases
+            if (e.message?.includes('same as the old password')) {
+                Alert.alert('Error', 'New password must be different from your current password.');
+            } else if (e.message?.includes('incorrect')) {
+                Alert.alert('Error', 'Current password is incorrect.');
+            } else if (e.message?.includes('weak')) {
+                setNewPasswordError('Password is too weak');
+                shakeField(newPasswordShake);
+                showWarning();
+                Alert.alert('Weak Password', 'Please choose a stronger password.');
+            } else {
+                Alert.alert('Error', e.message || 'Failed to update password');
+            }
         } finally {
             setSavingPassword(false);
         }
     };
 
+    /* ---------------------------------------------------------- */
+    /* DELETE ACCOUNT */
+    /* ---------------------------------------------------------- */
     const deleteAccount = async () => {
-        if (!deletePassword) return Alert.alert('Error', 'Password required');
+        if (!deletePassword) {
+            return Alert.alert('Error', 'Please enter your password to confirm');
+        }
 
         Alert.alert(
             'Delete Account',
-            'This action is permanent and cannot be undone. Are you sure?',
+            'This action is permanent and cannot be undone. All your data will be permanently removed.',
             [
                 { text: 'Cancel', style: 'cancel' },
                 {
@@ -138,32 +372,30 @@ export default function AccountSettings() {
                     onPress: async () => {
                         setDeleting(true);
                         haptic();
+
                         try {
-                            // Verify password
-                            const { error: authError } = await supabase.auth.signInWithPassword({
-                                email,
-                                password: deletePassword,
-                            });
-                            if (authError) throw new Error('Password incorrect');
+                            // Verify password first
+                            const signInResponse = await authService.signIn(email, deletePassword);
 
-                            // Attempt delete (note: client-side delete is restricted in Supabase)
-                            const { error: deleteError } = await supabase.auth.admin.deleteUser(
-                                (await supabase.auth.getUser()).data.user!.id
-                            );
-
-                            if (deleteError) {
-                                // Most common: permission denied
-                                throw new Error(
-                                    'Client-side account deletion is restricted for security. ' +
-                                    'Please contact support to delete your account.'
-                                );
+                            if (!signInResponse.success) {
+                                throw new Error('Password is incorrect');
                             }
 
-                            await supabase.auth.signOut();
-                            Alert.alert('Account Deleted', 'Your account has been permanently removed.');
-                            router.replace('/LoginScreen');
+                            // Note: Client-side delete is restricted in Supabase for security
+                            // This should be handled by a server-side function
+                            Alert.alert(
+                                'Account Deletion',
+                                'For security reasons, account deletion must be handled by support. Please contact us at support@smartcleaner.com to delete your account.',
+                                [
+                                    {
+                                        text: 'OK',
+                                        onPress: () => setDeletePassword('')
+                                    }
+                                ]
+                            );
+
                         } catch (e: any) {
-                            Alert.alert('Error', e.message || 'Failed to delete account');
+                            Alert.alert('Error', e.message || 'Failed to verify password');
                         } finally {
                             setDeleting(false);
                         }
@@ -177,6 +409,9 @@ export default function AccountSettings() {
         return <Loader message="Loading account..." />;
     }
 
+    /* ---------------------------------------------------------- */
+    /* RENDER */
+    /* ---------------------------------------------------------- */
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             <ScrollView
@@ -187,7 +422,7 @@ export default function AccountSettings() {
                 showsVerticalScrollIndicator={false}
             >
                 <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
-                    {/* Large Header */}
+                    {/* Header */}
                     <View style={styles.headerSection}>
                         <AppText style={[styles.headerTitle, { color: textPrimary }]}>
                             Account Settings
@@ -197,8 +432,9 @@ export default function AccountSettings() {
                         </AppText>
                     </View>
 
-                    {/* Personal Information */}
-                    <AnimatedCard entering={FadeInDown.duration(350).springify()} style={[styles.sectionCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                    {/* Personal Information Card */}
+                    <AnimatedCard entering={FadeInDown.duration(350).springify()}
+                                  style={[styles.sectionCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
                         <View style={styles.sectionHeader}>
                             <AppText style={[styles.sectionTitle, { color: textPrimary }]}>
                                 Personal Information
@@ -235,14 +471,16 @@ export default function AccountSettings() {
                         />
                     </AnimatedCard>
 
-                    {/* Security */}
-                    <AnimatedCard entering={FadeInDown.delay(80).duration(350).springify()} style={[styles.sectionCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                    {/* Security Card */}
+                    <AnimatedCard entering={FadeInDown.delay(80).duration(350).springify()}
+                                  style={[styles.sectionCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
                         <View style={styles.sectionHeader}>
                             <AppText style={[styles.sectionTitle, { color: textPrimary }]}>
-                                Security
+                                Change Password
                             </AppText>
                         </View>
 
+                        {/* Current Password */}
                         <View style={styles.field}>
                             <AppText style={[styles.label, { color: textSecondary }]}>Current Password</AppText>
                             <View style={styles.inputWrapper}>
@@ -261,6 +499,7 @@ export default function AccountSettings() {
                             </View>
                         </View>
 
+                        {/* New Password */}
                         <View style={styles.field}>
                             <AppText style={[styles.label, { color: textSecondary }]}>New Password</AppText>
                             <View style={styles.inputWrapper}>
@@ -269,16 +508,83 @@ export default function AccountSettings() {
                                     value={newPassword}
                                     onChangeText={setNewPassword}
                                     secureTextEntry={!show.new}
-                                    style={[styles.input, { color: textPrimary, borderColor: cardBorder }]}
+                                    style={[
+                                        styles.input,
+                                        {
+                                            color: textPrimary,
+                                            borderColor: newPasswordError ? '#ef4444' : cardBorder
+                                        }
+                                    ]}
                                     placeholder="••••••••"
                                     placeholderTextColor={textSecondary + '80'}
+                                    onFocus={() => setIsNewPasswordFocused(true)}
+                                    onBlur={() => setIsNewPasswordFocused(false)}
                                 />
                                 <TouchableOpacity onPress={() => setShow({ ...show, new: !show.new })} style={styles.eye}>
                                     <Ionicons name={show.new ? 'eye-off-outline' : 'eye-outline'} size={20} color={textSecondary} />
                                 </TouchableOpacity>
                             </View>
+                            {newPasswordError ? (
+                                <AppText style={styles.fieldError}>{newPasswordError}</AppText>
+                            ) : null}
                         </View>
 
+                        {/* Password Requirements Warning */}
+                        {showPasswordWarning && !allRequirementsMet && (
+                            <Animated.View
+                                style={[
+                                    styles.warningContainer,
+                                    {
+                                        opacity: warningAnim,
+                                        transform: [{
+                                            translateY: warningAnim.interpolate({
+                                                inputRange: [0, 1],
+                                                outputRange: [-20, 0],
+                                            }),
+                                        }],
+                                        backgroundColor: darkMode ? 'rgba(245,158,11,0.15)' : 'rgba(245,158,11,0.1)',
+                                        borderColor: darkMode ? 'rgba(245,158,11,0.3)' : 'rgba(245,158,11,0.2)',
+                                    },
+                                ]}
+                            >
+                                <View style={styles.warningHeader}>
+                                    <Ionicons name="warning-outline" size={20} color="#F59E0B" />
+                                    <AppText style={styles.warningTitle}>Password Requirements</AppText>
+                                </View>
+
+                                {requirementStatus.map((req) => (
+                                    <View key={req.id} style={styles.warningRequirement}>
+                                        <Ionicons
+                                            name={req.met ? 'checkmark-circle' : 'close-circle'}
+                                            size={16}
+                                            color={req.met ? '#10B981' : '#ef4444'}
+                                        />
+                                        <AppText
+                                            style={[
+                                                styles.warningText,
+                                                {
+                                                    color: req.met
+                                                        ? '#10B981'
+                                                        : (darkMode ? '#ef4444' : '#dc2626'),
+                                                    textDecorationLine: req.met ? 'line-through' : 'none',
+                                                },
+                                            ]}
+                                        >
+                                            {req.label}
+                                        </AppText>
+                                    </View>
+                                ))}
+
+                                <View style={styles.warningFooter}>
+                                    <Ionicons name="time-outline" size={14} color={textSecondary} />
+                                    <AppText style={[styles.warningTimeout, { color: textSecondary }]}>
+                                        This message will disappear in 10 seconds
+                                    </AppText>
+                                </View>
+                            </Animated.View>
+                        )}
+
+                        {/* Confirm New Password */}
                         <View style={styles.field}>
                             <AppText style={[styles.label, { color: textSecondary }]}>Confirm New Password</AppText>
                             <View style={styles.inputWrapper}>
@@ -287,26 +593,58 @@ export default function AccountSettings() {
                                     value={confirmPassword}
                                     onChangeText={setConfirmPassword}
                                     secureTextEntry={!show.confirm}
-                                    style={[styles.input, { color: textPrimary, borderColor: cardBorder }]}
+                                    style={[
+                                        styles.input,
+                                        {
+                                            color: textPrimary,
+                                            borderColor: confirmError ? '#ef4444' : cardBorder
+                                        }
+                                    ]}
                                     placeholder="••••••••"
                                     placeholderTextColor={textSecondary + '80'}
+                                    onFocus={() => setIsConfirmPasswordFocused(true)}
+                                    onBlur={() => setIsConfirmPasswordFocused(false)}
                                 />
                                 <TouchableOpacity onPress={() => setShow({ ...show, confirm: !show.confirm })} style={styles.eye}>
                                     <Ionicons name={show.confirm ? 'eye-off-outline' : 'eye-outline'} size={20} color={textSecondary} />
                                 </TouchableOpacity>
                             </View>
+                            {confirmError ? (
+                                <AppText style={styles.fieldError}>{confirmError}</AppText>
+                            ) : null}
                         </View>
+
+                        {/* Password Match Indicator */}
+                        {confirmPassword.length > 0 && (
+                            <View style={styles.matchIndicator}>
+                                <Ionicons
+                                    name={newPassword === confirmPassword ? 'checkmark-circle' : 'close-circle'}
+                                    size={16}
+                                    color={newPassword === confirmPassword ? '#10B981' : '#ef4444'}
+                                />
+                                <AppText
+                                    style={[
+                                        styles.matchText,
+                                        { color: newPassword === confirmPassword ? '#10B981' : '#ef4444' },
+                                    ]}
+                                >
+                                    {newPassword === confirmPassword ? 'Passwords match' : 'Passwords do not match'}
+                                </AppText>
+                            </View>
+                        )}
 
                         <Button
                             title="Update Password"
                             loading={savingPassword}
                             onPress={updatePassword}
                             fullWidth
+                            disabled={!currentPassword || !newPassword || !confirmPassword}
                         />
                     </AnimatedCard>
 
                     {/* Danger Zone */}
-                    <AnimatedCard entering={FadeInDown.delay(160).duration(350).springify()} style={[styles.sectionCard, { backgroundColor: cardBg, borderColor: '#ff3b30' }]}>
+                    <AnimatedCard entering={FadeInDown.delay(160).duration(350).springify()}
+                                  style={[styles.sectionCard, { backgroundColor: cardBg, borderColor: '#ff3b30' }]}>
                         <View style={styles.sectionHeader}>
                             <AppText style={[styles.sectionTitle, { color: '#ff3b30' }]}>
                                 Danger Zone
@@ -337,6 +675,7 @@ export default function AccountSettings() {
                             loading={deleting}
                             onPress={deleteAccount}
                             fullWidth
+                            disabled={!deletePassword}
                         />
                     </AnimatedCard>
                 </View>
@@ -350,6 +689,9 @@ export default function AccountSettings() {
     );
 }
 
+/* ---------------------------------------------------------- */
+/* STYLES */
+/* ---------------------------------------------------------- */
 const styles = StyleSheet.create({
     container: { flex: 1 },
 
@@ -429,6 +771,63 @@ const styles = StyleSheet.create({
         position: 'absolute',
         right: 16,
         top: 16,
+    },
+    fieldError: {
+        color: '#ef4444',
+        fontSize: 12,
+        marginTop: 4,
+        marginLeft: 4,
+    },
+
+    // Warning styles (same as SignupScreen)
+    warningContainer: {
+        borderRadius: 12,
+        borderWidth: 1,
+        padding: 16,
+        marginBottom: 20,
+    },
+    warningHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 12,
+    },
+    warningTitle: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#F59E0B',
+    },
+    warningRequirement: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 8,
+    },
+    warningText: {
+        fontSize: 13,
+        flex: 1,
+    },
+    warningFooter: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 12,
+        paddingTop: 8,
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(0,0,0,0.1)',
+    },
+    warningTimeout: {
+        fontSize: 11,
+    },
+    matchIndicator: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginBottom: 16,
+        paddingHorizontal: 4,
+    },
+    matchText: {
+        fontSize: 12,
     },
 
     footer: {
