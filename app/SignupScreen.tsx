@@ -25,7 +25,7 @@ import AppText from '../src/components/AppText';
 
 import { useThemeContext } from '@/src/context/ThemeContext';
 import authService from '@/src/services/auth';
-import { onAuthStateChange } from '@/src/services/supabase';
+import { useAuth } from '@/src/context/AuthContext';
 
 const { width } = Dimensions.get('window');
 const isLargeScreen = width >= 768;
@@ -47,10 +47,19 @@ interface FieldProps {
     returnKeyType?: 'done' | 'go' | 'next' | 'search' | 'send';
     onSubmitEditing?: () => void;
     autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
+    onFocus?: () => void;
+    onBlur?: () => void;
+}
+
+interface PasswordRequirement {
+    id: string;
+    label: string;
+    validator: (password: string) => boolean;
 }
 
 export default function SignupScreen() {
     const { colors, darkMode } = useThemeContext();
+    const { user } = useAuth();
 
     // Form state
     const [fullName, setFullName] = useState('');
@@ -61,6 +70,14 @@ export default function SignupScreen() {
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [acceptedTerms, setAcceptedTerms] = useState(false);
+
+    // Focus states
+    const [isPasswordFocused, setIsPasswordFocused] = useState(false);
+    const [isConfirmPasswordFocused, setIsConfirmPasswordFocused] = useState(false);
+
+    // Warning visibility
+    const [showPasswordWarning, setShowPasswordWarning] = useState(false);
+    const warningAnim = useRef(new Animated.Value(0)).current;
 
     // Error states
     const [nameError, setNameError] = useState('');
@@ -79,38 +96,121 @@ export default function SignupScreen() {
     const passRef = useRef<TextInput>(null);
     const confirmRef = useRef<TextInput>(null);
 
+    // Timer ref for warning timeout
+    const warningTimerRef = useRef<NodeJS.Timeout | null>(null);
+
     // Mounted ref for cleanup
     const mountedRef = useRef(true);
 
+    // Password requirements
+    const passwordRequirements: PasswordRequirement[] = [
+        {
+            id: 'length',
+            label: 'At least 6 characters',
+            validator: (pwd) => pwd.length >= 6,
+        },
+        {
+            id: 'uppercase',
+            label: 'At least one uppercase letter',
+            validator: (pwd) => /[A-Z]/.test(pwd),
+        },
+        {
+            id: 'lowercase',
+            label: 'At least one lowercase letter',
+            validator: (pwd) => /[a-z]/.test(pwd),
+        },
+        {
+            id: 'number',
+            label: 'At least one number',
+            validator: (pwd) => /[0-9]/.test(pwd),
+        },
+        {
+            id: 'special',
+            label: 'At least one special character (!@#$%^&*)',
+            validator: (pwd) => /[!@#$%^&*(),.?":{}|<>]/.test(pwd),
+        },
+    ];
+
+    // Check which requirements are met
+    const getRequirementStatus = useCallback((pwd: string) => {
+        return passwordRequirements.map(req => ({
+            ...req,
+            met: req.validator(pwd),
+        }));
+    }, []);
+
+    // Check if all requirements are met
+    const areAllRequirementsMet = useCallback((pwd: string) => {
+        return passwordRequirements.every(req => req.validator(pwd));
+    }, []);
+
+    const requirementStatus = getRequirementStatus(password);
+    const allRequirementsMet = areAllRequirementsMet(password);
+
     /* ---------------------------------------------------------- */
-    /* SESSION CHECK */
+    /* WARNING VISIBILITY MANAGEMENT */
     /* ---------------------------------------------------------- */
+    const showWarning = useCallback(() => {
+        // Clear any existing timer
+        if (warningTimerRef.current) {
+            clearTimeout(warningTimerRef.current);
+            warningTimerRef.current = null;
+        }
+
+        // Show warning with animation
+        setShowPasswordWarning(true);
+        Animated.timing(warningAnim, {
+            toValue: 1,
+            duration: 300,
+            useNativeDriver: true,
+        }).start();
+
+        // Set timer to hide warning after 5 seconds
+        warningTimerRef.current = setTimeout(() => {
+            if (mountedRef.current) {
+                Animated.timing(warningAnim, {
+                    toValue: 0,
+                    duration: 300,
+                    useNativeDriver: true,
+                }).start(() => {
+                    setShowPasswordWarning(false);
+                });
+            }
+        }, 10000);
+    }, []);
+
+    const hideWarning = useCallback(() => {
+        if (warningTimerRef.current) {
+            clearTimeout(warningTimerRef.current);
+            warningTimerRef.current = null;
+        }
+
+        Animated.timing(warningAnim, {
+            toValue: 0,
+            duration: 300,
+            useNativeDriver: true,
+        }).start(() => {
+            setShowPasswordWarning(false);
+        });
+    }, []);
+
+    // Check requirements and show warning if not met
+    useEffect(() => {
+        if (password && !allRequirementsMet && (isPasswordFocused || isConfirmPasswordFocused)) {
+            showWarning();
+        } else if (allRequirementsMet) {
+            hideWarning();
+        }
+    }, [password, allRequirementsMet, isPasswordFocused, isConfirmPasswordFocused]);
+
+    // Cleanup timer on unmount
     useEffect(() => {
         mountedRef.current = true;
-
-        const checkSession = async () => {
-            try {
-                const { session } = await authService.getSession();
-                if (mountedRef.current && session?.user?.email_confirmed_at) {
-                    router.replace('/(tabs)/01_DashboardScreen');
-                }
-            } catch (err) {
-                console.warn('Session check failed', err);
-            }
-        };
-
-        checkSession();
-
-        // Listen for auth changes using the supabase helper
-        const unsubscribe = onAuthStateChange((_event, session) => {
-            if (mountedRef.current && session?.user?.email_confirmed_at) {
-                router.replace('/(tabs)/01_DashboardScreen');
-            }
-        });
-
         return () => {
             mountedRef.current = false;
-            unsubscribe();
+            if (warningTimerRef.current) {
+                clearTimeout(warningTimerRef.current);
+            }
         };
     }, []);
 
@@ -161,14 +261,15 @@ export default function SignupScreen() {
         }
 
         // Password validation
-        const passwordCheck = authService.validatePassword(password);
         if (!password) {
             setPasswordError('Password is required');
             shakeField(passwordShake);
             valid = false;
-        } else if (!passwordCheck.isValid) {
-            setPasswordError(passwordCheck.errors[0]);
+        } else if (!allRequirementsMet) {
+            setPasswordError('Please meet all password requirements');
             shakeField(passwordShake);
+            // Show warning if validation fails
+            showWarning();
             valid = false;
         }
 
@@ -193,7 +294,7 @@ export default function SignupScreen() {
         }
 
         return valid;
-    }, [fullName, email, password, confirmPassword, acceptedTerms, shakeField]);
+    }, [fullName, email, password, confirmPassword, acceptedTerms, allRequirementsMet, shakeField, showWarning]);
 
     /* ---------------------------------------------------------- */
     /* SIGNUP HANDLER */
@@ -201,10 +302,8 @@ export default function SignupScreen() {
     const handleSignUp = useCallback(async () => {
         if (loading) return;
 
-        // Dismiss keyboard
         Keyboard.dismiss();
 
-        // Haptic feedback
         if (Platform.OS === 'ios') {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
@@ -224,7 +323,6 @@ export default function SignupScreen() {
                 throw new Error(response.error?.message);
             }
 
-            // Success haptic
             if (Platform.OS === 'ios') {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             }
@@ -241,20 +339,17 @@ export default function SignupScreen() {
                     ]
                 );
             } else {
-                // This case is rare - usually email confirmation is required
                 router.replace('/(tabs)/01_DashboardScreen');
             }
         } catch (err: any) {
             console.error('Signup error:', err);
 
-            // Error haptic
             if (Platform.OS === 'ios') {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             }
 
             const message = err.message || 'Unable to create account. Please try again.';
 
-            // Handle specific error cases
             if (message.includes('already registered')) {
                 setEmailError('This email is already registered');
                 shakeField(emailShake);
@@ -369,6 +464,8 @@ export default function SignupScreen() {
                                 shake={passwordShake}
                                 secureTextEntry={!showPassword}
                                 refInput={passRef}
+                                onFocus={() => setIsPasswordFocused(true)}
+                                onBlur={() => setIsPasswordFocused(false)}
                                 rightIcon={
                                     <TouchableOpacity
                                         onPress={() => setShowPassword(!showPassword)}
@@ -399,6 +496,8 @@ export default function SignupScreen() {
                                 shake={confirmShake}
                                 secureTextEntry={!showConfirmPassword}
                                 refInput={confirmRef}
+                                onFocus={() => setIsConfirmPasswordFocused(true)}
+                                onBlur={() => setIsConfirmPasswordFocused(false)}
                                 rightIcon={
                                     <TouchableOpacity
                                         onPress={() => setShowConfirmPassword(!showConfirmPassword)}
@@ -415,12 +514,76 @@ export default function SignupScreen() {
                                 onSubmitEditing={handleSignUp}
                             />
 
-                            {/* Password strength indicator */}
-                            {password.length > 0 && password.length < 6 && (
-                                <View style={styles.passwordHint}>
-                                    <Ionicons name="information-circle-outline" size={16} color="#F59E0B" />
-                                    <AppText style={styles.passwordHintText}>
-                                        Use at least 6 characters with uppercase letters and numbers for a stronger password
+                            {/* Password Requirements Warning */}
+                            {showPasswordWarning && !allRequirementsMet && (
+                                <Animated.View
+                                    style={[
+                                        styles.warningContainer,
+                                        {
+                                            opacity: warningAnim,
+                                            transform: [{
+                                                translateY: warningAnim.interpolate({
+                                                    inputRange: [0, 1],
+                                                    outputRange: [-20, 0],
+                                                }),
+                                            }],
+                                            backgroundColor: darkMode ? 'rgba(245,158,11,0.15)' : 'rgba(245,158,11,0.1)',
+                                            borderColor: darkMode ? 'rgba(245,158,11,0.3)' : 'rgba(245,158,11,0.2)',
+                                        },
+                                    ]}
+                                >
+                                    <View style={styles.warningHeader}>
+                                        <Ionicons name="warning-outline" size={20} color="#F59E0B" />
+                                        <AppText style={styles.warningTitle}>Password Requirements</AppText>
+                                    </View>
+
+                                    {requirementStatus.map((req) => (
+                                        <View key={req.id} style={styles.warningRequirement}>
+                                            <Ionicons
+                                                name={req.met ? 'checkmark-circle' : 'close-circle'}
+                                                size={16}
+                                                color={req.met ? '#10B981' : '#ef4444'}
+                                            />
+                                            <AppText
+                                                style={[
+                                                    styles.warningText,
+                                                    {
+                                                        color: req.met
+                                                            ? '#10B981'
+                                                            : (darkMode ? '#ef4444' : '#dc2626'),
+                                                        textDecorationLine: req.met ? 'line-through' : 'none',
+                                                    },
+                                                ]}
+                                            >
+                                                {req.label}
+                                            </AppText>
+                                        </View>
+                                    ))}
+
+                                    <View style={styles.warningFooter}>
+                                        <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
+                                        <AppText style={[styles.warningTimeout, { color: colors.textSecondary }]}>
+                                            This message will disappear in 5 seconds
+                                        </AppText>
+                                    </View>
+                                </Animated.View>
+                            )}
+
+                            {/* Password Match Indicator */}
+                            {confirmPassword.length > 0 && (
+                                <View style={styles.matchIndicator}>
+                                    <Ionicons
+                                        name={password === confirmPassword ? 'checkmark-circle' : 'close-circle'}
+                                        size={16}
+                                        color={password === confirmPassword ? '#10B981' : '#ef4444'}
+                                    />
+                                    <AppText
+                                        style={[
+                                            styles.matchText,
+                                            { color: password === confirmPassword ? '#10B981' : '#ef4444' },
+                                        ]}
+                                    >
+                                        {password === confirmPassword ? 'Passwords match' : 'Passwords do not match'}
                                     </AppText>
                                 </View>
                             )}
@@ -517,6 +680,8 @@ function Field({
                    returnKeyType = 'done',
                    onSubmitEditing,
                    autoCapitalize = 'none',
+                   onFocus,
+                   onBlur,
                    ...rest
                }: FieldProps) {
     const borderColor = error
@@ -576,6 +741,8 @@ function Field({
                         onSubmitEditing={onSubmitEditing}
                         autoCapitalize={autoCapitalize}
                         autoCorrect={false}
+                        onFocus={onFocus}
+                        onBlur={onBlur}
                         {...rest}
                     />
 
@@ -660,19 +827,54 @@ const styles = StyleSheet.create({
         fontSize: 13.5,
         color: '#dc2626',
     },
-    passwordHint: {
+    warningContainer: {
+        borderRadius: 12,
+        borderWidth: 1,
+        padding: 16,
+        marginBottom: 20,
+    },
+    warningHeader: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
-        marginTop: -8,
+        marginBottom: 12,
+    },
+    warningTitle: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#F59E0B',
+    },
+    warningRequirement: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 8,
+    },
+    warningText: {
+        fontSize: 13,
+        flex: 1,
+    },
+    warningFooter: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 12,
+        paddingTop: 8,
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(0,0,0,0.1)',
+    },
+    warningTimeout: {
+        fontSize: 11,
+    },
+    matchIndicator: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
         marginBottom: 16,
         paddingHorizontal: 4,
     },
-    passwordHintText: {
-        flex: 1,
+    matchText: {
         fontSize: 12,
-        color: '#F59E0B',
-        lineHeight: 16,
     },
     termsContainer: {
         flexDirection: 'row',
