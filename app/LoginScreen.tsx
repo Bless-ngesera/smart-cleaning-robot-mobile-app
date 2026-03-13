@@ -1,5 +1,5 @@
 // app/LoginScreen.tsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View,
     TextInput,
@@ -11,6 +11,7 @@ import {
     Platform,
     Animated,
     Dimensions,
+    Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,54 +24,89 @@ import Button from '../src/components/Button';
 import AppText from '../src/components/AppText';
 import { useThemeContext } from '@/src/context/ThemeContext';
 import authService from '@/src/services/auth';
-import {supabase} from "@/src/services/supabase";
+import { onAuthStateChange } from '@/src/services/supabase';
 
 const { width } = Dimensions.get('window');
 const isLargeScreen = width >= 768;
 
+// Types
+interface FieldProps {
+    label: string;
+    value: string;
+    onChangeText: (text: string) => void;
+    error?: string;
+    icon: keyof typeof Ionicons.glyphMap;
+    colors: any;
+    darkMode: boolean;
+    shake: Animated.Value;
+    secureTextEntry?: boolean;
+    rightIcon?: React.ReactNode;
+    refInput?: React.RefObject<TextInput>;
+    keyboardType?: 'default' | 'email-address' | 'numeric' | 'phone-pad';
+    returnKeyType?: 'done' | 'go' | 'next' | 'search' | 'send';
+    onSubmitEditing?: () => void;
+    autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
+}
+
 export default function LoginScreen() {
     const { colors, darkMode } = useThemeContext();
 
+    // Form state
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
 
+    // Error states
     const [emailError, setEmailError] = useState('');
     const [passwordError, setPasswordError] = useState('');
 
+    // Animation refs
     const emailShake = useRef(new Animated.Value(0)).current;
     const passwordShake = useRef(new Animated.Value(0)).current;
 
+    // Input refs
     const passwordRef = useRef<TextInput>(null);
 
-    // Check for existing session on mount
+    // Mounted ref for cleanup
+    const mountedRef = useRef(true);
+
+    /* ---------------------------------------------------------- */
+    /* SESSION CHECK */
+    /* ---------------------------------------------------------- */
     useEffect(() => {
-        let mounted = true;
+        mountedRef.current = true;
 
         const checkSession = async () => {
-            const { session } = await authService.getSession();
-            if (mounted && session?.user?.email_confirmed_at) {
-                router.replace('/(tabs)/01_DashboardScreen');
+            try {
+                const { session } = await authService.getSession();
+                if (mountedRef.current && session?.user?.email_confirmed_at) {
+                    router.replace('/(tabs)/01_DashboardScreen');
+                }
+            } catch (err) {
+                console.warn('Session check failed', err);
             }
         };
 
         checkSession();
 
-        // Listen for auth changes
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-            if (mounted && session?.user?.email_confirmed_at) {
+        // Listen for auth changes using the supabase helper
+        const unsubscribe = onAuthStateChange((_event, session) => {
+            if (mountedRef.current && session?.user?.email_confirmed_at) {
                 router.replace('/(tabs)/01_DashboardScreen');
             }
         });
 
         return () => {
-            mounted = false;
-            subscription.unsubscribe();
+            mountedRef.current = false;
+            unsubscribe();
         };
     }, []);
 
-    const shake = (anim: Animated.Value) => {
+    /* ---------------------------------------------------------- */
+    /* ANIMATION */
+    /* ---------------------------------------------------------- */
+    const shakeField = useCallback((anim: Animated.Value) => {
         Animated.sequence([
             Animated.timing(anim, { toValue: 10, duration: 60, useNativeDriver: true }),
             Animated.timing(anim, { toValue: -10, duration: 60, useNativeDriver: true }),
@@ -78,40 +114,69 @@ export default function LoginScreen() {
             Animated.timing(anim, { toValue: -5, duration: 50, useNativeDriver: true }),
             Animated.timing(anim, { toValue: 0, duration: 60, useNativeDriver: true }),
         ]).start();
-    };
+    }, []);
 
-    const validateForm = (): boolean => {
-        let isValid = true;
+    /* ---------------------------------------------------------- */
+    /* FORM VALIDATION */
+    /* ---------------------------------------------------------- */
+    const validateForm = useCallback((): boolean => {
+        let valid = true;
         setEmailError('');
         setPasswordError('');
 
         // Email validation
         if (!email.trim()) {
             setEmailError('Email is required');
-            shake(emailShake);
-            isValid = false;
+            shakeField(emailShake);
+            valid = false;
         } else if (!authService.validateEmail(email.trim())) {
             setEmailError('Enter a valid email address');
-            shake(emailShake);
-            isValid = false;
+            shakeField(emailShake);
+            valid = false;
         }
 
         // Password validation
         if (!password.trim()) {
             setPasswordError('Password is required');
-            shake(passwordShake);
-            isValid = false;
-        } else if (password.length < 6) {
-            setPasswordError('Password must be at least 6 characters');
-            shake(passwordShake);
-            isValid = false;
+            shakeField(passwordShake);
+            valid = false;
         }
 
-        return isValid;
-    };
+        return valid;
+    }, [email, password, shakeField]);
 
-    const handleLogin = async () => {
+    /* ---------------------------------------------------------- */
+    /* RESEND CONFIRMATION EMAIL */
+    /* ---------------------------------------------------------- */
+    const handleResendConfirmation = useCallback(async () => {
+        if (!email.trim()) {
+            Alert.alert('Error', 'Please enter your email address first');
+            return;
+        }
+
+        try {
+            const response = await authService.resendConfirmationEmail(email.trim());
+            if (response.success) {
+                Alert.alert(
+                    'Email Sent',
+                    'Confirmation email has been resent. Please check your inbox and spam folder.'
+                );
+            } else {
+                Alert.alert('Error', response.error?.message || 'Failed to resend email');
+            }
+        } catch (err: any) {
+            Alert.alert('Error', err.message || 'Failed to resend email');
+        }
+    }, [email]);
+
+    /* ---------------------------------------------------------- */
+    /* LOGIN HANDLER */
+    /* ---------------------------------------------------------- */
+    const handleLogin = useCallback(async () => {
         if (loading) return;
+
+        // Dismiss keyboard
+        Keyboard.dismiss();
 
         // Haptic feedback
         if (Platform.OS === 'ios') {
@@ -123,7 +188,10 @@ export default function LoginScreen() {
         setLoading(true);
 
         try {
-            const response = await authService.signIn(email.trim(), password);
+            const response = await authService.signIn(
+                email.trim().toLowerCase(),
+                password
+            );
 
             if (response.success) {
                 // Success haptic
@@ -131,8 +199,8 @@ export default function LoginScreen() {
                     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                 }
 
-                // Navigation is handled by the auth state listener in _layout.tsx
-                // but we'll do it here too as a fallback
+                // Navigation is handled by the auth state listener
+                // But we'll do a direct navigation as well
                 router.replace('/(tabs)/01_DashboardScreen');
             } else {
                 // Handle specific error cases
@@ -144,20 +212,20 @@ export default function LoginScreen() {
                             { text: 'OK', style: 'cancel' },
                             {
                                 text: 'Resend Email',
-                                onPress: () => handleResendConfirmation(),
+                                onPress: handleResendConfirmation,
                             },
                         ]
                     );
 
                     // Shake fields for visual feedback
-                    shake(emailShake);
-                    shake(passwordShake);
+                    shakeField(emailShake);
+                    shakeField(passwordShake);
                 } else {
                     // General error
                     setEmailError('Invalid credentials');
                     setPasswordError('Invalid credentials');
-                    shake(emailShake);
-                    shake(passwordShake);
+                    shakeField(emailShake);
+                    shakeField(passwordShake);
 
                     // Error haptic
                     if (Platform.OS === 'ios') {
@@ -179,51 +247,43 @@ export default function LoginScreen() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [loading, validateForm, email, password, handleResendConfirmation, shakeField]);
 
-    const handleResendConfirmation = async () => {
-        try {
-            const response = await authService.resendConfirmationEmail(email.trim());
-            if (response.success) {
-                Alert.alert(
-                    'Email Sent',
-                    'Confirmation email has been resent. Please check your inbox.'
-                );
-            } else {
-                Alert.alert('Error', response.error?.message || 'Failed to resend email');
-            }
-        } catch (err: any) {
-            Alert.alert('Error', err.message || 'Failed to resend email');
-        }
-    };
-
-    const handleForgotPassword = () => {
+    /* ---------------------------------------------------------- */
+    /* NAVIGATION */
+    /* ---------------------------------------------------------- */
+    const handleForgotPassword = useCallback(() => {
         if (Platform.OS === 'ios') {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
         router.push('/ForgotPasswordScreen');
-    };
+    }, []);
 
-    const handleSignUp = () => {
+    const handleSignUp = useCallback(() => {
         if (Platform.OS === 'ios') {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
         router.push('/SignupScreen');
-    };
+    }, []);
 
-    if (loading) return <Loader message="Signing you in..." />;
+    /* ---------------------------------------------------------- */
+    /* RENDER */
+    /* ---------------------------------------------------------- */
+    if (loading) {
+        return <Loader message="Signing you in..." />;
+    }
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                style={{ flex: 1 }}
+                style={styles.flex}
                 keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
             >
                 <ScrollView
                     contentContainerStyle={[
                         styles.scrollContent,
-                        isLargeScreen && { alignItems: 'center' },
+                        isLargeScreen && styles.scrollContentLarge,
                     ]}
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={false}
@@ -234,16 +294,16 @@ export default function LoginScreen() {
                             subtitle="Sign in to control your Smart Cleaner Pro"
                         />
 
+                        {/* Login Form Card */}
                         <View style={[styles.card, {
                             backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : '#ffffff',
                             borderColor: darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
-                            borderWidth: 1
                         }]}>
                             <Field
                                 label="Email Address"
                                 value={email}
-                                onChangeText={(t: string) => {
-                                    setEmail(t);
+                                onChangeText={(text) => {
+                                    setEmail(text);
                                     if (emailError) setEmailError('');
                                 }}
                                 error={emailError}
@@ -254,14 +314,14 @@ export default function LoginScreen() {
                                 keyboardType="email-address"
                                 returnKeyType="next"
                                 onSubmitEditing={() => passwordRef.current?.focus()}
+                                autoCapitalize="none"
                             />
 
                             <Field
-                                refInput={passwordRef}
                                 label="Password"
                                 value={password}
-                                onChangeText={(t: string) => {
-                                    setPassword(t);
+                                onChangeText={(text) => {
+                                    setPassword(text);
                                     if (passwordError) setPasswordError('');
                                 }}
                                 error={passwordError}
@@ -271,7 +331,10 @@ export default function LoginScreen() {
                                 shake={passwordShake}
                                 secureTextEntry={!showPassword}
                                 rightIcon={
-                                    <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                                    <TouchableOpacity
+                                        onPress={() => setShowPassword(!showPassword)}
+                                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                    >
                                         <Ionicons
                                             name={showPassword ? 'eye-off-outline' : 'eye-outline'}
                                             size={22}
@@ -281,11 +344,13 @@ export default function LoginScreen() {
                                 }
                                 returnKeyType="done"
                                 onSubmitEditing={handleLogin}
+                                refInput={passwordRef}
                             />
 
                             <TouchableOpacity
-                                style={styles.forgot}
+                                style={styles.forgotContainer}
                                 onPress={handleForgotPassword}
+                                activeOpacity={0.7}
                             >
                                 <AppText
                                     style={[
@@ -305,30 +370,15 @@ export default function LoginScreen() {
                                 fullWidth
                                 loading={loading}
                                 disabled={loading || !email || !password}
-                                style={{ marginTop: 16 }}
+                                style={styles.loginButton}
                             />
 
                             <View style={styles.divider}>
-                                <View
-                                    style={[
-                                        styles.line,
-                                        { backgroundColor: darkMode ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.14)' },
-                                    ]}
-                                />
-                                <AppText
-                                    style={[
-                                        styles.orText,
-                                        { color: darkMode ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)' },
-                                    ]}
-                                >
+                                <View style={[styles.line, { backgroundColor: darkMode ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.14)' }]} />
+                                <AppText style={[styles.orText, { color: darkMode ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)' }]}>
                                     OR
                                 </AppText>
-                                <View
-                                    style={[
-                                        styles.line,
-                                        { backgroundColor: darkMode ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.14)' },
-                                    ]}
-                                />
+                                <View style={[styles.line, { backgroundColor: darkMode ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.14)' }]} />
                             </View>
 
                             <TouchableOpacity
@@ -341,12 +391,13 @@ export default function LoginScreen() {
                                     },
                                 ]}
                                 onPress={handleSignUp}
+                                activeOpacity={0.7}
                             >
                                 <Ionicons
                                     name="person-add-outline"
                                     size={20}
                                     color={colors.primary}
-                                    style={{ marginRight: 12 }}
+                                    style={styles.createAccountIcon}
                                 />
                                 <AppText
                                     style={[
@@ -360,6 +411,7 @@ export default function LoginScreen() {
                         </View>
                     </View>
 
+                    {/* Footer */}
                     <AppText style={[styles.footer, { color: darkMode ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }]}>
                         Version 1.0.0 • Smart Cleaner Pro © 2026
                     </AppText>
@@ -369,6 +421,9 @@ export default function LoginScreen() {
     );
 }
 
+/* ---------------------------------------------------------- */
+/* FIELD COMPONENT */
+/* ---------------------------------------------------------- */
 function Field({
                    label,
                    value,
@@ -381,21 +436,11 @@ function Field({
                    secureTextEntry = false,
                    rightIcon,
                    refInput,
-                   ...rest
-               }: {
-    label: string;
-    value: string;
-    onChangeText: (text: string) => void;
-    error?: string;
-    icon: keyof typeof Ionicons.glyphMap;
-    colors: any;
-    darkMode: boolean;
-    shake: Animated.Value;
-    secureTextEntry?: boolean;
-    rightIcon?: React.ReactNode;
-    refInput?: React.RefObject<TextInput>;
-    [key: string]: any;
-}) {
+                   keyboardType = 'default',
+                   returnKeyType = 'done',
+                   onSubmitEditing,
+                   autoCapitalize = 'none',
+               }: FieldProps) {
     const borderColor = error
         ? '#ef4444'
         : darkMode
@@ -419,7 +464,6 @@ function Field({
                     styles.label,
                     {
                         color: error ? '#ef4444' : (darkMode ? 'rgba(255,255,255,0.88)' : 'rgba(0,0,0,0.80)'),
-                        fontWeight: '500',
                     },
                 ]}
             >
@@ -448,8 +492,12 @@ function Field({
                                 backgroundColor,
                             },
                         ]}
-                        placeholderTextColor={darkMode ? 'rgba(255,255,255,0.40)' : 'rgba(0,0,0,0.40)'}
-                        {...rest}
+                        placeholderTextColor={darkMode ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'}
+                        keyboardType={keyboardType}
+                        returnKeyType={returnKeyType}
+                        onSubmitEditing={onSubmitEditing}
+                        autoCapitalize={autoCapitalize}
+                        autoCorrect={false}
                     />
 
                     {rightIcon && <View style={styles.rightIcon}>{rightIcon}</View>}
@@ -465,9 +513,16 @@ function Field({
     );
 }
 
+/* ---------------------------------------------------------- */
+/* STYLES */
+/* ---------------------------------------------------------- */
 const styles = StyleSheet.create({
-    container: { flex: 1 },
-
+    container: {
+        flex: 1,
+    },
+    flex: {
+        flex: 1,
+    },
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
@@ -475,29 +530,31 @@ const styles = StyleSheet.create({
         paddingBottom: 60,
         justifyContent: 'center',
     },
-
-    wrapper: { width: '100%' },
-
-    largeWrapper: { maxWidth: 480 },
-
+    scrollContentLarge: {
+        alignItems: 'center',
+    },
+    wrapper: {
+        width: '100%',
+    },
+    largeWrapper: {
+        maxWidth: 480,
+    },
     card: {
         borderRadius: 24,
         padding: 24,
         borderWidth: 1,
     },
-
     field: {
         marginBottom: 20,
     },
-
     label: {
         marginBottom: 6,
         fontSize: 14.5,
         fontWeight: '500',
     },
-
-    inputWrapper: { position: 'relative' },
-
+    inputWrapper: {
+        position: 'relative',
+    },
     input: {
         height: 54,
         borderWidth: 1.5,
@@ -507,50 +564,51 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '400',
     },
-
     inputIconLeft: {
         position: 'absolute',
         left: 14,
         top: 16,
         zIndex: 1,
     },
-
     rightIcon: {
         position: 'absolute',
         right: 14,
         top: 16,
         zIndex: 1,
     },
-
-    forgot: {
+    errorText: {
+        color: '#dc2626',
+        marginTop: 6,
+        fontSize: 13.5,
+        fontWeight: '500',
+    },
+    forgotContainer: {
         alignSelf: 'flex-end',
         marginTop: 2,
         marginBottom: 20,
         paddingVertical: 6,
     },
-
     forgotText: {
         fontSize: 15,
         fontWeight: '600',
     },
-
+    loginButton: {
+        marginTop: 16,
+    },
     divider: {
         flexDirection: 'row',
         alignItems: 'center',
         marginVertical: 24,
     },
-
     line: {
         flex: 1,
         height: 1.2,
     },
-
     orText: {
         fontSize: 14,
         fontWeight: '500',
         marginHorizontal: 18,
     },
-
     createAccountButton: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -559,19 +617,13 @@ const styles = StyleSheet.create({
         borderRadius: 14,
         marginTop: 8,
     },
-
+    createAccountIcon: {
+        marginRight: 12,
+    },
     createAccountText: {
         fontSize: 16,
         fontWeight: '600',
     },
-
-    errorText: {
-        color: '#dc2626',
-        marginTop: 6,
-        fontSize: 13.5,
-        fontWeight: '500',
-    },
-
     footer: {
         textAlign: 'center',
         marginTop: 32,

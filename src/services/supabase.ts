@@ -1,104 +1,155 @@
-// src/services/supabase.ts
 import 'react-native-url-polyfill/auto';
 
-import type { SupabaseClient, Session, User } from '@supabase/supabase-js';
+import { createClient, SupabaseClient, Session, User, AuthError } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
+import { Platform, AppState } from 'react-native';
+import * as Crypto from 'expo-crypto';
 
-let supabase: SupabaseClient | null = null;
+// Singleton instance
+let supabaseInstance: SupabaseClient | null = null;
+let appStateSubscription: { remove: () => void } | null = null;
 
 /**
- * Initialize Supabase client (singleton pattern - runs once)
+ * Initialize Supabase client (singleton pattern)
  */
-function initializeSupabase() {
-    if (supabase) return supabase;
+function initializeSupabase(): SupabaseClient {
+    if (supabaseInstance) {
+        return supabaseInstance;
+    }
 
     const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
     const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
     if (!supabaseUrl || !supabaseAnonKey) {
-        const errorMsg =
-            'Missing Supabase environment variables!\n\n' +
-            'Please add to your .env file (or app.json / app.config.js):\n' +
-            'EXPO_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co\n' +
-            'EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\n\n' +
-            'Current values:\n' +
-            `URL: ${supabaseUrl ?? 'undefined'}\n` +
-            `Key: ${supabaseAnonKey ? 'present' : 'undefined'}`;
-
-        console.error(errorMsg);
-        throw new Error(errorMsg);
+        throw new Error(
+            'Missing Supabase environment variables. Please configure EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY'
+        );
     }
 
-    const { createClient } = require('@supabase/supabase-js');
-
-    const storage = Platform.OS === 'web' ? undefined : AsyncStorage;
-
-    supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    // Create the client
+    supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
         auth: {
-            storage,
+            storage: Platform.OS === 'web' ? undefined : AsyncStorage,
             autoRefreshToken: true,
             persistSession: true,
-            detectSessionInUrl: false, // Important for native
-            flowType: 'pkce',          // Recommended for mobile
+            detectSessionInUrl: false,
+            flowType: 'pkce',
         },
         db: {
             schema: 'public',
         },
-        ...(process.env.NODE_ENV !== 'production' && { debug: true }),
+        global: {
+            headers: {
+                'X-Client-Info': 'smartcleaner-mobile',
+            },
+        },
     });
 
-    // Optional: Handle app state changes to refresh tokens
+    // Handle app state changes for token refresh (mobile only)
     if (Platform.OS !== 'web') {
-        const { AppState } = require('react-native');
-        const subscription = AppState.addEventListener('change', (nextAppState) => {
-            if (nextAppState === 'active') {
-                supabase?.auth.startAutoRefresh();
+        // Clean up any existing subscription
+        if (appStateSubscription) {
+            appStateSubscription.remove();
+        }
+
+        // Create new subscription
+        appStateSubscription = AppState.addEventListener('change', (state) => {
+            if (state === 'active') {
+                supabaseInstance?.auth.startAutoRefresh();
             } else {
-                supabase?.auth.stopAutoRefresh();
+                supabaseInstance?.auth.stopAutoRefresh();
             }
         });
-
-        // Note: subscription cleanup happens automatically on app close in most cases
     }
 
     console.log('[Supabase] Client initialized successfully');
-    return supabase;
+    return supabaseInstance;
 }
 
-// Initialize immediately (singleton)
-initializeSupabase();
+// Initialize immediately
+export const supabase = initializeSupabase();
 
-/**
- * Export initialized client (safe to import and use directly)
- */
-export { supabase };
-
-/**
- * Get current session (sync after init)
- */
-export function getCurrentSession(): Session | null {
-    if (!supabase) {
-        console.error('[Supabase] Client not initialized');
-        return null;
+// ============================================================
+// CLEANUP FUNCTION (optional - call when app unmounts)
+// ============================================================
+export function cleanupSupabase(): void {
+    if (appStateSubscription) {
+        appStateSubscription.remove();
+        appStateSubscription = null;
     }
-
-    const { data, error } = supabase.auth.getSession();
-    if (error) {
-        console.warn('[Supabase] getSession error:', error.message);
-        return null;
-    }
-
-    return data.session;
 }
+
+// ============================================================
+// SESSION
+// ============================================================
+
+/**
+ * Get current session (async)
+ */
+export async function getCurrentSession(): Promise<Session | null> {
+    try {
+        if (!supabase) {
+            console.error('[Supabase] Client not initialized');
+            return null;
+        }
+
+        const { data, error } = await supabase.auth.getSession();
+
+        if (error) {
+            console.warn('[Supabase] getSession error:', error.message);
+            return null;
+        }
+
+        return data?.session ?? null;
+    } catch (err) {
+        console.error('[Supabase] getSession failed:', err);
+        return null;
+    }
+}
+
+// ============================================================
+// USER
+// ============================================================
 
 /**
  * Get current authenticated user
  */
-export function getCurrentUser(): User | null {
-    const session = getCurrentSession();
-    return session?.user ?? null;
+export async function getCurrentUser(): Promise<User | null> {
+    try {
+        if (!supabase) {
+            console.error('[Supabase] Client not initialized');
+            return null;
+        }
+
+        const { data, error } = await supabase.auth.getUser();
+
+        if (error) {
+            console.warn('[Supabase] getUser error:', error.message);
+            return null;
+        }
+
+        return data?.user ?? null;
+    } catch (err) {
+        console.error('[Supabase] getUser failed:', err);
+        return null;
+    }
 }
+
+// ============================================================
+// USER ID
+// ============================================================
+
+/**
+ * Get current user ID
+ */
+export async function getCurrentUserId(): Promise<string | null> {
+    const user = await getCurrentUser();
+    return user?.id ?? null;
+}
+
+// ============================================================
+// AUTH STATE LISTENER
+// ============================================================
 
 /**
  * Subscribe to auth state changes
@@ -106,31 +157,184 @@ export function getCurrentUser(): User | null {
  */
 export function onAuthStateChange(
     callback: (event: string, session: Session | null) => void
-) {
+): () => void {
     if (!supabase) {
         console.error('[Supabase] Client not initialized');
         return () => {};
     }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(callback);
-    return () => subscription.unsubscribe();
+    const { data } = supabase.auth.onAuthStateChange(callback);
+
+    return () => {
+        data?.subscription.unsubscribe();
+    };
 }
+
+// ============================================================
+// SIGN OUT
+// ============================================================
 
 /**
- * Sign user out (with error handling)
+ * Sign out current user
  */
-export async function signOut(): Promise<void> {
-    if (!supabase) {
-        console.error('[Supabase] Client not initialized');
-        return;
-    }
-
+export async function signOut(): Promise<{ success: boolean; error?: string }> {
     try {
-        const { error } = await supabase.auth.signOut();
-        if (error) {
-            console.warn('[Supabase] Sign out error:', error.message);
+        if (!supabase) {
+            return { success: false, error: 'Client not initialized' };
         }
+
+        const { error } = await supabase.auth.signOut();
+
+        if (error) {
+            return { success: false, error: error.message };
+        }
+
+        return { success: true };
+
     } catch (err) {
-        console.error('[Supabase] Sign out failed:', err);
+        return {
+            success: false,
+            error: err instanceof Error ? err.message : 'Unknown error',
+        };
     }
 }
+
+// ============================================================
+// REFRESH SESSION
+// ============================================================
+
+/**
+ * Manually refresh the current session
+ */
+export async function refreshSession(): Promise<Session | null> {
+    try {
+        if (!supabase) {
+            console.error('[Supabase] Client not initialized');
+            return null;
+        }
+
+        const { data, error } = await supabase.auth.refreshSession();
+
+        if (error) {
+            console.warn('[Supabase] refreshSession error:', error.message);
+            return null;
+        }
+
+        return data?.session ?? null;
+
+    } catch (err) {
+        console.error('[Supabase] refreshSession failed:', err);
+        return null;
+    }
+}
+
+// ============================================================
+// AUTH STATUS
+// ============================================================
+
+/**
+ * Check if user is authenticated
+ */
+export async function isAuthenticated(): Promise<boolean> {
+    const session = await getCurrentSession();
+    return !!session?.user;
+}
+
+// ============================================================
+// SIGN UP WITH ADDITIONAL CHECKS
+// ============================================================
+
+/**
+ * Sign up with email and password
+ * This is a wrapper around supabase.auth.signUp with additional logging
+ */
+export async function signUpWithEmail(
+    email: string,
+    password: string,
+    options?: { data?: any; redirectTo?: string }
+): Promise<{ data: any; error: AuthError | null }> {
+    try {
+        if (!supabase) {
+            return { data: null, error: { message: 'Client not initialized', name: 'InitError' } as AuthError };
+        }
+
+        const { data, error } = await supabase.auth.signUp({
+            email: email.trim().toLowerCase(),
+            password,
+            options,
+        });
+
+        if (error) {
+            console.error('[Supabase] signUp error:', error.message);
+            return { data: null, error };
+        }
+
+        return { data, error: null };
+    } catch (err) {
+        console.error('[Supabase] signUp exception:', err);
+        return {
+            data: null,
+            error: {
+                message: err instanceof Error ? err.message : 'Unknown error',
+                name: 'UnknownError'
+            } as AuthError
+        };
+    }
+}
+
+// ============================================================
+// SIGN IN WITH EMAIL
+// ============================================================
+
+/**
+ * Sign in with email and password
+ */
+export async function signInWithEmail(
+    email: string,
+    password: string
+): Promise<{ data: any; error: AuthError | null }> {
+    try {
+        if (!supabase) {
+            return { data: null, error: { message: 'Client not initialized', name: 'InitError' } as AuthError };
+        }
+
+        const { data, error } = await supabase.auth.signInWithPassword({
+            email: email.trim().toLowerCase(),
+            password,
+        });
+
+        if (error) {
+            console.error('[Supabase] signIn error:', error.message);
+            return { data: null, error };
+        }
+
+        return { data, error: null };
+    } catch (err) {
+        console.error('[Supabase] signIn exception:', err);
+        return {
+            data: null,
+            error: {
+                message: err instanceof Error ? err.message : 'Unknown error',
+                name: 'UnknownError'
+            } as AuthError
+        };
+    }
+}
+
+// ============================================================
+// EXPORT OBJECT
+// ============================================================
+
+export default {
+    supabase,
+    getCurrentSession,
+    getCurrentUser,
+    getCurrentUserId,
+    onAuthStateChange,
+    signOut,
+    refreshSession,
+    isAuthenticated,
+    signUpWithEmail,
+    signInWithEmail,
+    cleanupSupabase,
+};

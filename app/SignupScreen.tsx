@@ -1,5 +1,5 @@
 // app/SignupScreen.tsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View,
     TextInput,
@@ -11,6 +11,7 @@ import {
     Platform,
     Animated,
     Dimensions,
+    Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,16 +22,37 @@ import Header from '../src/components/Header';
 import Loader from '../src/components/Loader';
 import Button from '../src/components/Button';
 import AppText from '../src/components/AppText';
+
 import { useThemeContext } from '@/src/context/ThemeContext';
 import authService from '@/src/services/auth';
-import { supabase } from '@/src/services/supabase'; // ← ADD THIS IMPORT
+import { onAuthStateChange } from '@/src/services/supabase';
 
 const { width } = Dimensions.get('window');
 const isLargeScreen = width >= 768;
 
+// Types
+interface FieldProps {
+    label: string;
+    value: string;
+    onChangeText: (text: string) => void;
+    error?: string;
+    icon: keyof typeof Ionicons.glyphMap;
+    colors: any;
+    darkMode: boolean;
+    shake: Animated.Value;
+    secureTextEntry?: boolean;
+    rightIcon?: React.ReactNode;
+    refInput?: React.RefObject<TextInput>;
+    keyboardType?: 'default' | 'email-address' | 'numeric' | 'phone-pad';
+    returnKeyType?: 'done' | 'go' | 'next' | 'search' | 'send';
+    onSubmitEditing?: () => void;
+    autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
+}
+
 export default function SignupScreen() {
     const { colors, darkMode } = useThemeContext();
 
+    // Form state
     const [fullName, setFullName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -57,33 +79,45 @@ export default function SignupScreen() {
     const passRef = useRef<TextInput>(null);
     const confirmRef = useRef<TextInput>(null);
 
-    // Check for existing session on mount
+    // Mounted ref for cleanup
+    const mountedRef = useRef(true);
+
+    /* ---------------------------------------------------------- */
+    /* SESSION CHECK */
+    /* ---------------------------------------------------------- */
     useEffect(() => {
-        let mounted = true;
+        mountedRef.current = true;
 
         const checkSession = async () => {
-            const { session } = await authService.getSession();
-            if (mounted && session?.user?.email_confirmed_at) {
-                router.replace('/(tabs)/01_DashboardScreen');
+            try {
+                const { session } = await authService.getSession();
+                if (mountedRef.current && session?.user?.email_confirmed_at) {
+                    router.replace('/(tabs)/01_DashboardScreen');
+                }
+            } catch (err) {
+                console.warn('Session check failed', err);
             }
         };
 
         checkSession();
 
-        // This line needs the supabase import
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-            if (mounted && session?.user?.email_confirmed_at) {
+        // Listen for auth changes using the supabase helper
+        const unsubscribe = onAuthStateChange((_event, session) => {
+            if (mountedRef.current && session?.user?.email_confirmed_at) {
                 router.replace('/(tabs)/01_DashboardScreen');
             }
         });
 
         return () => {
-            mounted = false;
-            subscription.unsubscribe();
+            mountedRef.current = false;
+            unsubscribe();
         };
     }, []);
 
-    const shakeField = (anim: Animated.Value) => {
+    /* ---------------------------------------------------------- */
+    /* ANIMATION */
+    /* ---------------------------------------------------------- */
+    const shakeField = useCallback((anim: Animated.Value) => {
         Animated.sequence([
             Animated.timing(anim, { toValue: 10, duration: 60, useNativeDriver: true }),
             Animated.timing(anim, { toValue: -10, duration: 60, useNativeDriver: true }),
@@ -91,10 +125,14 @@ export default function SignupScreen() {
             Animated.timing(anim, { toValue: -5, duration: 50, useNativeDriver: true }),
             Animated.timing(anim, { toValue: 0, duration: 60, useNativeDriver: true }),
         ]).start();
-    };
+    }, []);
 
-    const validateForm = (): boolean => {
-        let isValid = true;
+    /* ---------------------------------------------------------- */
+    /* FORM VALIDATION */
+    /* ---------------------------------------------------------- */
+    const validateForm = useCallback((): boolean => {
+        let valid = true;
+
         setNameError('');
         setEmailError('');
         setPasswordError('');
@@ -104,58 +142,67 @@ export default function SignupScreen() {
         if (!fullName.trim()) {
             setNameError('Full name is required');
             shakeField(nameShake);
-            isValid = false;
+            valid = false;
         } else if (fullName.trim().length < 2) {
             setNameError('Name must be at least 2 characters');
             shakeField(nameShake);
-            isValid = false;
+            valid = false;
         }
 
-        // Email validation using authService
+        // Email validation
         if (!email.trim()) {
             setEmailError('Email is required');
             shakeField(emailShake);
-            isValid = false;
+            valid = false;
         } else if (!authService.validateEmail(email.trim())) {
             setEmailError('Enter a valid email address');
             shakeField(emailShake);
-            isValid = false;
+            valid = false;
         }
 
-        // Password validation using authService
-        const passwordValidation = authService.validatePassword(password);
-        if (!password.trim()) {
+        // Password validation
+        const passwordCheck = authService.validatePassword(password);
+        if (!password) {
             setPasswordError('Password is required');
             shakeField(passwordShake);
-            isValid = false;
-        } else if (!passwordValidation.isValid) {
-            setPasswordError(passwordValidation.errors[0]);
+            valid = false;
+        } else if (!passwordCheck.isValid) {
+            setPasswordError(passwordCheck.errors[0]);
             shakeField(passwordShake);
-            isValid = false;
+            valid = false;
         }
 
         // Confirm password validation
-        if (!confirmPassword.trim()) {
+        if (!confirmPassword) {
             setConfirmError('Please confirm your password');
             shakeField(confirmShake);
-            isValid = false;
+            valid = false;
         } else if (confirmPassword !== password) {
             setConfirmError('Passwords do not match');
             shakeField(confirmShake);
-            isValid = false;
+            valid = false;
         }
 
         // Terms acceptance
         if (!acceptedTerms) {
-            Alert.alert('Terms Required', 'Please accept the Terms of Service and Privacy Policy to continue.');
-            isValid = false;
+            Alert.alert(
+                'Terms Required',
+                'Please accept the Terms of Service and Privacy Policy to continue.'
+            );
+            valid = false;
         }
 
-        return isValid;
-    };
+        return valid;
+    }, [fullName, email, password, confirmPassword, acceptedTerms, shakeField]);
 
-    const handleSignUp = async () => {
+    /* ---------------------------------------------------------- */
+    /* SIGNUP HANDLER */
+    /* ---------------------------------------------------------- */
+    const handleSignUp = useCallback(async () => {
         if (loading) return;
+
+        // Dismiss keyboard
+        Keyboard.dismiss();
 
         // Haptic feedback
         if (Platform.OS === 'ios') {
@@ -168,35 +215,34 @@ export default function SignupScreen() {
 
         try {
             const response = await authService.signUp(
-                email.trim(),
+                email.trim().toLowerCase(),
                 password,
                 fullName.trim()
             );
 
-            if (response.success) {
-                // Success haptic
-                if (Platform.OS === 'ios') {
-                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                }
-
-                // Check if email confirmation is required
-                if (response.data?.needsEmailConfirmation) {
-                    Alert.alert(
-                        'Verify Your Email',
-                        'We\'ve sent a confirmation link to your email. Please check your inbox and click the link to verify your account.',
-                        [
-                            {
-                                text: 'OK',
-                                onPress: () => router.replace('/LoginScreen'),
-                            }
-                        ]
-                    );
-                } else {
-                    // If no confirmation needed (unlikely), go to dashboard
-                    router.replace('/(tabs)/01_DashboardScreen');
-                }
-            } else {
+            if (!response.success) {
                 throw new Error(response.error?.message);
+            }
+
+            // Success haptic
+            if (Platform.OS === 'ios') {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            }
+
+            if (response.data?.needsEmailConfirmation) {
+                Alert.alert(
+                    'Verify Your Email',
+                    'We\'ve sent a verification link to your email. Please check your inbox and click the link to verify your account.',
+                    [
+                        {
+                            text: 'OK',
+                            onPress: () => router.replace('/LoginScreen'),
+                        }
+                    ]
+                );
+            } else {
+                // This case is rare - usually email confirmation is required
+                router.replace('/(tabs)/01_DashboardScreen');
             }
         } catch (err: any) {
             console.error('Signup error:', err);
@@ -206,37 +252,43 @@ export default function SignupScreen() {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             }
 
-            // Handle specific error cases
-            const errorMessage = err.message || 'Unable to create account. Please try again.';
+            const message = err.message || 'Unable to create account. Please try again.';
 
-            if (errorMessage.includes('already registered')) {
+            // Handle specific error cases
+            if (message.includes('already registered')) {
                 setEmailError('This email is already registered');
                 shakeField(emailShake);
-            } else if (errorMessage.includes('password')) {
-                setPasswordError(errorMessage);
+            } else if (message.includes('password')) {
+                setPasswordError(message);
                 shakeField(passwordShake);
             }
 
-            Alert.alert('Signup Failed', errorMessage);
+            Alert.alert('Signup Failed', message);
         } finally {
             setLoading(false);
         }
-    };
+    }, [loading, validateForm, email, password, fullName, shakeField, emailShake, passwordShake]);
 
-    const handleLogin = () => {
+    /* ---------------------------------------------------------- */
+    /* NAVIGATION */
+    /* ---------------------------------------------------------- */
+    const handleLogin = useCallback(() => {
         if (Platform.OS === 'ios') {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
         router.push('/LoginScreen');
-    };
+    }, []);
 
-    const toggleTerms = () => {
+    const toggleTerms = useCallback(() => {
         if (Platform.OS === 'ios') {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
-        setAcceptedTerms(!acceptedTerms);
-    };
+        setAcceptedTerms(prev => !prev);
+    }, []);
 
+    /* ---------------------------------------------------------- */
+    /* RENDER */
+    /* ---------------------------------------------------------- */
     if (loading) {
         return <Loader message="Creating your account..." />;
     }
@@ -245,13 +297,13 @@ export default function SignupScreen() {
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                style={{ flex: 1 }}
+                style={styles.flex}
                 keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
             >
                 <ScrollView
                     contentContainerStyle={[
                         styles.scrollContent,
-                        isLargeScreen && { alignItems: 'center' },
+                        isLargeScreen && styles.scrollContentLarge,
                     ]}
                     keyboardShouldPersistTaps="handled"
                     showsVerticalScrollIndicator={false}
@@ -262,16 +314,16 @@ export default function SignupScreen() {
                             subtitle="Join Smart Cleaner Pro today"
                         />
 
+                        {/* Form Card */}
                         <View style={[styles.card, {
                             backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : '#ffffff',
                             borderColor: darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
-                            borderWidth: 1
                         }]}>
                             <Field
                                 label="Full Name"
                                 value={fullName}
-                                onChangeText={(t: string) => {
-                                    setFullName(t);
+                                onChangeText={(text) => {
+                                    setFullName(text);
                                     if (nameError) setNameError('');
                                 }}
                                 error={nameError}
@@ -287,8 +339,8 @@ export default function SignupScreen() {
                             <Field
                                 label="Email Address"
                                 value={email}
-                                onChangeText={(t: string) => {
-                                    setEmail(t);
+                                onChangeText={(text) => {
+                                    setEmail(text);
                                     if (emailError) setEmailError('');
                                 }}
                                 error={emailError}
@@ -297,17 +349,17 @@ export default function SignupScreen() {
                                 darkMode={darkMode}
                                 shake={emailShake}
                                 keyboardType="email-address"
-                                autoCapitalize="none"
+                                refInput={emailRef}
                                 returnKeyType="next"
                                 onSubmitEditing={() => passRef.current?.focus()}
-                                refInput={emailRef}
+                                autoCapitalize="none"
                             />
 
                             <Field
                                 label="Password"
                                 value={password}
-                                onChangeText={(t: string) => {
-                                    setPassword(t);
+                                onChangeText={(text) => {
+                                    setPassword(text);
                                     if (passwordError) setPasswordError('');
                                 }}
                                 error={passwordError}
@@ -316,25 +368,28 @@ export default function SignupScreen() {
                                 darkMode={darkMode}
                                 shake={passwordShake}
                                 secureTextEntry={!showPassword}
+                                refInput={passRef}
                                 rightIcon={
-                                    <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                                    <TouchableOpacity
+                                        onPress={() => setShowPassword(!showPassword)}
+                                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                    >
                                         <Ionicons
                                             name={showPassword ? 'eye-off-outline' : 'eye-outline'}
                                             size={22}
-                                            color={darkMode ? '#d1d5db' : colors.textSecondary}
+                                            color={colors.textSecondary}
                                         />
                                     </TouchableOpacity>
                                 }
                                 returnKeyType="next"
                                 onSubmitEditing={() => confirmRef.current?.focus()}
-                                refInput={passRef}
                             />
 
                             <Field
                                 label="Confirm Password"
                                 value={confirmPassword}
-                                onChangeText={(t: string) => {
-                                    setConfirmPassword(t);
+                                onChangeText={(text) => {
+                                    setConfirmPassword(text);
                                     if (confirmError) setConfirmError('');
                                 }}
                                 error={confirmError}
@@ -343,18 +398,21 @@ export default function SignupScreen() {
                                 darkMode={darkMode}
                                 shake={confirmShake}
                                 secureTextEntry={!showConfirmPassword}
+                                refInput={confirmRef}
                                 rightIcon={
-                                    <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
+                                    <TouchableOpacity
+                                        onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                    >
                                         <Ionicons
                                             name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
                                             size={22}
-                                            color={darkMode ? '#d1d5db' : colors.textSecondary}
+                                            color={colors.textSecondary}
                                         />
                                     </TouchableOpacity>
                                 }
                                 returnKeyType="done"
                                 onSubmitEditing={handleSignUp}
-                                refInput={confirmRef}
                             />
 
                             {/* Password strength indicator */}
@@ -367,13 +425,16 @@ export default function SignupScreen() {
                                 </View>
                             )}
 
-                            {/* Terms and Conditions with Checkbox */}
+                            {/* Terms and Conditions */}
                             <TouchableOpacity
                                 style={styles.termsContainer}
                                 onPress={toggleTerms}
                                 activeOpacity={0.7}
                             >
-                                <View style={[styles.checkbox, { borderColor: acceptedTerms ? colors.primary : (darkMode ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)') }]}>
+                                <View style={[styles.checkbox, {
+                                    borderColor: acceptedTerms ? colors.primary : (darkMode ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)'),
+                                    backgroundColor: acceptedTerms ? `${colors.primary}20` : 'transparent',
+                                }]}>
                                     {acceptedTerms && (
                                         <Ionicons name="checkmark" size={16} color={colors.primary} />
                                     )}
@@ -401,50 +462,33 @@ export default function SignupScreen() {
                                 onPress={handleSignUp}
                                 variant="primary"
                                 fullWidth
-                                loading={loading}
                                 disabled={loading || !fullName || !email || !password || !confirmPassword || !acceptedTerms}
-                                style={{ marginTop: 16 }}
+                                loading={loading}
+                                style={styles.signupButton}
                             />
 
+                            {/* Login Link */}
                             <View style={styles.divider}>
-                                <View
-                                    style={[
-                                        styles.line,
-                                        { backgroundColor: darkMode ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.14)' },
-                                    ]}
-                                />
-                                <AppText
-                                    style={[
-                                        styles.orText,
-                                        { color: darkMode ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)' },
-                                    ]}
-                                >
+                                <View style={[styles.line, { backgroundColor: darkMode ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.14)' }]} />
+                                <AppText style={[styles.orText, { color: darkMode ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.6)' }]}>
                                     OR
                                 </AppText>
-                                <View
-                                    style={[
-                                        styles.line,
-                                        { backgroundColor: darkMode ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.14)' },
-                                    ]}
-                                />
+                                <View style={[styles.line, { backgroundColor: darkMode ? 'rgba(255,255,255,0.14)' : 'rgba(0,0,0,0.14)' }]} />
                             </View>
 
                             <TouchableOpacity
-                                style={styles.backLink}
+                                style={styles.loginLink}
                                 onPress={handleLogin}
+                                activeOpacity={0.7}
                             >
-                                <AppText
-                                    style={[
-                                        styles.backLinkText,
-                                        { color: colors.primary },
-                                    ]}
-                                >
+                                <AppText style={[styles.loginLinkText, { color: colors.primary }]}>
                                     Already have an account? Sign in
                                 </AppText>
                             </TouchableOpacity>
                         </View>
                     </View>
 
+                    {/* Footer */}
                     <AppText style={[styles.footer, { color: darkMode ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)' }]}>
                         Version 1.0.0 • Smart Cleaner Pro © 2026
                     </AppText>
@@ -454,6 +498,9 @@ export default function SignupScreen() {
     );
 }
 
+/* ---------------------------------------------------------- */
+/* FIELD COMPONENT */
+/* ---------------------------------------------------------- */
 function Field({
                    label,
                    value,
@@ -466,21 +513,12 @@ function Field({
                    secureTextEntry = false,
                    rightIcon,
                    refInput,
+                   keyboardType = 'default',
+                   returnKeyType = 'done',
+                   onSubmitEditing,
+                   autoCapitalize = 'none',
                    ...rest
-               }: {
-    label: string;
-    value: string;
-    onChangeText: (text: string) => void;
-    error?: string;
-    icon: keyof typeof Ionicons.glyphMap;
-    colors: any;
-    darkMode: boolean;
-    shake: Animated.Value;
-    secureTextEntry?: boolean;
-    rightIcon?: React.ReactNode;
-    refInput?: React.RefObject<TextInput>;
-    [key: string]: any;
-}) {
+               }: FieldProps) {
     const borderColor = error
         ? '#ef4444'
         : darkMode
@@ -504,7 +542,6 @@ function Field({
                     styles.label,
                     {
                         color: error ? '#ef4444' : (darkMode ? 'rgba(255,255,255,0.88)' : 'rgba(0,0,0,0.80)'),
-                        fontWeight: '500',
                     },
                 ]}
             >
@@ -533,7 +570,12 @@ function Field({
                                 backgroundColor,
                             },
                         ]}
-                        placeholderTextColor={darkMode ? 'rgba(255,255,255,0.40)' : 'rgba(0,0,0,0.40)'}
+                        placeholderTextColor={darkMode ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'}
+                        keyboardType={keyboardType}
+                        returnKeyType={returnKeyType}
+                        onSubmitEditing={onSubmitEditing}
+                        autoCapitalize={autoCapitalize}
+                        autoCorrect={false}
                         {...rest}
                     />
 
@@ -550,9 +592,16 @@ function Field({
     );
 }
 
+/* ---------------------------------------------------------- */
+/* STYLES */
+/* ---------------------------------------------------------- */
 const styles = StyleSheet.create({
-    container: { flex: 1 },
-
+    container: {
+        flex: 1,
+    },
+    flex: {
+        flex: 1,
+    },
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
@@ -560,29 +609,31 @@ const styles = StyleSheet.create({
         paddingBottom: 60,
         justifyContent: 'center',
     },
-
-    wrapper: { width: '100%' },
-
-    largeWrapper: { maxWidth: 480 },
-
+    scrollContentLarge: {
+        alignItems: 'center',
+    },
+    wrapper: {
+        width: '100%',
+    },
+    largeWrapper: {
+        maxWidth: 480,
+    },
     card: {
         borderRadius: 24,
         padding: 24,
         borderWidth: 1,
     },
-
     field: {
         marginBottom: 20,
     },
-
     label: {
         marginBottom: 6,
         fontSize: 14.5,
         fontWeight: '500',
     },
-
-    inputWrapper: { position: 'relative' },
-
+    inputWrapper: {
+        position: 'relative',
+    },
     input: {
         height: 54,
         borderWidth: 1.5,
@@ -592,28 +643,23 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '400',
     },
-
     inputIconLeft: {
         position: 'absolute',
         left: 14,
         top: 16,
         zIndex: 1,
     },
-
     rightIcon: {
         position: 'absolute',
         right: 14,
         top: 16,
         zIndex: 1,
     },
-
     errorText: {
-        color: '#dc2626',
         marginTop: 6,
         fontSize: 13.5,
-        fontWeight: '500',
+        color: '#dc2626',
     },
-
     passwordHint: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -622,14 +668,12 @@ const styles = StyleSheet.create({
         marginBottom: 16,
         paddingHorizontal: 4,
     },
-
     passwordHintText: {
         flex: 1,
         fontSize: 12,
         color: '#F59E0B',
         lineHeight: 16,
     },
-
     termsContainer: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -637,7 +681,6 @@ const styles = StyleSheet.create({
         marginVertical: 20,
         paddingHorizontal: 4,
     },
-
     checkbox: {
         width: 24,
         height: 24,
@@ -646,50 +689,43 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-
     termsText: {
         flex: 1,
         fontSize: 14,
         lineHeight: 20,
     },
-
     termsLink: {
         fontSize: 14,
         fontWeight: '600',
         textDecorationLine: 'underline',
     },
-
+    signupButton: {
+        marginTop: 16,
+    },
     divider: {
         flexDirection: 'row',
         alignItems: 'center',
         marginVertical: 24,
     },
-
     line: {
         flex: 1,
         height: 1.2,
     },
-
     orText: {
         fontSize: 14,
         fontWeight: '500',
         marginHorizontal: 18,
     },
-
-    backLink: {
-        flexDirection: 'row',
+    loginLink: {
         alignItems: 'center',
         justifyContent: 'center',
-        marginTop: 8,
         paddingVertical: 10,
     },
-
-    backLinkText: {
+    loginLinkText: {
         fontSize: 16,
         fontWeight: '600',
         textDecorationLine: 'underline',
     },
-
     footer: {
         textAlign: 'center',
         marginTop: 32,
