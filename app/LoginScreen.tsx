@@ -1,5 +1,5 @@
 // app/LoginScreen.tsx
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
     View,
     TextInput,
@@ -23,8 +23,8 @@ import Loader from '../src/components/Loader';
 import Button from '../src/components/Button';
 import AppText from '../src/components/AppText';
 import { useThemeContext } from '@/src/context/ThemeContext';
+import { useAuth } from '@/src/context/AuthContext';
 import authService from '@/src/services/auth';
-import { onAuthStateChange } from '@/src/services/supabase';
 
 const { width } = Dimensions.get('window');
 const isLargeScreen = width >= 768;
@@ -50,6 +50,7 @@ interface FieldProps {
 
 export default function LoginScreen() {
     const { colors, darkMode } = useThemeContext();
+    const { user } = useAuth(); // This ensures auth is initialized
 
     // Form state
     const [email, setEmail] = useState('');
@@ -70,38 +71,6 @@ export default function LoginScreen() {
 
     // Mounted ref for cleanup
     const mountedRef = useRef(true);
-
-    /* ---------------------------------------------------------- */
-    /* SESSION CHECK */
-    /* ---------------------------------------------------------- */
-    useEffect(() => {
-        mountedRef.current = true;
-
-        const checkSession = async () => {
-            try {
-                const { session } = await authService.getSession();
-                if (mountedRef.current && session?.user?.email_confirmed_at) {
-                    router.replace('/(tabs)/01_DashboardScreen');
-                }
-            } catch (err) {
-                console.warn('Session check failed', err);
-            }
-        };
-
-        checkSession();
-
-        // Listen for auth changes using the supabase helper
-        const unsubscribe = onAuthStateChange((_event, session) => {
-            if (mountedRef.current && session?.user?.email_confirmed_at) {
-                router.replace('/(tabs)/01_DashboardScreen');
-            }
-        });
-
-        return () => {
-            mountedRef.current = false;
-            unsubscribe();
-        };
-    }, []);
 
     /* ---------------------------------------------------------- */
     /* ANIMATION */
@@ -170,7 +139,7 @@ export default function LoginScreen() {
     }, [email]);
 
     /* ---------------------------------------------------------- */
-    /* LOGIN HANDLER */
+    /* LOGIN HANDLER - SIMPLIFIED */
     /* ---------------------------------------------------------- */
     const handleLogin = useCallback(async () => {
         if (loading) return;
@@ -188,20 +157,24 @@ export default function LoginScreen() {
         setLoading(true);
 
         try {
+            console.log('🚀 Attempting login for:', email);
+
             const response = await authService.signIn(
                 email.trim().toLowerCase(),
                 password
             );
 
             if (response.success) {
+                console.log('✅ Login successful');
+
                 // Success haptic
                 if (Platform.OS === 'ios') {
                     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                 }
 
-                // Navigation is handled by the auth state listener
-                // But we'll do a direct navigation as well
+                // Navigate to dashboard - AuthContext will handle the rest
                 router.replace('/(tabs)/01_DashboardScreen');
+
             } else {
                 // Handle specific error cases
                 if (response.error?.message.includes('verify your email')) {
@@ -236,7 +209,7 @@ export default function LoginScreen() {
                 }
             }
         } catch (err: any) {
-            console.error('Login error:', err);
+            console.error('❌ Login error:', err);
 
             // Error haptic
             if (Platform.OS === 'ios') {
