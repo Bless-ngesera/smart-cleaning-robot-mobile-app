@@ -49,6 +49,7 @@ interface FieldProps {
     autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
     onFocus?: () => void;
     onBlur?: () => void;
+    editable?: boolean;
 }
 
 interface PasswordRequirement {
@@ -70,6 +71,11 @@ export default function SignupScreen() {
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [acceptedTerms, setAcceptedTerms] = useState(false);
+
+    // Rate limit state
+    const [rateLimited, setRateLimited] = useState(false);
+    const [cooldownUntil, setCooldownUntil] = useState<Date | null>(null);
+    const [cooldownSeconds, setCooldownSeconds] = useState(0);
 
     // Focus states
     const [isPasswordFocused, setIsPasswordFocused] = useState(false);
@@ -96,8 +102,9 @@ export default function SignupScreen() {
     const passRef = useRef<TextInput>(null);
     const confirmRef = useRef<TextInput>(null);
 
-    // Timer ref for warning timeout
+    // Timer refs
     const warningTimerRef = useRef<NodeJS.Timeout | null>(null);
+    const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
 
     // Mounted ref for cleanup
     const mountedRef = useRef(true);
@@ -148,16 +155,48 @@ export default function SignupScreen() {
     const allRequirementsMet = areAllRequirementsMet(password);
 
     /* ---------------------------------------------------------- */
+    /* RATE LIMIT COOLDOWN TIMER */
+    /* ---------------------------------------------------------- */
+    useEffect(() => {
+        if (cooldownUntil && mountedRef.current) {
+            const updateCooldown = () => {
+                const now = new Date();
+                const diff = cooldownUntil.getTime() - now.getTime();
+
+                if (diff <= 0) {
+                    setRateLimited(false);
+                    setCooldownUntil(null);
+                    setCooldownSeconds(0);
+                    if (cooldownTimerRef.current) {
+                        clearInterval(cooldownTimerRef.current);
+                        cooldownTimerRef.current = null;
+                    }
+                } else {
+                    setCooldownSeconds(Math.ceil(diff / 1000));
+                }
+            };
+
+            updateCooldown();
+            cooldownTimerRef.current = setInterval(updateCooldown, 1000);
+
+            return () => {
+                if (cooldownTimerRef.current) {
+                    clearInterval(cooldownTimerRef.current);
+                    cooldownTimerRef.current = null;
+                }
+            };
+        }
+    }, [cooldownUntil]);
+
+    /* ---------------------------------------------------------- */
     /* WARNING VISIBILITY MANAGEMENT */
     /* ---------------------------------------------------------- */
     const showWarning = useCallback(() => {
-        // Clear any existing timer
         if (warningTimerRef.current) {
             clearTimeout(warningTimerRef.current);
             warningTimerRef.current = null;
         }
 
-        // Show warning with animation
         setShowPasswordWarning(true);
         Animated.timing(warningAnim, {
             toValue: 1,
@@ -165,7 +204,6 @@ export default function SignupScreen() {
             useNativeDriver: true,
         }).start();
 
-        // Set timer to hide warning after 5 seconds
         warningTimerRef.current = setTimeout(() => {
             if (mountedRef.current) {
                 Animated.timing(warningAnim, {
@@ -194,7 +232,6 @@ export default function SignupScreen() {
         });
     }, []);
 
-    // Check requirements and show warning if not met
     useEffect(() => {
         if (password && !allRequirementsMet && (isPasswordFocused || isConfirmPasswordFocused)) {
             showWarning();
@@ -203,13 +240,15 @@ export default function SignupScreen() {
         }
     }, [password, allRequirementsMet, isPasswordFocused, isConfirmPasswordFocused]);
 
-    // Cleanup timer on unmount
     useEffect(() => {
         mountedRef.current = true;
         return () => {
             mountedRef.current = false;
             if (warningTimerRef.current) {
                 clearTimeout(warningTimerRef.current);
+            }
+            if (cooldownTimerRef.current) {
+                clearInterval(cooldownTimerRef.current);
             }
         };
     }, []);
@@ -238,7 +277,6 @@ export default function SignupScreen() {
         setPasswordError('');
         setConfirmError('');
 
-        // Full name validation
         if (!fullName.trim()) {
             setNameError('Full name is required');
             shakeField(nameShake);
@@ -249,7 +287,6 @@ export default function SignupScreen() {
             valid = false;
         }
 
-        // Email validation
         if (!email.trim()) {
             setEmailError('Email is required');
             shakeField(emailShake);
@@ -260,7 +297,6 @@ export default function SignupScreen() {
             valid = false;
         }
 
-        // Password validation
         if (!password) {
             setPasswordError('Password is required');
             shakeField(passwordShake);
@@ -268,12 +304,10 @@ export default function SignupScreen() {
         } else if (!allRequirementsMet) {
             setPasswordError('Please meet all password requirements');
             shakeField(passwordShake);
-            // Show warning if validation fails
             showWarning();
             valid = false;
         }
 
-        // Confirm password validation
         if (!confirmPassword) {
             setConfirmError('Please confirm your password');
             shakeField(confirmShake);
@@ -284,7 +318,6 @@ export default function SignupScreen() {
             valid = false;
         }
 
-        // Terms acceptance
         if (!acceptedTerms) {
             Alert.alert(
                 'Terms Required',
@@ -297,10 +330,28 @@ export default function SignupScreen() {
     }, [fullName, email, password, confirmPassword, acceptedTerms, allRequirementsMet, shakeField, showWarning]);
 
     /* ---------------------------------------------------------- */
-    /* SIGNUP HANDLER */
+    /* SIGNUP HANDLER WITH ENHANCED ERROR HANDLING */
     /* ---------------------------------------------------------- */
     const handleSignUp = useCallback(async () => {
-        if (loading) return;
+        if (loading || rateLimited) return;
+
+        if (cooldownUntil && new Date() < cooldownUntil) {
+            const minutesLeft = Math.ceil((cooldownUntil.getTime() - Date.now()) / 60000);
+            const secondsLeft = Math.ceil((cooldownUntil.getTime() - Date.now()) / 1000);
+
+            if (minutesLeft > 0) {
+                Alert.alert(
+                    'Rate Limit Active',
+                    `Please wait ${minutesLeft} minute${minutesLeft > 1 ? 's' : ''} before trying again. This is a security measure to prevent abuse.`
+                );
+            } else {
+                Alert.alert(
+                    'Rate Limit Active',
+                    `Please wait ${secondsLeft} second${secondsLeft > 1 ? 's' : ''} before trying again.`
+                );
+            }
+            return;
+        }
 
         Keyboard.dismiss();
 
@@ -320,7 +371,7 @@ export default function SignupScreen() {
             );
 
             if (!response.success) {
-                throw new Error(response.error?.message);
+                throw response.error;
             }
 
             if (Platform.OS === 'ios') {
@@ -348,21 +399,56 @@ export default function SignupScreen() {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             }
 
-            const message = err.message || 'Unable to create account. Please try again.';
+            // Handle rate limit errors (status 429)
+            if (err?.status === 429 || err?.code === 'RATE_LIMIT_EXCEEDED') {
+                setRateLimited(true);
+                const cooldownDate = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+                setCooldownUntil(cooldownDate);
 
-            if (message.includes('already registered')) {
-                setEmailError('This email is already registered');
-                shakeField(emailShake);
-            } else if (message.includes('password')) {
-                setPasswordError(message);
-                shakeField(passwordShake);
+                Alert.alert(
+                    'Rate Limit Exceeded',
+                    err?.message || 'Too many signup attempts. Please wait about 1 hour before trying again.'
+                );
+                return;
             }
 
-            Alert.alert('Signup Failed', message);
+            // Handle specific error cases
+            if (err?.code === 'USER_EXISTS' || err?.message?.includes('already registered')) {
+                setEmailError(err?.message || 'This email is already registered');
+                shakeField(emailShake);
+                Alert.alert(
+                    'Email Already Registered',
+                    'This email is already registered. Would you like to log in instead?',
+                    [
+                        { text: 'Try Again', style: 'cancel' },
+                        { text: 'Log In', onPress: () => router.push('/LoginScreen') }
+                    ]
+                );
+            }
+            else if (err?.code === 'INVALID_EMAIL') {
+                setEmailError(err?.message || 'Invalid email address');
+                shakeField(emailShake);
+                Alert.alert('Invalid Email', err?.message);
+            }
+            else if (err?.code === 'INVALID_PASSWORD' || err?.message?.includes('password')) {
+                setPasswordError(err?.message || 'Invalid password');
+                shakeField(passwordShake);
+                Alert.alert('Password Error', err?.message);
+            }
+            else if (err?.code === 'WEAK_PASSWORD') {
+                setPasswordError(err?.message || 'Password is too weak');
+                shakeField(passwordShake);
+                showWarning();
+                Alert.alert('Weak Password', err?.message);
+            }
+            else {
+                // Generic error
+                Alert.alert('Signup Failed', err?.message || 'Unable to create account. Please try again.');
+            }
         } finally {
             setLoading(false);
         }
-    }, [loading, validateForm, email, password, fullName, shakeField, emailShake, passwordShake]);
+    }, [loading, rateLimited, cooldownUntil, validateForm, email, password, fullName, shakeField, emailShake, passwordShake, showWarning]);
 
     /* ---------------------------------------------------------- */
     /* NAVIGATION */
@@ -409,10 +495,27 @@ export default function SignupScreen() {
                             subtitle="Join Smart Cleaner Pro today"
                         />
 
+                        {/* Rate Limit Banner */}
+                        {rateLimited && cooldownSeconds > 0 && (
+                            <View style={[styles.rateLimitBanner, {
+                                backgroundColor: darkMode ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)',
+                                borderColor: darkMode ? 'rgba(239,68,68,0.3)' : 'rgba(239,68,68,0.2)',
+                            }]}>
+                                <Ionicons name="timer-outline" size={20} color="#ef4444" />
+                                <View style={styles.rateLimitTextContainer}>
+                                    <AppText style={styles.rateLimitTitle}>Rate Limit Active</AppText>
+                                    <AppText style={styles.rateLimitTime}>
+                                        {Math.floor(cooldownSeconds / 60)}:{(cooldownSeconds % 60).toString().padStart(2, '0')} remaining
+                                    </AppText>
+                                </View>
+                            </View>
+                        )}
+
                         {/* Form Card */}
                         <View style={[styles.card, {
                             backgroundColor: darkMode ? 'rgba(255,255,255,0.05)' : '#ffffff',
                             borderColor: darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
+                            opacity: rateLimited ? 0.5 : 1,
                         }]}>
                             <Field
                                 label="Full Name"
@@ -429,6 +532,7 @@ export default function SignupScreen() {
                                 returnKeyType="next"
                                 onSubmitEditing={() => emailRef.current?.focus()}
                                 autoCapitalize="words"
+                                editable={!rateLimited}
                             />
 
                             <Field
@@ -448,6 +552,7 @@ export default function SignupScreen() {
                                 returnKeyType="next"
                                 onSubmitEditing={() => passRef.current?.focus()}
                                 autoCapitalize="none"
+                                editable={!rateLimited}
                             />
 
                             <Field
@@ -480,41 +585,10 @@ export default function SignupScreen() {
                                 }
                                 returnKeyType="next"
                                 onSubmitEditing={() => confirmRef.current?.focus()}
+                                editable={!rateLimited}
                             />
 
-                            <Field
-                                label="Confirm Password"
-                                value={confirmPassword}
-                                onChangeText={(text) => {
-                                    setConfirmPassword(text);
-                                    if (confirmError) setConfirmError('');
-                                }}
-                                error={confirmError}
-                                icon="lock-closed-outline"
-                                colors={colors}
-                                darkMode={darkMode}
-                                shake={confirmShake}
-                                secureTextEntry={!showConfirmPassword}
-                                refInput={confirmRef}
-                                onFocus={() => setIsConfirmPasswordFocused(true)}
-                                onBlur={() => setIsConfirmPasswordFocused(false)}
-                                rightIcon={
-                                    <TouchableOpacity
-                                        onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                                    >
-                                        <Ionicons
-                                            name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
-                                            size={22}
-                                            color={colors.textSecondary}
-                                        />
-                                    </TouchableOpacity>
-                                }
-                                returnKeyType="done"
-                                onSubmitEditing={handleSignUp}
-                            />
-
-                            {/* Password Requirements Warning */}
+                            {/* Password Requirements Warning - MOVED HERE below password field */}
                             {showPasswordWarning && !allRequirementsMet && (
                                 <Animated.View
                                     style={[
@@ -563,11 +637,44 @@ export default function SignupScreen() {
                                     <View style={styles.warningFooter}>
                                         <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
                                         <AppText style={[styles.warningTimeout, { color: colors.textSecondary }]}>
-                                            This message will disappear in 5 seconds
+                                            This message will disappear in 10 seconds
                                         </AppText>
                                     </View>
                                 </Animated.View>
                             )}
+
+                            <Field
+                                label="Confirm Password"
+                                value={confirmPassword}
+                                onChangeText={(text) => {
+                                    setConfirmPassword(text);
+                                    if (confirmError) setConfirmError('');
+                                }}
+                                error={confirmError}
+                                icon="lock-closed-outline"
+                                colors={colors}
+                                darkMode={darkMode}
+                                shake={confirmShake}
+                                secureTextEntry={!showConfirmPassword}
+                                refInput={confirmRef}
+                                onFocus={() => setIsConfirmPasswordFocused(true)}
+                                onBlur={() => setIsConfirmPasswordFocused(false)}
+                                rightIcon={
+                                    <TouchableOpacity
+                                        onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                    >
+                                        <Ionicons
+                                            name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                                            size={22}
+                                            color={colors.textSecondary}
+                                        />
+                                    </TouchableOpacity>
+                                }
+                                returnKeyType="done"
+                                onSubmitEditing={handleSignUp}
+                                editable={!rateLimited}
+                            />
 
                             {/* Password Match Indicator */}
                             {confirmPassword.length > 0 && (
@@ -593,6 +700,7 @@ export default function SignupScreen() {
                                 style={styles.termsContainer}
                                 onPress={toggleTerms}
                                 activeOpacity={0.7}
+                                disabled={rateLimited}
                             >
                                 <View style={[styles.checkbox, {
                                     borderColor: acceptedTerms ? colors.primary : (darkMode ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)'),
@@ -620,12 +728,12 @@ export default function SignupScreen() {
                             </TouchableOpacity>
 
                             <Button
-                                title="Create Account"
+                                title={rateLimited ? "Too Many Attempts" : "Create Account"}
                                 icon="person-add-outline"
                                 onPress={handleSignUp}
-                                variant="primary"
+                                variant={rateLimited ? "secondary" : "primary"}
                                 fullWidth
-                                disabled={loading || !fullName || !email || !password || !confirmPassword || !acceptedTerms}
+                                disabled={loading || !fullName || !email || !password || !confirmPassword || !acceptedTerms || rateLimited}
                                 loading={loading}
                                 style={styles.signupButton}
                             />
@@ -682,6 +790,7 @@ function Field({
                    autoCapitalize = 'none',
                    onFocus,
                    onBlur,
+                   editable = true,
                    ...rest
                }: FieldProps) {
     const borderColor = error
@@ -707,6 +816,7 @@ function Field({
                     styles.label,
                     {
                         color: error ? '#ef4444' : (darkMode ? 'rgba(255,255,255,0.88)' : 'rgba(0,0,0,0.80)'),
+                        opacity: editable ? 1 : 0.5,
                     },
                 ]}
             >
@@ -719,7 +829,7 @@ function Field({
                         name={icon}
                         size={22}
                         color={iconColor}
-                        style={styles.inputIconLeft}
+                        style={[styles.inputIconLeft, { opacity: editable ? 1 : 0.5 }]}
                     />
 
                     <TextInput
@@ -733,6 +843,7 @@ function Field({
                                 borderColor,
                                 color: darkMode ? '#ffffff' : colors.text,
                                 backgroundColor,
+                                opacity: editable ? 1 : 0.5,
                             },
                         ]}
                         placeholderTextColor={darkMode ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)'}
@@ -743,10 +854,11 @@ function Field({
                         autoCorrect={false}
                         onFocus={onFocus}
                         onBlur={onBlur}
+                        editable={editable}
                         {...rest}
                     />
 
-                    {rightIcon && <View style={styles.rightIcon}>{rightIcon}</View>}
+                    {rightIcon && <View style={[styles.rightIcon, { opacity: editable ? 1 : 0.5 }]}>{rightIcon}</View>}
                 </View>
             </Animated.View>
 
@@ -784,6 +896,28 @@ const styles = StyleSheet.create({
     },
     largeWrapper: {
         maxWidth: 480,
+    },
+    rateLimitBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        padding: 16,
+        borderRadius: 12,
+        borderWidth: 1,
+        marginBottom: 20,
+    },
+    rateLimitTextContainer: {
+        flex: 1,
+    },
+    rateLimitTitle: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#ef4444',
+        marginBottom: 2,
+    },
+    rateLimitTime: {
+        fontSize: 13,
+        color: '#ef4444',
     },
     card: {
         borderRadius: 24,
