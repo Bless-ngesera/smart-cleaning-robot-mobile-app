@@ -71,7 +71,24 @@ class AuthService {
                     message: authError.message,
                     status: authError.status,
                     name: authError.name,
+                    code: authError.code,
                 });
+
+                // Check for rate limit errors first
+                if (authError.status === 429 ||
+                    authError.message?.toLowerCase().includes('rate limit') ||
+                    authError.message?.toLowerCase().includes('too many requests') ||
+                    authError.code === 'over_email_send_rate_limit') {
+
+                    return {
+                        success: false,
+                        error: {
+                            message: 'Too many signup attempts. Please wait about 1 hour before trying again. This is a security measure to prevent abuse.',
+                            code: 'RATE_LIMIT_EXCEEDED',
+                            status: 429,
+                        },
+                    };
+                }
 
                 // Check for specific error types
                 if (authError.message.includes('User already registered')) {
@@ -110,10 +127,6 @@ class AuthService {
                 confirmed: authData.user.email_confirmed_at ? 'Yes' : 'No',
                 hasSession: !!authData.session,
             });
-
-            // ❌ REMOVED: Manual profile creation - Now handled by database trigger
-            // The trigger `on_auth_user_created` automatically creates the profile
-            // This eliminates foreign key constraint errors and race conditions
 
             // Determine if email confirmation is needed
             const needsEmailConfirmation = !authData.user?.email_confirmed_at;
@@ -163,6 +176,19 @@ class AuthService {
 
             if (error) {
                 console.error('❌ [AuthService] Login error:', error.message);
+
+                // Handle rate limit errors
+                if (error.status === 429 ||
+                    error.message?.toLowerCase().includes('rate limit')) {
+                    return {
+                        success: false,
+                        error: {
+                            message: 'Too many login attempts. Please wait a few minutes before trying again.',
+                            code: 'RATE_LIMIT_EXCEEDED',
+                            status: 429,
+                        },
+                    };
+                }
 
                 // Handle specific login errors
                 if (error.message.includes('Invalid login credentials')) {
@@ -239,6 +265,19 @@ class AuthService {
             );
 
             if (error) {
+                // Handle rate limit errors
+                if (error.status === 429 ||
+                    error.message?.toLowerCase().includes('rate limit')) {
+                    return {
+                        success: false,
+                        error: {
+                            message: 'Too many password reset requests. Please wait a few minutes before trying again.',
+                            code: 'RATE_LIMIT_EXCEEDED',
+                            status: 429,
+                        },
+                    };
+                }
+
                 if (error.message.includes('User not found')) {
                     return {
                         success: false,
@@ -345,15 +384,19 @@ class AuthService {
             });
 
             if (error) {
-                if (error.message.includes('rate limit')) {
+                // Handle rate limit errors
+                if (error.status === 429 ||
+                    error.message?.toLowerCase().includes('rate limit')) {
                     return {
                         success: false,
                         error: {
-                            message: 'Too many requests. Please wait a few minutes.',
-                            code: 'RATE_LIMIT',
+                            message: 'Too many confirmation requests. Please wait a few minutes before trying again.',
+                            code: 'RATE_LIMIT_EXCEEDED',
+                            status: 429,
                         },
                     };
                 }
+
                 if (error.message.includes('Email not found')) {
                     return {
                         success: false,
@@ -549,8 +592,20 @@ class AuthService {
     private getFriendlyErrorMessage(error: any): string {
         const message = error?.message?.toLowerCase() || '';
         const code = error?.code?.toLowerCase() || '';
+        const status = error?.status;
 
-        // Handle specific error codes first
+        // Handle rate limit errors first (most important)
+        if (status === 429 ||
+            message.includes('rate limit') ||
+            message.includes('too many requests') ||
+            message.includes('too many attempts') ||
+            code === 'over_email_send_rate_limit' ||
+            message.includes('email rate limit')) {
+
+            return 'Too many attempts. Please wait about an hour before trying again. This is a security measure to prevent abuse.';
+        }
+
+        // Handle specific error codes
         if (code === '42501') {
             return 'Account created but profile setup is pending. Please try logging in after verifying your email.';
         }
@@ -580,9 +635,6 @@ class AuthService {
         if (message.includes('password should be at least 6 characters')) {
             return 'Password must be at least 6 characters long.';
         }
-        if (message.includes('rate limit')) {
-            return 'Too many attempts. Please wait a few minutes and try again.';
-        }
         if (message.includes('network')) {
             return 'Network error. Please check your internet connection.';
         }
@@ -600,9 +652,6 @@ class AuthService {
         }
         if (message.includes('jwt expired')) {
             return 'Your session has expired. Please log in again.';
-        }
-        if (message.includes('email rate limit')) {
-            return 'Too many email requests. Please wait a few minutes before trying again.';
         }
         if (message.includes('new row violates row-level security')) {
             return 'Account created. Please log in after verifying your email.';
