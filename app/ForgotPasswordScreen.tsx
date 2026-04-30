@@ -6,11 +6,10 @@ import {
     TouchableOpacity,
     StyleSheet,
     ScrollView,
-    Alert,
     KeyboardAvoidingView,
     Platform,
     Animated,
-    Dimensions,
+    useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,17 +22,20 @@ import Button from '../src/components/Button';
 import AppText from '../src/components/AppText';
 import { useThemeContext } from '@/src/context/ThemeContext';
 import authService from '@/src/services/auth';
-
-const { width } = Dimensions.get('window');
-const isLargeScreen = width >= 768;
+import { useToast } from '@/src/context/ToastContext';
 
 export default function ForgotPasswordScreen() {
     const { colors, darkMode } = useThemeContext();
+    const { showToast } = useToast();
+    const { width } = useWindowDimensions();
+    const isLargeScreen = width >= 768;
 
     const [email, setEmail] = useState('');
     const [loading, setLoading] = useState(false);
     const [sent, setSent] = useState(false);
     const [emailError, setEmailError] = useState('');
+    const [errorBanner, setErrorBanner] = useState('');
+    const [resendStatus, setResendStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
     const emailShake = useRef(new Animated.Value(0)).current;
     const emailRef = useRef<TextInput>(null);
@@ -82,25 +84,17 @@ export default function ForgotPasswordScreen() {
             const response = await authService.forgotPassword(email.trim());
 
             if (response.success) {
-                // Success haptic
                 if (Platform.OS === 'ios') {
                     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                 }
-
+                showToast('Password reset link sent to your email!', 'success', 4500);
                 setSent(true);
-
-                // Show success message
-                Alert.alert(
-                    'Reset Link Sent',
-                    response.data?.message || 'Check your email (including spam/junk) for the password reset link.'
-                );
             } else {
                 throw new Error(response.error?.message);
             }
         } catch (err: any) {
             console.error('Forgot password error:', err);
 
-            // Error haptic
             if (Platform.OS === 'ios') {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             }
@@ -112,7 +106,7 @@ export default function ForgotPasswordScreen() {
                 shakeField();
             }
 
-            Alert.alert('Error', errorMessage);
+            setErrorBanner(errorMessage);
         } finally {
             setLoading(false);
         }
@@ -121,11 +115,11 @@ export default function ForgotPasswordScreen() {
     const handleResendEmail = async () => {
         if (loading) return;
 
-        // Haptic feedback
         if (Platform.OS === 'ios') {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
 
+        setResendStatus(null);
         setLoading(true);
 
         try {
@@ -135,8 +129,8 @@ export default function ForgotPasswordScreen() {
                 if (Platform.OS === 'ios') {
                     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                 }
-
-                Alert.alert('Success', 'Reset link has been resent. Please check your email.');
+                showToast('Reset link resent! Check your inbox and spam folder.', 'success', 4000);
+                setResendStatus({ type: 'success', message: 'Reset link resent! Check your inbox and spam folder.' });
             } else {
                 throw new Error(response.error?.message);
             }
@@ -144,7 +138,7 @@ export default function ForgotPasswordScreen() {
             if (Platform.OS === 'ios') {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             }
-            Alert.alert('Error', err.message || 'Failed to resend email');
+            setResendStatus({ type: 'error', message: err.message || 'Failed to resend email. Please try again.' });
         } finally {
             setLoading(false);
         }
@@ -237,12 +231,33 @@ export default function ForgotPasswordScreen() {
                                         Check your inbox and spam folder. The link will expire in 1 hour for security.
                                     </AppText>
 
+                                    {resendStatus && (
+                                        <View style={[styles.resendStatusBanner, {
+                                            backgroundColor: resendStatus.type === 'success'
+                                                ? (darkMode ? 'rgba(16,185,129,0.15)' : 'rgba(16,185,129,0.08)')
+                                                : (darkMode ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.08)'),
+                                            borderColor: resendStatus.type === 'success' ? '#10B981' : '#ef4444',
+                                        }]}>
+                                            <Ionicons
+                                                name={resendStatus.type === 'success' ? 'checkmark-circle' : 'alert-circle-outline'}
+                                                size={18}
+                                                color={resendStatus.type === 'success' ? '#10B981' : '#ef4444'}
+                                            />
+                                            <AppText style={[styles.resendStatusText, {
+                                                color: resendStatus.type === 'success' ? '#10B981' : '#ef4444',
+                                            }]}>
+                                                {resendStatus.message}
+                                            </AppText>
+                                        </View>
+                                    )}
+
                                     <View style={styles.successActions}>
                                         <Button
                                             title="Resend Email"
                                             onPress={handleResendEmail}
                                             variant="outline"
                                             fullWidth
+                                            loading={loading}
                                             style={styles.resendButton}
                                         />
 
@@ -264,6 +279,7 @@ export default function ForgotPasswordScreen() {
                                         onChangeText={(t: string) => {
                                             setEmail(t);
                                             if (emailError) setEmailError('');
+                                            if (errorBanner) setErrorBanner('');
                                         }}
                                         error={emailError}
                                         icon="mail-outline"
@@ -293,6 +309,18 @@ export default function ForgotPasswordScreen() {
                                         </AppText>
                                     </View>
 
+                                    {errorBanner ? (
+                                        <View style={[styles.errorBanner, {
+                                            backgroundColor: darkMode ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.08)',
+                                            borderColor: '#ef4444',
+                                        }]}>
+                                            <Ionicons name="alert-circle-outline" size={20} color="#ef4444" />
+                                            <AppText style={styles.errorBannerText}>
+                                                {errorBanner}
+                                            </AppText>
+                                        </View>
+                                    ) : null}
+
                                     <Button
                                         title="Send Reset Link"
                                         icon="mail-outline"
@@ -301,7 +329,7 @@ export default function ForgotPasswordScreen() {
                                         fullWidth
                                         loading={loading}
                                         disabled={loading || !email}
-                                        style={{ marginTop: 16 }}
+                                        style={{ marginTop: 8 }}
                                     />
 
                                     <TouchableOpacity
@@ -356,7 +384,7 @@ function Field({
     shake: Animated.Value;
     secureTextEntry?: boolean;
     rightIcon?: React.ReactNode;
-    refInput?: React.RefObject<TextInput>;
+    refInput?: React.RefObject<TextInput | null>;
     [key: string]: any;
 }) {
     const borderColor = error
@@ -412,6 +440,7 @@ function Field({
                             },
                         ]}
                         placeholderTextColor={darkMode ? 'rgba(255,255,255,0.40)' : 'rgba(0,0,0,0.40)'}
+                        allowFontScaling={false}
                         {...rest}
                     />
 
@@ -419,11 +448,11 @@ function Field({
                 </View>
             </Animated.View>
 
-            {error && (
+            {error ? (
                 <AppText style={[styles.errorText, { color: '#dc2626' }]}>
                     {error}
                 </AppText>
-            )}
+            ) : null}
         </View>
     );
 }
@@ -469,6 +498,7 @@ const styles = StyleSheet.create({
         paddingRight: 50,
         fontSize: 16,
         fontWeight: '400',
+        fontFamily: 'SF-Pro-Display-Regular',
     },
 
     inputIconLeft: {
@@ -490,6 +520,23 @@ const styles = StyleSheet.create({
         marginTop: 6,
         fontSize: 13.5,
         fontWeight: '500',
+    },
+
+    errorBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        padding: 14,
+        borderRadius: 12,
+        borderWidth: 1,
+        marginBottom: 12,
+    },
+    errorBannerText: {
+        flex: 1,
+        fontSize: 14,
+        fontWeight: '500',
+        color: '#ef4444',
+        lineHeight: 20,
     },
 
     infoBox: {
@@ -564,6 +611,22 @@ const styles = StyleSheet.create({
         gap: 12,
     },
 
+    resendStatusBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        padding: 14,
+        borderRadius: 12,
+        borderWidth: 1,
+        marginBottom: 16,
+        width: '100%',
+    },
+    resendStatusText: {
+        flex: 1,
+        fontSize: 13,
+        fontWeight: '500',
+        lineHeight: 18,
+    },
     resendButton: {
         marginBottom: 8,
     },

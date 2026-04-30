@@ -1,6 +1,6 @@
 // src/components/AppText.tsx
 import React from 'react';
-import { Text, TextProps, StyleSheet, TextStyle } from 'react-native';
+import { Text, TextProps, TextStyle } from 'react-native';
 import { useThemeContext } from '@/src/context/ThemeContext';
 
 type AppTextVariant = 'title' | 'subtitle' | 'body' | 'caption' | 'button' | 'label';
@@ -10,24 +10,31 @@ interface AppTextProps extends TextProps {
     style?: TextStyle | TextStyle[];
 }
 
-/**
- * AppText - Global text component with premium typography defaults
- *
- * - Uses theme colors from ThemeContext
- * - Variant-based styling (title, subtitle, body, etc.)
- * - Disables system font scaling for consistency
- * - Fully StyleSheet-based (no NativeWind/Tailwind)
- * - Type-safe, bug-free, easy to override
- */
+function resolveFontFamily(fontWeight?: string | number): string {
+    const w = typeof fontWeight === 'number' ? fontWeight : parseInt(String(fontWeight ?? '400'), 10);
+    if (w >= 700) return 'SF-Pro-Display-Bold';
+    if (w >= 500) return 'SF-Pro-Display-Semibold';
+    return 'SF-Pro-Display-Regular';
+}
+
+function extractFontWeight(styles: (TextStyle | null | undefined | false)[]): string | number | undefined {
+    let weight: string | number | undefined;
+    for (const s of styles) {
+        if (s && typeof s === 'object' && 'fontWeight' in s) {
+            weight = (s as TextStyle).fontWeight as string | number;
+        }
+    }
+    return weight;
+}
+
 export default function AppText({
-                                    children,
-                                    variant = 'body',
-                                    style,
-                                    ...props
-                                }: AppTextProps) {
+    children,
+    variant = 'body',
+    style,
+    ...props
+}: AppTextProps) {
     const { colors, darkMode } = useThemeContext();
 
-    // Define styles for each variant
     const variantStyles: Record<AppTextVariant, TextStyle> = {
         title: {
             fontSize: 24,
@@ -70,23 +77,18 @@ export default function AppText({
         },
     };
 
-    // Get the variant style — fallback to 'body' if invalid variant
     const selectedVariantStyle = variantStyles[variant] ?? variantStyles.body;
+    const styleArr = Array.isArray(style) ? style : (style ? [style] : []);
+    const effectiveFontWeight = extractFontWeight([selectedVariantStyle, ...styleArr]);
+    const fontFamily = resolveFontFamily(effectiveFontWeight);
 
     return (
         <Text
-            style={[styles.base, selectedVariantStyle, style]}
-            allowFontScaling={false} // Enforce consistent size across devices
+            style={[{ fontFamily }, selectedVariantStyle, style]}
+            allowFontScaling={false}
             {...props}
         >
             {children}
         </Text>
     );
 }
-
-const styles = StyleSheet.create({
-    base: {
-        // Global defaults (add custom fontFamily here if loaded)
-        fontFamily: 'System',
-    },
-});

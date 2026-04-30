@@ -19,7 +19,7 @@ import {
     ScrollView,
     Alert,
     Platform,
-    Dimensions,
+    useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,6 +29,13 @@ import Loader from '../../src/components/Loader';
 import AppText from '../../src/components/AppText';
 import { useThemeContext } from '@/src/context/ThemeContext';
 import { supabase } from '@/src/services/supabase';
+import {
+    startCleaning,
+    stopCleaning,
+    dockRobot,
+    sendCommand,
+    getConnectionStatus,
+} from '@/src/services/robotService';
 import { router } from 'expo-router';
 
 // === C++ BRIDGE / TYPE DEFINITIONS ===
@@ -58,7 +65,7 @@ export default function ControlScreen() {
     const [manualMode, setManualMode] = useState(false);
 
     // Responsive design - same as Dashboard
-    const { width } = Dimensions.get('window');
+    const { width } = useWindowDimensions();
     const isLargeScreen = width >= 768;
 
     // Design tokens matching Dashboard
@@ -78,15 +85,15 @@ export default function ControlScreen() {
             // setIsRunning(status.isRunning);
 
             const { data, error } = await supabase
-                .from('robot_status')
-                .select('is_cleaning')
-                .eq('user_id', user.id)
+                .from('robots')
+                .select('mode')
+                .eq('owner_id', user.id)
                 .order('created_at', { ascending: false })
                 .limit(1)
                 .maybeSingle();
 
             if (!error && data) {
-                setIsRunning(data.is_cleaning ?? false);
+                setIsRunning(data.mode === 'cleaning');
             }
         } catch (err) {
             console.error('[ControlScreen] fetchStatus error:', err);
@@ -97,24 +104,24 @@ export default function ControlScreen() {
         fetchStatus();
     }, [fetchStatus]);
 
-    /* ---------------- Update Robot Status in Database - FIXED ---------------- */
+    /* ---------------- Update Robot Status in Database ---------------- */
     const updateRobotStatus = useCallback(async (isCleaning: boolean) => {
         try {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user?.id) return;
 
+            // === C++ INTEGRATION POINT ===
+            // Read live values from hardware instead:
+            // const { batteryLevel } = await RobotBridge.getRobotStatus();
+
             const { error } = await supabase
-                .from('robot_status')
-                .upsert({
-                    user_id: user.id,
-                    is_cleaning: isCleaning,
-                    battery_level: 85, // You can update this based on real data
+                .from('robots')
+                .update({
+                    mode: isCleaning ? 'cleaning' : 'idle',
                     status: isCleaning ? 'Online' : 'Offline',
-                    connection_type: 'wifi',
                     updated_at: new Date().toISOString(),
-                }, {
-                    onConflict: 'user_id',
-                });
+                })
+                .eq('owner_id', user.id);
 
             if (error) throw error;
         } catch (err) {
@@ -122,13 +129,16 @@ export default function ControlScreen() {
         }
     }, []);
 
-    /* ---------------- Simulated / Real Robot Actions - FIXED ---------------- */
+    /* ---------------- Real / Simulated Robot Actions ---------------- */
     const simulateAction = useCallback(
         async (
             message: string,
             log: string,
             errorMsg: string,
-            onSuccess?: () => void
+            onSuccess?: () => void,
+            // When the robot is connected via WiFi or BLE this function is called
+            // instead of the dev-mode simulation delay.
+            robotFn?: () => Promise<void>
         ) => {
             setBusy(true);
             setLoadingMessage(message);
@@ -136,21 +146,27 @@ export default function ControlScreen() {
             try {
                 console.log('[ControlScreen]', log);
 
-                // === C++ BRIDGE: Replace this delay with real RobotBridge call ===
-                // Android (JNI): await RobotBridge.startCleaning(cleaningMode) / stopCleaning() / returnToDock()
-                // iOS (Obj-C++): await [RobotBridge startCleaning:cleaningMode] / [RobotBridge stopCleaning] / [RobotBridge returnToDock]
-                await new Promise((resolve) => setTimeout(resolve, 1200));
+                const { isConnected } = getConnectionStatus();
+
+                if (isConnected && robotFn) {
+                    // === Real hardware path (WiFi REST / BLE GATT) ===
+                    // When C++ bridge is ready, replace robotFn body with:
+                    //   Android (JNI): await RobotBridge.startCleaning(cleaningMode)
+                    //   iOS (Obj-C++): [RobotBridge startCleaning:mode resolver:... rejecter:...]
+                    await robotFn();
+                } else {
+                    // === Dev simulation — no physical robot connected ===
+                    await new Promise((resolve) => setTimeout(resolve, 1200));
+                }
 
                 if (onSuccess) onSuccess();
 
-                // Add haptic feedback on success
                 if (Platform.OS === 'ios') {
                     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                 }
 
                 Alert.alert('Success', message.replace('...', ' completed!'));
 
-                // Refresh real status after action
                 await fetchStatus();
             } catch (err: any) {
                 console.error('[ControlScreen]', log, 'failed:', err);
@@ -168,7 +184,7 @@ export default function ControlScreen() {
         [fetchStatus]
     );
 
-    /* ---------------- Primary Control Actions - FIXED ---------------- */
+    /* ---------------- Primary Control Actions ---------------- */
     const handleStartCleaning = useCallback(() => {
         if (busy || isRunning || manualMode) return;
 
@@ -183,7 +199,8 @@ export default function ControlScreen() {
             async () => {
                 setIsRunning(true);
                 await updateRobotStatus(true);
-            }
+            },
+            () => startCleaning() // WiFi: POST /command {command:'start'} | BLE: GATT write
         );
     }, [busy, isRunning, manualMode, cleaningMode, simulateAction, updateRobotStatus]);
 
@@ -201,7 +218,8 @@ export default function ControlScreen() {
             async () => {
                 setIsRunning(false);
                 await updateRobotStatus(false);
-            }
+            },
+            () => stopCleaning() // WiFi: POST /command {command:'stop'} | BLE: GATT write
         );
     }, [busy, isRunning, simulateAction, updateRobotStatus]);
 
@@ -220,11 +238,12 @@ export default function ControlScreen() {
                 setIsRunning(false);
                 setManualMode(false);
                 await updateRobotStatus(false);
-            }
+            },
+            () => dockRobot() // WiFi: POST /command {command:'dock'} | BLE: GATT write
         );
     }, [busy, simulateAction, updateRobotStatus]);
 
-    /* ---------------- Manual Control Actions - FIXED ---------------- */
+    /* ---------------- Manual Control Actions ---------------- */
     const handleManualMove = useCallback((direction: 'forward' | 'backward' | 'left' | 'right' | 'stop') => {
         if (busy || !manualMode) return;
 
@@ -232,16 +251,15 @@ export default function ControlScreen() {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         }
 
-        console.log('[ControlScreen] Manual move command:', direction);
+        console.log('[ControlScreen] Manual move:', direction);
 
-        // === C++ BRIDGE: Send real-time movement command to robot ===
-        // Android (JNI): await RobotBridge.move(direction)
-        // iOS (Obj-C++): await [RobotBridge move:direction]
-
-        // Show brief feedback without blocking UI
-        const directionLabel = direction.charAt(0).toUpperCase() + direction.slice(1);
-        // Alert removed for smoother UX - just log the action
-        console.log(`[ControlScreen] Moving: ${directionLabel}`);
+        // Send command to robot if connected (best-effort, non-blocking)
+        // WiFi: POST /command {command:'move', direction}
+        // BLE: GATT write to command characteristic
+        // === C++ BRIDGE: replace sendCommand with RobotBridge.move(direction) ===
+        sendCommand('move', { direction }).catch((err) =>
+            console.warn('[ControlScreen] move command failed:', err)
+        );
     }, [busy, manualMode]);
 
     const handleRotate = useCallback((direction: 'left' | 'right') => {
@@ -251,13 +269,15 @@ export default function ControlScreen() {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
 
-        console.log('[ControlScreen] Manual rotate command:', direction);
+        console.log('[ControlScreen] Manual rotate:', direction);
 
-        // === C++ BRIDGE: Send real-time rotation command to robot ===
-        // Android (JNI): await RobotBridge.rotate(direction)
-        // iOS (Obj-C++): await [RobotBridge rotate:direction]
-
-        console.log(`[ControlScreen] Rotating: ${direction}`);
+        // Send command to robot if connected (best-effort, non-blocking)
+        // WiFi: POST /command {command:'rotate', direction}
+        // BLE: GATT write to command characteristic
+        // === C++ BRIDGE: replace sendCommand with RobotBridge.rotate(direction) ===
+        sendCommand('rotate', { direction }).catch((err) =>
+            console.warn('[ControlScreen] rotate command failed:', err)
+        );
     }, [busy, manualMode]);
 
     /* ---------------- Handle Mode/Speed Changes - FIXED ---------------- */
@@ -764,6 +784,7 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 32,
         fontWeight: '800',
+        fontFamily: 'SF-Pro-Display-Bold',
         letterSpacing: -0.5,
         marginBottom: 6,
     },

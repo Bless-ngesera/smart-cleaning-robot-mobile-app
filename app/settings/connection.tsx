@@ -9,7 +9,7 @@ import {
     Alert,
     Platform,
     PermissionsAndroid,
-    Dimensions,
+    useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +21,11 @@ import { router } from 'expo-router';
 import AppText from '../../src/components/AppText';
 import Button from '../../src/components/Button';
 import { useThemeContext } from '@/src/context/ThemeContext';
+import {
+    connectWifi,
+    connectBle,
+    disconnectRobot,
+} from '@/src/services/robotService';
 
 type ConnectionType = 'wifi' | 'ble' | 'none';
 
@@ -43,7 +48,7 @@ export default function ConnectionScreen() {
     const bleManagerRef = useRef<any>(null);
     const scanTimeoutRef = useRef<any>(null);
 
-    const { width } = Dimensions.get('window');
+    const { width } = useWindowDimensions();
     const isLargeScreen = width >= 768;
 
     const cardBg = darkMode ? 'rgba(255,255,255,0.05)' : '#ffffff';
@@ -77,23 +82,8 @@ export default function ConnectionScreen() {
         };
     }, []);
 
-    const saveConnection = async (
-        type: ConnectionType,
-        ip?: string,
-        bleId?: string
-    ) => {
-        await AsyncStorage.setItem(
-            'robotConnection',
-            JSON.stringify({ type, ip, bleId })
-        );
-        setConnectionType(type);
-        Haptics.notificationAsync(
-            Haptics.NotificationFeedbackType.Success
-        );
-    };
-
     const forgetConnection = async () => {
-        await AsyncStorage.removeItem('robotConnection');
+        await disconnectRobot();
         setConnectionType('none');
         setWifiIp('');
         setSelectedBleDevice(null);
@@ -109,35 +99,37 @@ export default function ConnectionScreen() {
         setTesting(true);
 
         try {
-            const res = await fetch(`http://${wifiIp.trim()}/status`, {
-                method: 'GET',
-            });
-
-            if (!res.ok) throw new Error();
-
-            await saveConnection('wifi', wifiIp.trim());
-            setStatusMessage('Wi-Fi connected ✓');
+            // connectWifi reaches the robot, confirms status, and persists the connection
+            const status = await connectWifi(wifiIp.trim());
+            setConnectionType('wifi');
+            setStatusMessage(`Wi-Fi connected ✓  Battery: ${status.batteryLevel}%`);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         } catch {
-            Alert.alert('Failed', 'Could not reach robot');
+            Alert.alert('Failed', 'Could not reach robot at that IP address');
         } finally {
             setTesting(false);
         }
     };
 
     const initBleManager = async () => {
-        if (IS_EXPO_GO) {
+        if (Platform.OS === 'web' || IS_EXPO_GO) {
             Alert.alert(
-                'Bluetooth not supported in Expo Go',
-                'Use Development Build'
+                'Bluetooth not supported',
+                'Bluetooth requires a native device build, not Expo Go or web.'
             );
             return null;
         }
 
         if (bleManagerRef.current) return bleManagerRef.current;
 
-        const { BleManager } = await import('react-native-ble-plx');
-        bleManagerRef.current = new BleManager();
-        return bleManagerRef.current;
+        try {
+            const { BleManager } = await import('react-native-ble-plx');
+            bleManagerRef.current = new BleManager();
+            return bleManagerRef.current;
+        } catch {
+            Alert.alert('Bluetooth unavailable', 'BLE is not available in this environment.');
+            return null;
+        }
     };
 
     const startBleScan = useCallback(async () => {
@@ -157,7 +149,7 @@ export default function ConnectionScreen() {
         setBleDevices([]);
         setIsScanning(true);
 
-        manager.startDeviceScan(null, null, (error, device) => {
+        manager.startDeviceScan(null, null, (error: any, device: any) => {
             if (error) return;
             if (!device?.name) return;
 
@@ -180,22 +172,24 @@ export default function ConnectionScreen() {
     }, []);
 
     const connectToBleDevice = async (device: any) => {
-        const manager = await initBleManager();
-        if (!manager) return;
-
         setTesting(true);
 
-        try {
-            await manager.connectToDevice(device.id);
-            await manager.discoverAllServicesAndCharacteristicsForDevice(
-                device.id
-            );
+        // Stop the local scan before delegating to robotService
+        if (bleManagerRef.current) {
+            bleManagerRef.current.stopDeviceScan?.();
+        }
+        if (scanTimeoutRef.current) clearTimeout(scanTimeoutRef.current);
+        setIsScanning(false);
 
-            await saveConnection('ble', undefined, device.id);
+        try {
+            // connectBle handles the GATT connect, service discovery, and AsyncStorage persistence
+            const status = await connectBle(device.id);
             setSelectedBleDevice(device.id);
-            setStatusMessage('Bluetooth connected ✓');
+            setConnectionType('ble');
+            setStatusMessage(`Bluetooth connected ✓  Battery: ${status.batteryLevel}%`);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         } catch {
-            Alert.alert('Connection failed');
+            Alert.alert('Connection failed', 'Could not connect to this device');
         } finally {
             setTesting(false);
         }
@@ -218,6 +212,11 @@ export default function ConnectionScreen() {
                         isLargeScreen && { maxWidth: 480 },
                     ]}
                 >
+                    {/* Back Navigation */}
+                    <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                        <Ionicons name="chevron-back" size={28} color={colors.primary} />
+                    </TouchableOpacity>
+
                     <AppText
                         style={[styles.title, { color: textPrimary }]}
                     >
@@ -237,7 +236,7 @@ export default function ConnectionScreen() {
                         {connectionType !== 'none' && (
                             <Button
                                 title="Forget"
-                                variant="destructive"
+                                variant="danger"
                                 onPress={forgetConnection}
                                 style={{ marginTop: 12 }}
                             />
@@ -308,6 +307,7 @@ export default function ConnectionScreen() {
                                     styles.input,
                                     { color: textPrimary, borderColor: cardBorder },
                                 ]}
+                                allowFontScaling={false}
                             />
 
                             <Button
@@ -381,10 +381,19 @@ export default function ConnectionScreen() {
 const styles = StyleSheet.create({
     container: { flex: 1 },
 
+    backButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'flex-start',
+        marginBottom: 16,
+    },
+
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
-        paddingTop: 120,
+        paddingTop: 16,
         paddingBottom: 80,
     },
 
@@ -421,6 +430,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         marginBottom: 16,
         fontSize: 16,
+        fontFamily: 'SF-Pro-Display-Regular',
     },
 
     device: {

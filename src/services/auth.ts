@@ -19,7 +19,7 @@ class AuthService {
     // ============================================================
     // SIGNUP FLOW - CLEAN VERSION (Trigger handles profile)
     // ============================================================
-    async signUp(email: string, password: string, fullName: string): Promise<AuthResponse> {
+    async signUp(email: string, password: string, fullName: string, phone?: string): Promise<AuthResponse> {
         try {
             console.log('🚀 [AuthService] Starting signup process for:', email);
 
@@ -52,6 +52,18 @@ class AuthService {
 
             console.log('📧 [AuthService] SignUp redirect URL:', redirectUrl);
 
+            // Pre-check: verify the email is not already in use
+            const emailTaken = await this.checkUserExists(email.trim().toLowerCase());
+            if (emailTaken) {
+                return {
+                    success: false,
+                    error: {
+                        message: 'Email already used by another user',
+                        code: 'USER_EXISTS',
+                    },
+                };
+            }
+
             // Attempt to create the user in Supabase Auth
             console.log('📡 [AuthService] Calling supabase.auth.signUp...');
             const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -60,6 +72,7 @@ class AuthService {
                 options: {
                     data: {
                         full_name: fullName.trim(),
+                        ...(phone ? { phone: phone.trim() } : {}),
                     },
                     emailRedirectTo: redirectUrl,
                 },
@@ -91,11 +104,13 @@ class AuthService {
                 }
 
                 // Check for specific error types
-                if (authError.message.includes('User already registered')) {
+                if (authError.message.includes('User already registered') ||
+                    authError.message.includes('already registered') ||
+                    authError.message.includes('already been registered')) {
                     return {
                         success: false,
                         error: {
-                            message: 'This email is already registered. Please log in instead.',
+                            message: 'Email already used by another user',
                             code: 'USER_EXISTS',
                             status: authError.status,
                         },
@@ -119,6 +134,18 @@ class AuthService {
             // Check if user was created successfully
             if (!authData?.user) {
                 throw new Error('No user data returned from signup');
+            }
+
+            // Supabase silently returns a fake user with empty identities when email
+            // confirmation is enabled and the address is already registered.
+            if (authData.user.identities && authData.user.identities.length === 0) {
+                return {
+                    success: false,
+                    error: {
+                        message: 'Email already used by another user',
+                        code: 'USER_EXISTS',
+                    },
+                };
             }
 
             console.log('✅ [AuthService] User created successfully:', {
@@ -611,7 +638,7 @@ class AuthService {
         }
 
         if (code === '23505') {
-            return 'This email is already registered.';
+            return 'Email already used by another user';
         }
 
         if (code === '23503') {
@@ -623,8 +650,8 @@ class AuthService {
         }
 
         // Auth specific errors
-        if (message.includes('email already registered')) {
-            return 'This email is already registered. Try logging in instead.';
+        if (message.includes('email already registered') || message.includes('already registered')) {
+            return 'Email already used by another user';
         }
         if (message.includes('invalid login credentials')) {
             return 'Invalid email or password. Please try again.';
@@ -681,8 +708,14 @@ class AuthService {
         if (!/[A-Z]/.test(password)) {
             errors.push('Include at least one uppercase letter');
         }
+        if (!/[a-z]/.test(password)) {
+            errors.push('Include at least one lowercase letter');
+        }
         if (!/[0-9]/.test(password)) {
             errors.push('Include at least one number');
+        }
+        if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
+            errors.push('Include at least one special character (!@#$%^&*)');
         }
 
         return {

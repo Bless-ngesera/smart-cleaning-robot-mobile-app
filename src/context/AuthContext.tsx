@@ -2,7 +2,6 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { router } from 'expo-router';
 import { onAuthStateChange, getCurrentSession } from '@/src/services/supabase';
-import { AppState } from 'react-native';
 
 type AuthContextType = {
     isLoading: boolean;
@@ -18,9 +17,30 @@ const AuthContext = createContext<AuthContextType>({
 
 export const useAuth = () => useContext(AuthContext);
 
-// Move initialization outside component to prevent recreation
+// ─────────────────────────────────────────────────────────────
+// Module-level flags (outside component so they survive re-renders)
+// ─────────────────────────────────────────────────────────────
 let authInitialized = false;
 let authUnsubscribe: (() => void) | null = null;
+
+// When the deep-link handler sends the user to /reset-password it sets
+// this flag so that the subsequent SIGNED_IN event doesn't clobber the
+// navigation by redirecting to the dashboard.
+let suppressNextSignedIn = false;
+
+// After a successful password update (USER_UPDATED event) the reset-password
+// screen shows its own success card, so we suppress the auto-redirect here.
+let suppressNextUserUpdated = false;
+
+export function setSuppressNextSignedIn(value: boolean) {
+    suppressNextSignedIn = value;
+}
+
+export function setSuppressNextUserUpdated(value: boolean) {
+    suppressNextUserUpdated = value;
+}
+
+// ─────────────────────────────────────────────────────────────
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [isLoading, setIsLoading] = useState(true);
@@ -44,7 +64,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         const initializeAuth = async () => {
             try {
-                // Check current session
                 const session = await getCurrentSession();
 
                 if (!mountedRef.current) return;
@@ -53,7 +72,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     console.log('✅ User found:', session.user.email);
                     setUser(session.user);
 
-                    // Navigate based on verification status
                     if (session.user.email_confirmed_at) {
                         router.replace('/(tabs)/01_DashboardScreen');
                     } else {
@@ -78,7 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         initializeAuth();
 
-        // Set up auth listener
+        // Set up auth state listener
         authUnsubscribe = onAuthStateChange((event, session) => {
             console.log('🔥 Auth event:', event, session?.user?.email);
 
@@ -88,11 +106,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             switch (event) {
                 case 'SIGNED_IN':
-                    if (session?.user?.email_confirmed_at) {
-                        router.replace('/(tabs)/01_DashboardScreen');
-                    } else {
-                        router.replace('/verified-account');
+                    // Consumed by deep-link handler when user arrives from a
+                    // reset-password link (PASSWORD_RECOVERY should have fired
+                    // but may not in all Supabase versions).
+                    if (suppressNextSignedIn) {
+                        suppressNextSignedIn = false;
+                        console.log('🔕 SIGNED_IN redirect suppressed (password recovery flow)');
+                        break;
                     }
+                    // Delay so the originating screen can show its success card
+                    // before the user is navigated away.
+                    setTimeout(() => {
+                        if (!mountedRef.current) return;
+                        if (session?.user?.email_confirmed_at) {
+                            router.replace('/(tabs)/01_DashboardScreen');
+                        } else {
+                            router.replace('/verified-account');
+                        }
+                    }, 1500);
                     break;
 
                 case 'SIGNED_OUT':
@@ -100,12 +131,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     break;
 
                 case 'USER_UPDATED':
-                    if (session?.user?.email_confirmed_at) {
-                        router.replace('/(tabs)/01_DashboardScreen');
+                    // Consumed by the reset-password screen which shows its own
+                    // success card and then signs the user out manually.
+                    if (suppressNextUserUpdated) {
+                        suppressNextUserUpdated = false;
+                        console.log('🔕 USER_UPDATED redirect suppressed (password reset flow)');
+                        break;
                     }
+                    // Delay mirrors SIGNED_IN so account-settings password changes
+                    // also have time to show feedback before redirecting.
+                    setTimeout(() => {
+                        if (!mountedRef.current) return;
+                        if (session?.user?.email_confirmed_at) {
+                            router.replace('/(tabs)/01_DashboardScreen');
+                        }
+                    }, 1500);
                     break;
 
                 case 'PASSWORD_RECOVERY':
+                    // Email reset link opened — go straight to the reset screen.
+                    console.log('🔑 PASSWORD_RECOVERY event — navigating to reset-password');
                     router.replace('/reset-password');
                     break;
             }
@@ -114,8 +159,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return () => {
             console.log('🧹 Cleaning up AuthProvider');
             mountedRef.current = false;
+            authInitialized = false;
 
-            // Only unsubscribe, don't reset the initialized flag
             if (authUnsubscribe) {
                 authUnsubscribe();
                 authUnsubscribe = null;

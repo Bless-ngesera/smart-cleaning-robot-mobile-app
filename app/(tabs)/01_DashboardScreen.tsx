@@ -19,9 +19,9 @@ import {
     ScrollView,
     Alert,
     Animated,
-    Dimensions,
     RefreshControl,
     Platform,
+    useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -67,9 +67,6 @@ interface RobotStatus {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-const { width } = Dimensions.get('window');
-const isLargeScreen = width >= 768;
 
 function formatLastCleaned(raw: string | null): string {
     if (!raw || raw === 'Never') return 'Never';
@@ -220,10 +217,14 @@ const pulseStyles = StyleSheet.create({
 
 export default function DashboardScreen() {
     const { colors, darkMode } = useThemeContext();
+    const { width } = useWindowDimensions();
+    const isLargeScreen = width >= 768;
 
     const [status, setStatus] = useState<RobotStatus | null>(null);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [weeklyRuntime, setWeeklyRuntime] = useState<string>('—');
+    const [weeklyArea, setWeeklyArea] = useState<string>('—');
 
     // Design tokens for consistent styling with LoginScreen
     const cardBg = darkMode ? 'rgba(255,255,255,0.05)' : '#ffffff';
@@ -231,6 +232,47 @@ export default function DashboardScreen() {
     const textPrimary = darkMode ? '#ffffff' : colors.text;
     const textSecondary = darkMode ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.60)';
     const dividerColor = darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)';
+
+    // Fetch weekly cleaning stats from cleaning_sessions table
+    const fetchWeeklyStats = useCallback(async (userId: string) => {
+        try {
+            const oneWeekAgo = new Date();
+            oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+            const isoWeekAgo = oneWeekAgo.toISOString().split('T')[0];
+
+            const { data: sessions } = await supabase
+                .from('cleaning_sessions')
+                .select('duration, area')
+                .eq('user_id', userId)
+                .gte('date', isoWeekAgo);
+
+            if (!sessions || sessions.length === 0) return;
+
+            // Parse duration strings like "45 min", "1h 30m", "2h"
+            let totalMins = 0;
+            for (const s of sessions) {
+                if (!s.duration) continue;
+                const hMatch = s.duration.match(/(\d+)\s*h/);
+                const mMatch = s.duration.match(/(\d+)\s*m(?:in)?/);
+                totalMins += (hMatch ? parseInt(hMatch[1]) * 60 : 0) + (mMatch ? parseInt(mMatch[1]) : 0);
+            }
+
+            const hours = (totalMins / 60).toFixed(1);
+            setWeeklyRuntime(`${hours}h`);
+
+            // Parse area strings like "142 m²", "50m²"
+            let totalArea = 0;
+            for (const s of sessions) {
+                if (!s.area) continue;
+                const aMatch = s.area.match(/(\d+(?:\.\d+)?)/);
+                if (aMatch) totalArea += parseFloat(aMatch[1]);
+            }
+
+            setWeeklyArea(`${Math.round(totalArea)}m²`);
+        } catch (err) {
+            console.error('[DashboardScreen] fetchWeeklyStats error:', err);
+        }
+    }, []);
 
     // === C++ BRIDGE / FETCH STATUS FROM SUPABASE ===
     const fetchStatus = useCallback(async () => {
@@ -240,15 +282,18 @@ export default function DashboardScreen() {
                 throw new Error('No authenticated user');
             }
 
+            // Fetch weekly stats in parallel with status
+            fetchWeeklyStats(user.id);
+
             // === C++ INTEGRATION POINT ===
             // Replace Supabase call with native module:
             // const nativeStatus = await RobotBridge.getRobotStatus();
             // setStatus(nativeStatus);
 
             const { data, error } = await supabase
-                .from('robot_status')
-                .select('battery_level, is_cleaning, last_cleaned, errors, status, connection_type')
-                .eq('user_id', user.id)
+                .from('robots')
+                .select('*')
+                .eq('owner_id', user.id)
                 .order('created_at', { ascending: false })
                 .limit(1)
                 .maybeSingle();
@@ -258,7 +303,7 @@ export default function DashboardScreen() {
             }
 
             if (!data) {
-                // No record yet – show fallback values
+                // No robot registered yet – show fallback values
                 setStatus({
                     batteryLevel: 0,
                     isCleaning: false,
@@ -271,12 +316,12 @@ export default function DashboardScreen() {
             }
 
             setStatus({
-                batteryLevel: data.battery_level ?? 0,
-                isCleaning: data.is_cleaning ?? false,
-                lastCleaned: data.last_cleaned ?? 'Never',
-                errors: data.errors ?? [],
+                batteryLevel: data.battery ?? 0,
+                isCleaning: data.mode === 'cleaning',
+                lastCleaned: data.updated_at ?? 'Never',
+                errors: [],
                 status: (data.status as RobotStatusCode) ?? 'Offline',
-                connectionType: (data.connection_type as ConnectionType) ?? 'none',
+                connectionType: 'none',
             });
         } catch (err: any) {
             console.error('[DashboardScreen] fetchStatus error:', err);
@@ -293,7 +338,7 @@ export default function DashboardScreen() {
             setLoading(false);
             setRefreshing(false);
         }
-    }, []);
+    }, [fetchWeeklyStats]);
 
     // Initial fetch only - no auto-refresh
     useEffect(() => {
@@ -480,13 +525,13 @@ export default function DashboardScreen() {
                             {
                                 icon: 'time-outline' as keyof typeof Ionicons.glyphMap,
                                 color: '#a78bfa',
-                                value: '2.4h',
+                                value: weeklyRuntime,
                                 label: 'Runtime'
                             },
                             {
                                 icon: 'map-outline' as keyof typeof Ionicons.glyphMap,
                                 color: '#fb923c',
-                                value: '142m²',
+                                value: weeklyArea,
                                 label: 'This Week'
                             },
                         ].map((stat) => (
@@ -595,7 +640,7 @@ export default function DashboardScreen() {
                                         if (Platform.OS === 'ios') {
                                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                                         }
-                                        router.push(action.route);
+                                        router.push(action.route as any);
                                     }}
                                     activeOpacity={0.7}
                                 >
@@ -646,6 +691,7 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 32,
         fontWeight: '800',
+        fontFamily: 'SF-Pro-Display-Bold',
         letterSpacing: -0.5,
         marginBottom: 6,
     },

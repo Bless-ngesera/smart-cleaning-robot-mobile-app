@@ -25,19 +25,24 @@ export default function TabLayout() {
     useEffect(() => {
         let authSubscription: { unsubscribe: () => void } | null = null;
 
+        let mounted = true;
+
         const checkSessionAndListen = async () => {
             try {
                 const { data: { session } } = await supabase.auth.getSession();
+                if (!mounted) return;
                 if (!session) {
                     router.replace('/LoginScreen');
                     return;
                 }
             } catch (err) {
                 console.error('Initial session check failed:', err);
-                router.replace('/LoginScreen');
+                if (mounted) router.replace('/LoginScreen');
             } finally {
-                setIsCheckingAuth(false);
+                if (mounted) setIsCheckingAuth(false);
             }
+
+            if (!mounted) return;
 
             // Real-time auth state listener
             const { data } = supabase.auth.onAuthStateChange((_, session) => {
@@ -46,12 +51,17 @@ export default function TabLayout() {
                 }
             });
 
-            authSubscription = data.subscription;
+            if (mounted) {
+                authSubscription = data.subscription;
+            } else {
+                data.subscription.unsubscribe();
+            }
         };
 
         checkSessionAndListen();
 
         return () => {
+            mounted = false;
             authSubscription?.unsubscribe();
         };
     }, []);
@@ -86,6 +96,7 @@ export default function TabLayout() {
                 tabBarLabelStyle: {
                     fontSize: 12,
                     fontWeight: '600',
+                    fontFamily: 'SF-Pro-Display-Semibold',
                     letterSpacing: 0.3,
                     marginBottom: Platform.OS === 'ios' ? 6 : 4,
                 },

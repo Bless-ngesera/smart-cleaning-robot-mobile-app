@@ -6,13 +6,14 @@ import {
     StyleSheet,
     ScrollView,
     Alert,
-    Dimensions,
     TouchableOpacity,
     Platform,
+    useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { router } from 'expo-router';
 
 import Loader from '../../src/components/Loader';
 import AppText from '../../src/components/AppText';
@@ -64,7 +65,7 @@ export default function RobotManagement() {
     const [scanningQR, setScanningQR] = useState(false);
 
     // Responsive
-    const { width } = Dimensions.get('window');
+    const { width } = useWindowDimensions();
     const isLargeScreen = width >= 768;
 
     // Design tokens - FIXED: Moved inside component to access colors and darkMode
@@ -296,6 +297,11 @@ export default function RobotManagement() {
                 showsVerticalScrollIndicator={false}
             >
                 <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
+                    {/* Back Navigation */}
+                    <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                        <Ionicons name="chevron-back" size={28} color={colors.primary} />
+                    </TouchableOpacity>
+
                     {/* Large Header */}
                     <View style={styles.headerSection}>
                         <AppText style={[styles.headerTitle, { color: textPrimary }]}>
@@ -320,6 +326,7 @@ export default function RobotManagement() {
                                     onChangeText={setRobotName}
                                     placeholder="e.g. Living Room Bot"
                                     placeholderTextColor={textSecondary}
+                                    allowFontScaling={false}
                                     style={[styles.input, { color: textPrimary, borderColor: cardBorderColor }]}
                                 />
                             </View>
@@ -331,6 +338,7 @@ export default function RobotManagement() {
                                     onChangeText={setSerialNumber}
                                     placeholder="From robot sticker or box"
                                     placeholderTextColor={textSecondary}
+                                    allowFontScaling={false}
                                     style={[styles.input, { color: textPrimary, borderColor: cardBorderColor }]}
                                 />
                             </View>
@@ -372,6 +380,7 @@ export default function RobotManagement() {
                                         placeholder="e.g. 192.168.1.150"
                                         placeholderTextColor={textSecondary}
                                         keyboardType="numeric"
+                                        allowFontScaling={false}
                                         style={[styles.input, { color: textPrimary, borderColor: cardBorderColor }]}
                                     />
                                 </View>
@@ -473,7 +482,7 @@ export default function RobotManagement() {
 
                                         <View style={styles.infoRow}>
                                             <Ionicons
-                                                name={r.connection_type === 'wifi' ? 'wifi' : r.connection_type === 'ble' ? 'bluetooth' : 'wifi-off'}
+                                                name={r.connection_type === 'wifi' ? 'wifi' : r.connection_type === 'ble' ? 'bluetooth' : 'alert-circle-outline'}
                                                 size={20}
                                                 color={r.connection_type !== 'none' ? colors.primary : '#ef4444'}
                                             />
@@ -560,12 +569,21 @@ const styles = StyleSheet.create({
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
-        paddingTop: 120,
+        paddingTop: 16,
         paddingBottom: 80,
     },
     scrollContentLarge: {
         alignItems: 'center',
     },
+    backButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'flex-start',
+        marginBottom: 16,
+    },
+
     wrapper: {
         width: '100%'
     },
@@ -619,6 +637,7 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         paddingHorizontal: 16,
         fontSize: 16,
+        fontFamily: 'SF-Pro-Display-Regular',
     },
     pickerRow: {
         flexDirection: 'row',

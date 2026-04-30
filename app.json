@@ -27,7 +27,9 @@
         "NSLocalNetworkUsageDescription": "This app needs local network access to communicate with your robot over Wi-Fi.",
         "CFBundleURLTypes": [
           {
-            "CFBundleURLSchemes": ["smartcleaner"]
+            "CFBundleURLSchemes": [
+              "smartcleaner"
+            ]
           }
         ]
       }
@@ -72,7 +74,10 @@
               "scheme": "smartcleaner"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -97,7 +102,10 @@
         "react-native-ble-plx",
         {
           "isBackgroundEnabled": true,
-          "modes": ["central", "peripheral"],
+          "modes": [
+            "central",
+            "peripheral"
+          ],
           "bluetoothAlwaysPermission": "Allow Smart Cleaner Pro to connect to and control your cleaning device via Bluetooth."
         }
       ],
@@ -107,7 +115,9 @@
         {
           "cameraPermission": "Allow Smart Cleaner Pro to access your camera to scan robot QR codes."
         }
-      ]
+      ],
+      "expo-image",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,

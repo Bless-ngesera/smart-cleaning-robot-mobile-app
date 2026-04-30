@@ -6,7 +6,7 @@ import {
     StyleSheet,
     ScrollView,
     TouchableOpacity,
-    Dimensions,
+    useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,9 +23,12 @@ export default function ProfileScreen() {
     const [userName, setUserName] = useState('Guest');
     const [userEmail, setUserEmail] = useState('');
     const [loading, setLoading] = useState(true);
+    const [totalCleanings, setTotalCleanings] = useState(0);
+    const [totalRuntimeHours, setTotalRuntimeHours] = useState(0);
+    const [efficiency, setEfficiency] = useState(0);
 
     // Same as Dashboard
-    const { width } = Dimensions.get('window');
+    const { width } = useWindowDimensions();
     const isLargeScreen = width >= 768;
 
     // Design tokens matching Dashboard
@@ -47,8 +50,33 @@ export default function ProfileScreen() {
                         user.email?.split('@')[0] ||
                         'User'
                     );
+
+                    // Fetch real stats from cleaning_sessions
+                    const { data: sessions } = await supabase
+                        .from('cleaning_sessions')
+                        .select('status, duration')
+                        .eq('user_id', user.id);
+
+                    if (sessions && sessions.length > 0) {
+                        const total = sessions.length;
+                        const completed = sessions.filter(s => s.status === 'Completed').length;
+
+                        // Parse duration strings like "45 min" or "1h 30m" → minutes
+                        const totalMins = sessions.reduce((acc, s) => {
+                            if (!s.duration) return acc;
+                            const hMatch = s.duration.match(/(\d+)\s*h/);
+                            const mMatch = s.duration.match(/(\d+)\s*m/);
+                            const hours = hMatch ? parseInt(hMatch[1]) : 0;
+                            const mins = mMatch ? parseInt(mMatch[1]) : 0;
+                            return acc + hours * 60 + mins;
+                        }, 0);
+
+                        setTotalCleanings(total);
+                        setTotalRuntimeHours(Math.round(totalMins / 60));
+                        setEfficiency(total > 0 ? Math.round((completed / total) * 100) : 0);
+                    }
                 } else {
-                    router.replace('/LoginScreen');
+                    router.replace('/LoginScreen' as any);
                 }
             } catch (err) {
                 console.error('Failed to fetch user:', err);
@@ -62,7 +90,7 @@ export default function ProfileScreen() {
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
             if (!session) {
-                router.replace('/LoginScreen');
+                router.replace('/LoginScreen' as any);
             } else {
                 fetchUser();
             }
@@ -90,7 +118,7 @@ export default function ProfileScreen() {
     };
 
     // Menu items
-    const menuItems = [
+    const menuItems: { id: number; title: string; subtitle: string; icon: keyof typeof Ionicons.glyphMap; route: string }[] = [
         { id: 1, title: 'Account Settings', subtitle: 'Manage your personal information', icon: 'person-outline', route: '../settings/account' },
         { id: 2, title: 'Robot Management', subtitle: 'Configure your cleaning robot', icon: 'hardware-chip-outline', route: '../settings/robot' },
         { id: 3, title: 'Cleaning History', subtitle: 'View past cleaning sessions', icon: 'time-outline', route: '../settings/history' },
@@ -145,21 +173,21 @@ export default function ProfileScreen() {
                         {/* Stats */}
                         <View style={styles.statsContainer}>
                             <View style={styles.statItem}>
-                                <AppText style={[styles.statValue, { color: colors.primary }]}>24</AppText>
+                                <AppText style={[styles.statValue, { color: colors.primary }]}>{totalCleanings}</AppText>
                                 <AppText style={[styles.statLabel, { color: textSecondary }]}>Cleanings</AppText>
                             </View>
 
                             <View style={[styles.statDivider, { backgroundColor: dividerColor }]} />
 
                             <View style={styles.statItem}>
-                                <AppText style={[styles.statValue, { color: colors.primary }]}>156h</AppText>
+                                <AppText style={[styles.statValue, { color: colors.primary }]}>{totalRuntimeHours}h</AppText>
                                 <AppText style={[styles.statLabel, { color: textSecondary }]}>Runtime</AppText>
                             </View>
 
                             <View style={[styles.statDivider, { backgroundColor: dividerColor }]} />
 
                             <View style={styles.statItem}>
-                                <AppText style={[styles.statValue, { color: colors.primary }]}>95%</AppText>
+                                <AppText style={[styles.statValue, { color: colors.primary }]}>{efficiency}%</AppText>
                                 <AppText style={[styles.statLabel, { color: textSecondary }]}>Efficiency</AppText>
                             </View>
                         </View>
@@ -226,7 +254,7 @@ export default function ProfileScreen() {
                                     styles.menuItem,
                                     index < menuItems.length - 1 && { borderBottomWidth: 1, borderBottomColor: dividerColor },
                                 ]}
-                                onPress={() => router.push(item.route)}
+                                onPress={() => router.push(item.route as any)}
                                 activeOpacity={0.7}
                             >
                                 <View style={[styles.menuIconContainer, { backgroundColor: `${colors.primary}15` }]}>
@@ -302,7 +330,7 @@ export default function ProfileScreen() {
                                             borderColor: `${item.color}30`,
                                         }
                                     ]}
-                                    onPress={() => router.push(item.route)}
+                                    onPress={() => router.push(item.route as any)}
                                     activeOpacity={0.7}
                                 >
                                     <Ionicons name={item.icon} size={24} color={item.color} />
@@ -346,6 +374,7 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 35,
         fontWeight: '800',
+        fontFamily: 'SF-Pro-Display-Bold',
         letterSpacing: -0.5,
         marginBottom: 6,
     },

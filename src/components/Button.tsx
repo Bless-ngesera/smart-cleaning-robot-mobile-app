@@ -17,7 +17,7 @@ type IoniconName = keyof typeof Ionicons.glyphMap;
 interface ButtonProps {
     title: string;
     onPress: () => void;
-    variant?: 'primary' | 'secondary' | 'outline' | 'danger';
+    variant?: 'primary' | 'secondary' | 'outline' | 'danger' | 'disabled';
     size?: 'small' | 'medium' | 'large';
     disabled?: boolean;
     icon?: IoniconName;
@@ -25,82 +25,62 @@ interface ButtonProps {
     fullWidth?: boolean;
     style?: ViewStyle;
     textStyle?: TextStyle;
+    danger?: boolean;
 }
 
-/**
- * Modern, theme-aware button component.
- * Fully functional with variants, sizes, icons, loading, disabled states.
- * Uses StyleSheet + theme context — no NativeWind.
- */
 export default function Button({
-                                   title,
-                                   onPress,
-                                   variant = 'primary',
-                                   size = 'medium',
-                                   disabled = false,
-                                   icon,
-                                   loading = false,
-                                   fullWidth = false,
-                                   style,
-                                   textStyle,
-                               }: ButtonProps) {
+    title,
+    onPress,
+    variant = 'primary',
+    size = 'medium',
+    disabled = false,
+    icon,
+    loading = false,
+    fullWidth = false,
+    style,
+    textStyle,
+    danger = false,
+}: ButtonProps) {
     const { colors, darkMode } = useThemeContext();
 
-    // Safe fallback colors (prevents crashes if theme is incomplete)
     const primaryColor = colors.primary ?? '#2563eb';
     const textBase = colors.text ?? (darkMode ? '#f3f4f6' : '#111827');
     const disabledBg = colors.muted ?? (darkMode ? '#374151' : '#d1d5db');
     const borderColor = colors.border ?? (darkMode ? '#374151' : '#e5e7eb');
 
-    // Variant logic
+    const effectiveVariant = danger ? 'danger' : variant;
+
     const getBackground = () => {
-        if (disabled) return disabledBg;
-        if (variant === 'primary') return primaryColor;
-        if (variant === 'danger') return '#ef4444';
-        if (variant === 'secondary') return colors.card ?? '#ffffff';
-        return 'transparent'; // outline
+        if (disabled || effectiveVariant === 'disabled') return disabledBg;
+        if (effectiveVariant === 'primary') return primaryColor;
+        if (effectiveVariant === 'danger') return '#ef4444';
+        if (effectiveVariant === 'secondary') return colors.card ?? '#ffffff';
+        return 'transparent';
     };
 
     const getBorder = () => {
-        if (disabled) return disabledBg;
-        if (variant === 'outline' || variant === 'secondary') return borderColor;
+        if (disabled || effectiveVariant === 'disabled') return disabledBg;
+        if (effectiveVariant === 'outline' || effectiveVariant === 'secondary') return borderColor;
         return 'transparent';
     };
 
     const getTextColor = () => {
-        if (disabled) return darkMode ? '#9ca3af' : '#6b7280';
-        if (variant === 'primary' || variant === 'danger') return '#ffffff';
+        if (disabled || effectiveVariant === 'disabled') return darkMode ? '#9ca3af' : '#6b7280';
+        if (effectiveVariant === 'primary' || effectiveVariant === 'danger') return '#ffffff';
         return primaryColor;
     };
 
-    // Size config
     const sizeConfig = {
-        small: {
-            paddingVertical: 10,
-            paddingHorizontal: 16,
-            fontSize: 14,
-            iconSize: 18,
-        },
-        medium: {
-            paddingVertical: 14,
-            paddingHorizontal: 20,
-            fontSize: 16,
-            iconSize: 20,
-        },
-        large: {
-            paddingVertical: 16,
-            paddingHorizontal: 24,
-            fontSize: 18,
-            iconSize: 24,
-        },
+        small: { paddingVertical: 10, paddingHorizontal: 16, fontSize: 14, iconSize: 18 },
+        medium: { paddingVertical: 14, paddingHorizontal: 20, fontSize: 16, iconSize: 20 },
+        large: { paddingVertical: 16, paddingHorizontal: 24, fontSize: 18, iconSize: 24 },
     };
 
     const currentSize = sizeConfig[size];
 
-    // Final button style
     const buttonStyle: ViewStyle = {
         width: fullWidth ? '100%' : undefined,
-        height: currentSize.paddingVertical * 2 + currentSize.fontSize + 4, // approximate height
+        height: currentSize.paddingVertical * 2 + currentSize.fontSize + 4,
         paddingVertical: currentSize.paddingVertical,
         paddingHorizontal: currentSize.paddingHorizontal,
         borderRadius: 14,
@@ -109,14 +89,15 @@ export default function Button({
         justifyContent: 'center',
         backgroundColor: getBackground(),
         borderColor: getBorder(),
-        borderWidth: variant === 'outline' || variant === 'secondary' ? 1.5 : 0,
-        opacity: disabled || loading ? 0.6 : 1,
+        borderWidth: effectiveVariant === 'outline' || effectiveVariant === 'secondary' ? 1.5 : 0,
+        opacity: disabled || loading || effectiveVariant === 'disabled' ? 0.6 : 1,
         ...style,
     };
 
     const textStyleFinal: TextStyle = {
         fontSize: currentSize.fontSize,
         fontWeight: '600',
+        fontFamily: 'SF-Pro-Display-Semibold',
         color: getTextColor(),
         marginLeft: icon ? 8 : 0,
         ...textStyle,
@@ -126,7 +107,7 @@ export default function Button({
         <TouchableOpacity
             style={buttonStyle}
             onPress={onPress}
-            disabled={disabled || loading}
+            disabled={disabled || loading || effectiveVariant === 'disabled'}
             activeOpacity={disabled || loading ? 1 : 0.85}
             accessibilityLabel={title}
             accessibilityRole="button"
@@ -143,7 +124,7 @@ export default function Button({
                             color={getTextColor()}
                         />
                     )}
-                    <Text style={textStyleFinal}>{title}</Text>
+                    <Text style={textStyleFinal} allowFontScaling={false}>{title}</Text>
                 </View>
             )}
         </TouchableOpacity>

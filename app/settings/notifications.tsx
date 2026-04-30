@@ -1,107 +1,127 @@
-// app/settings/history.tsx
+// app/settings/notifications.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import {
     View,
-    FlatList,
-    RefreshControl,
+    Switch,
+    ScrollView,
+    TouchableOpacity,
     StyleSheet,
-    Dimensions,
+    useWindowDimensions,
+    Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import Loader from '../../src/components/Loader';
 import AppText from '../../src/components/AppText';
 import { useThemeContext } from '@/src/context/ThemeContext';
-import { supabase } from '@/src/services/supabase';
 
-type CleaningSession = {
-    id: string;
-    date: string;
-    time: string;
-    duration: string;
-    area: string;
-    status: string;
+const STORAGE_KEY = 'notificationPreferences';
+
+type NotifPrefs = {
+    cleaningComplete: boolean;
+    scheduleReminders: boolean;
+    batteryAlerts: boolean;
+    robotOffline: boolean;
+    errorAlerts: boolean;
+    weeklyReport: boolean;
 };
 
-export default function CleaningHistory() {
+const DEFAULT_PREFS: NotifPrefs = {
+    cleaningComplete: true,
+    scheduleReminders: true,
+    batteryAlerts: true,
+    robotOffline: true,
+    errorAlerts: true,
+    weeklyReport: false,
+};
+
+type NotifItem = {
+    key: keyof NotifPrefs;
+    title: string;
+    subtitle: string;
+    icon: keyof typeof Ionicons.glyphMap;
+};
+
+const NOTIF_ITEMS: NotifItem[] = [
+    {
+        key: 'cleaningComplete',
+        title: 'Cleaning Complete',
+        subtitle: 'Notify when a cleaning session finishes',
+        icon: 'checkmark-circle-outline',
+    },
+    {
+        key: 'scheduleReminders',
+        title: 'Schedule Reminders',
+        subtitle: 'Remind before a scheduled cleaning starts',
+        icon: 'calendar-outline',
+    },
+    {
+        key: 'batteryAlerts',
+        title: 'Battery Alerts',
+        subtitle: 'Alert when battery drops below 20%',
+        icon: 'battery-half-outline',
+    },
+    {
+        key: 'robotOffline',
+        title: 'Robot Offline',
+        subtitle: 'Notify when the robot loses connection',
+        icon: 'wifi-outline',
+    },
+    {
+        key: 'errorAlerts',
+        title: 'Error Alerts',
+        subtitle: 'Alert when the robot encounters an error',
+        icon: 'warning-outline',
+    },
+    {
+        key: 'weeklyReport',
+        title: 'Weekly Report',
+        subtitle: 'Get a weekly summary of cleaning activity',
+        icon: 'bar-chart-outline',
+    },
+];
+
+export default function NotificationsScreen() {
     const { colors, darkMode } = useThemeContext();
 
-    const [history, setHistory] = useState<CleaningSession[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-
-    // Same as Dashboard
-    const { width } = Dimensions.get('window');
+    const { width } = useWindowDimensions();
     const isLargeScreen = width >= 768;
 
-    // Design tokens matching Dashboard
     const cardBg = darkMode ? 'rgba(255,255,255,0.05)' : '#ffffff';
     const cardBorder = darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)';
     const textPrimary = darkMode ? '#ffffff' : colors.text;
     const textSecondary = darkMode ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.60)';
     const dividerColor = darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)';
 
-    const fetchHistory = useCallback(async () => {
-        try {
-            setError(null);
-
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user?.id) throw new Error('Not authenticated');
-
-            const { data, error } = await supabase
-                .from('cleaning_sessions')
-                .select('id, date, time, duration, area, status')
-                .eq('user_id', user.id)
-                .order('date', { ascending: false })
-                .limit(50);
-
-            if (error) throw error;
-
-            setHistory(data || []);
-        } catch (err: any) {
-            console.error('Failed to fetch history:', err);
-            setError('Could not load cleaning history. Please try again later.');
-        }
-    }, []);
+    const [prefs, setPrefs] = useState<NotifPrefs>(DEFAULT_PREFS);
+    const [loaded, setLoaded] = useState(false);
 
     useEffect(() => {
-        const load = async () => {
-            setLoading(true);
-            await fetchHistory();
-            setLoading(false);
-        };
-        load();
-    }, [fetchHistory]);
+        (async () => {
+            try {
+                const saved = await AsyncStorage.getItem(STORAGE_KEY);
+                if (saved) {
+                    setPrefs({ ...DEFAULT_PREFS, ...JSON.parse(saved) });
+                }
+            } catch {
+                // use defaults
+            } finally {
+                setLoaded(true);
+            }
+        })();
+    }, []);
 
-    const onRefresh = async () => {
-        setRefreshing(true);
-        await fetchHistory();
-        setRefreshing(false);
-    };
-
-    const renderItem = ({ item }: { item: CleaningSession }) => (
-        <View style={[styles.historyItem, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-            <View style={styles.historyInfo}>
-                <AppText style={[styles.date, { color: textPrimary }]}>
-                    {item.date} • {item.time}
-                </AppText>
-                <AppText style={[styles.details, { color: textSecondary }]}>
-                    {item.duration} • {item.area}
-                </AppText>
-            </View>
-            <AppText
-                style={[
-                    styles.status,
-                    {
-                        color: item.status === 'Completed' ? colors.primary : '#ef4444',
-                    },
-                ]}
-            >
-                {item.status}
-            </AppText>
-        </View>
-    );
+    const toggle = useCallback(async (key: keyof NotifPrefs) => {
+        const updated = { ...prefs, [key]: !prefs[key] };
+        setPrefs(updated);
+        try {
+            await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        } catch {
+            // silently fail — in-memory update still stands
+        }
+    }, [prefs]);
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
@@ -111,47 +131,67 @@ export default function CleaningHistory() {
                     isLargeScreen && styles.scrollContentLarge,
                 ]}
                 showsVerticalScrollIndicator={false}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={onRefresh}
-                        colors={[colors.primary]}
-                        tintColor={colors.primary}
-                    />
-                }
             >
                 <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
-                    {/* Large Header */}
+                    {/* Back Navigation */}
+                    <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                        <Ionicons name="chevron-back" size={28} color={colors.primary} />
+                    </TouchableOpacity>
+
+                    {/* Header */}
                     <View style={styles.headerSection}>
                         <AppText style={[styles.headerTitle, { color: textPrimary }]}>
-                            Cleaning History
+                            Notifications
                         </AppText>
                         <AppText style={[styles.headerSubtitle, { color: textSecondary }]}>
-                            Past cleaning sessions
+                            Manage alerts and reminders
                         </AppText>
                     </View>
 
-                    {loading && !refreshing ? (
-                        <Loader message="Loading history..." />
-                    ) : error ? (
-                        <View style={styles.center}>
-                            <AppText style={{ color: '#ef4444', fontSize: 16, textAlign: 'center' }}>
-                                {error}
-                            </AppText>
-                        </View>
-                    ) : (
-                        <FlatList
-                            data={history}
-                            keyExtractor={(item) => item.id}
-                            renderItem={renderItem}
-                            scrollEnabled={false}
-                            ListEmptyComponent={
-                                <AppText style={[styles.empty, { color: textSecondary }]}>
-                                    No cleaning sessions recorded yet
-                                </AppText>
-                            }
-                        />
-                    )}
+                    {/* Notification Toggles Card */}
+                    <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                        {NOTIF_ITEMS.map((item, index) => (
+                            <View key={item.key}>
+                                <View style={styles.row}>
+                                    <View style={[styles.iconContainer, { backgroundColor: `${colors.primary}15` }]}>
+                                        <Ionicons name={item.icon} size={22} color={colors.primary} />
+                                    </View>
+
+                                    <View style={styles.rowContent}>
+                                        <AppText style={[styles.rowTitle, { color: textPrimary }]}>
+                                            {item.title}
+                                        </AppText>
+                                        <AppText style={[styles.rowSubtitle, { color: textSecondary }]}>
+                                            {item.subtitle}
+                                        </AppText>
+                                    </View>
+
+                                    <Switch
+                                        value={prefs[item.key]}
+                                        onValueChange={() => toggle(item.key)}
+                                        trackColor={{
+                                            false: darkMode ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)',
+                                            true: colors.primary,
+                                        }}
+                                        thumbColor={Platform.OS === 'android' ? (prefs[item.key] ? '#fff' : '#fff') : undefined}
+                                        ios_backgroundColor={darkMode ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)'}
+                                    />
+                                </View>
+
+                                {index < NOTIF_ITEMS.length - 1 && (
+                                    <View style={[styles.divider, { backgroundColor: dividerColor }]} />
+                                )}
+                            </View>
+                        ))}
+                    </View>
+
+                    {/* Info Note */}
+                    <View style={[styles.infoCard, { backgroundColor: `${colors.primary}12`, borderColor: `${colors.primary}30` }]}>
+                        <Ionicons name="information-circle-outline" size={20} color={colors.primary} />
+                        <AppText style={[styles.infoText, { color: textSecondary }]}>
+                            Notifications require the app to be installed as a standalone app. Some features may be limited in Expo Go.
+                        </AppText>
+                    </View>
                 </View>
 
                 {/* Footer */}
@@ -169,7 +209,7 @@ const styles = StyleSheet.create({
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
-        paddingTop: 120,
+        paddingTop: 16,
         paddingBottom: 80,
     },
     scrollContentLarge: {
@@ -178,6 +218,15 @@ const styles = StyleSheet.create({
 
     wrapper: { width: '100%' },
     largeWrapper: { maxWidth: 480 },
+
+    backButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'flex-start',
+        marginBottom: 16,
+    },
 
     headerSection: {
         marginBottom: 32,
@@ -194,42 +243,59 @@ const styles = StyleSheet.create({
         letterSpacing: 0.1,
     },
 
-    historyItem: {
+    card: {
+        borderRadius: 24,
+        padding: 8,
+        borderWidth: 1,
+        marginBottom: 20,
+    },
+
+    row: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
-        padding: 20,
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        gap: 14,
+    },
+    iconContainer: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    rowContent: {
+        flex: 1,
+    },
+    rowTitle: {
+        fontSize: 15,
+        fontWeight: '600',
+        marginBottom: 2,
+    },
+    rowSubtitle: {
+        fontSize: 12,
+        fontWeight: '400',
+        lineHeight: 17,
+    },
+
+    divider: {
+        height: 1,
+        marginHorizontal: 16,
+    },
+
+    infoCard: {
         borderRadius: 16,
         borderWidth: 1,
-        marginBottom: 16,
+        padding: 16,
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 12,
+        marginBottom: 8,
     },
-    historyInfo: {
+    infoText: {
         flex: 1,
-    },
-    date: {
-        fontSize: 16,
-        fontWeight: '600',
-        marginBottom: 4,
-    },
-    details: {
-        fontSize: 14,
-    },
-    status: {
-        fontSize: 14,
-        fontWeight: '600',
-        marginLeft: 12,
-    },
-    empty: {
-        textAlign: 'center',
-        fontSize: 16,
-        marginTop: 40,
-        lineHeight: 24,
-    },
-    center: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 40,
+        fontSize: 13,
+        lineHeight: 19,
     },
 
     footer: {

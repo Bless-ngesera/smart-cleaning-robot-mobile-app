@@ -3,10 +3,14 @@ import React, { useState, useEffect } from 'react';
 import {
     View,
     FlatList,
+    ScrollView,
+    TouchableOpacity,
     StyleSheet,
-    Dimensions,
+    useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 
 import Loader from '../../src/components/Loader';
 import AppText from '../../src/components/AppText';
@@ -30,7 +34,7 @@ export default function CleaningHistory() {
     const [error, setError] = useState<string | null>(null);
 
     // Same as Dashboard
-    const { width } = Dimensions.get('window');
+    const { width } = useWindowDimensions();
     const isLargeScreen = width >= 768;
 
     // Design tokens matching Dashboard
@@ -102,6 +106,11 @@ export default function CleaningHistory() {
                 showsVerticalScrollIndicator={false}
             >
                 <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
+                    {/* Back Navigation */}
+                    <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                        <Ionicons name="chevron-back" size={28} color={colors.primary} />
+                    </TouchableOpacity>
+
                     {/* Large Header */}
                     <View style={styles.headerSection}>
                         <AppText style={[styles.headerTitle, { color: textPrimary }]}>
@@ -148,10 +157,19 @@ export default function CleaningHistory() {
 const styles = StyleSheet.create({
     container: { flex: 1 },
 
+    backButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'flex-start',
+        marginBottom: 16,
+    },
+
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
-        paddingTop: 120,
+        paddingTop: 16,
         paddingBottom: 80,
     },
     scrollContentLarge: {

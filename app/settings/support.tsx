@@ -7,10 +7,11 @@ import {
     ScrollView,
     Linking,
     Alert,
-    Dimensions,
+    useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 
 import AppText from '../../src/components/AppText';
 import { useThemeContext } from '@/src/context/ThemeContext';
@@ -19,7 +20,7 @@ export default function HelpSupport() {
     const { colors, darkMode } = useThemeContext();
 
     // Same as Dashboard
-    const { width } = Dimensions.get('window');
+    const { width } = useWindowDimensions();
     const isLargeScreen = width >= 768;
 
     // Design tokens matching Dashboard
@@ -52,6 +53,11 @@ export default function HelpSupport() {
                 showsVerticalScrollIndicator={false}
             >
                 <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
+                    {/* Back Navigation */}
+                    <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                        <Ionicons name="chevron-back" size={28} color={colors.primary} />
+                    </TouchableOpacity>
+
                     {/* Large Header */}
                     <View style={styles.headerSection}>
                         <AppText style={[styles.headerTitle, { color: textPrimary }]}>
@@ -68,7 +74,7 @@ export default function HelpSupport() {
                             Frequently Asked Questions
                         </AppText>
 
-                        <TouchableOpacity style={styles.row} onPress={() => openLink('https://example.com/faq#connect')}>
+                        <TouchableOpacity style={styles.row} onPress={() => Alert.alert('Coming Soon', 'Full documentation is coming soon.')}>
                             <Ionicons name="bluetooth-outline" size={24} color={colors.primary} />
                             <AppText style={[styles.rowText, { color: textPrimary }]}>
                                 How do I connect my robot via Bluetooth or Wi-Fi?
@@ -78,7 +84,7 @@ export default function HelpSupport() {
 
                         <View style={[styles.rowDivider, { backgroundColor: dividerColor }]} />
 
-                        <TouchableOpacity style={styles.row} onPress={() => openLink('https://example.com/faq#cleaning')}>
+                        <TouchableOpacity style={styles.row} onPress={() => Alert.alert('Coming Soon', 'Full documentation is coming soon.')}>
                             <Ionicons name="sparkles-outline" size={24} color={colors.primary} />
                             <AppText style={[styles.rowText, { color: textPrimary }]}>
                                 Why is my robot not cleaning properly or missing spots?
@@ -88,7 +94,7 @@ export default function HelpSupport() {
 
                         <View style={[styles.rowDivider, { backgroundColor: dividerColor }]} />
 
-                        <TouchableOpacity style={styles.row} onPress={() => openLink('https://example.com/faq#battery')}>
+                        <TouchableOpacity style={styles.row} onPress={() => Alert.alert('Coming Soon', 'Full documentation is coming soon.')}>
                             <Ionicons name="battery-half-outline" size={24} color={colors.primary} />
                             <AppText style={[styles.rowText, { color: textPrimary }]}>
                                 How do I improve battery life or fix low battery warnings?
@@ -98,7 +104,7 @@ export default function HelpSupport() {
 
                         <View style={[styles.rowDivider, { backgroundColor: dividerColor }]} />
 
-                        <TouchableOpacity style={styles.row} onPress={() => openLink('https://example.com/faq#map')}>
+                        <TouchableOpacity style={styles.row} onPress={() => Alert.alert('Coming Soon', 'Full documentation is coming soon.')}>
                             <Ionicons name="map-outline" size={24} color={colors.primary} />
                             <AppText style={[styles.rowText, { color: textPrimary }]}>
                                 Why is the map not accurate or robot getting stuck?
@@ -163,11 +169,20 @@ const styles = StyleSheet.create({
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
-        paddingTop: 120,
+        paddingTop: 16,
         paddingBottom: 80,
     },
     scrollContentLarge: {
         alignItems: 'center',
+    },
+
+    backButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'flex-start',
+        marginBottom: 16,
     },
 
     wrapper: { width: '100%' },

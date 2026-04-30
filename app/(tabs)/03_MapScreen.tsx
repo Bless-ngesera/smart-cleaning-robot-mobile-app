@@ -7,7 +7,7 @@
 // typography, spacing, and visual hierarchy
 // ============================================================
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View,
     TouchableOpacity,
@@ -15,9 +15,9 @@ import {
     ScrollView,
     Alert,
     Animated,
-    Dimensions,
     RefreshControl,
     Platform,
+    useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -28,6 +28,20 @@ import Loader from '../../src/components/Loader';
 import AppText from '../../src/components/AppText';
 import { useThemeContext } from '@/src/context/ThemeContext';
 import { supabase } from '@/src/services/supabase';
+
+// ============================================================
+// C++ INTEGRATION OVERVIEW
+// ------------------------------------------------------------
+// When integrating real hardware via native C++ bridge:
+//
+//   1. Replace Supabase polling with RobotBridge.subscribeToMap()
+//      for live SLAM (Simultaneous Localization And Mapping) data
+//   2. Replace setInterval robot position polling with:
+//      RobotBridge.subscribeToPosition((x, y) => setRobotPos(...))
+//   3. Zone data (rooms, obstacles) flows from robot's vision system
+//      via RobotBridge.getDetectedZones()
+//   4. All C++ integration points are clearly marked below
+// ============================================================
 
 // Types
 type MapData = {
@@ -52,9 +66,6 @@ type DetectedZone = {
 };
 
 // Helpers
-const { width } = Dimensions.get('window');
-const isLargeScreen = width >= 768;
-
 function formatTimeAgo(date: Date): string {
     const now = new Date();
     const diffMs = now.getTime() - date.getTime();
@@ -111,6 +122,8 @@ const pulseStyles = StyleSheet.create({
 // Main Screen
 export default function MapScreen() {
     const { colors, darkMode } = useThemeContext();
+    const { width } = useWindowDimensions();
+    const isLargeScreen = width >= 768;
 
     // State
     const [loading, setLoading] = useState(true);
@@ -149,17 +162,22 @@ export default function MapScreen() {
         }
     }, [mapData?.coverage]);
 
-    // Fetch map data
+    // Fetch map data from Supabase
     const fetchMapData = useCallback(async () => {
         try {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user?.id) throw new Error('Not authenticated');
 
-            // Fetch robot status
+            // === C++ INTEGRATION POINT ===
+            // Replace Supabase fetch with live SLAM data stream:
+            // const mapSnapshot = await RobotBridge.getMapSnapshot();
+            // const liveZones = await RobotBridge.getDetectedZones();
+
+            // Fetch robot status from robots table (filtered by owner)
             const { data: statusData, error: statusError } = await supabase
-                .from('robot_status')
-                .select('mapped_area, obstacles, detected_zones, last_updated, robot_x, robot_y, coverage')
-                .eq('user_id', user.id)
+                .from('robots')
+                .select('*')
+                .eq('owner_id', user.id)
                 .order('created_at', { ascending: false })
                 .limit(1)
                 .maybeSingle();
@@ -168,58 +186,26 @@ export default function MapScreen() {
                 throw statusError;
             }
 
-            // Generate zones based on real data or defaults
-            const zones: DetectedZone[] = [
-                {
-                    id: 'zone_1',
-                    name: 'Living Room',
-                    color: '#10B981',
-                    x: 5,
-                    y: 5,
-                    width: 45,
-                    height: 40,
-                    type: 'room',
-                },
-                {
-                    id: 'zone_2',
-                    name: 'Kitchen',
-                    color: '#F59E0B',
-                    x: 52,
-                    y: 8,
-                    width: 35,
-                    height: 32,
-                    type: 'room',
-                },
-                {
-                    id: 'zone_3',
-                    name: 'Hallway',
-                    color: '#3B82F6',
-                    x: 45,
-                    y: 45,
-                    width: 30,
-                    height: 18,
-                    type: 'room',
-                },
-            ];
-
-            if (statusData?.detected_zones) {
-                // Add any dynamically detected zones here
-            }
+            // map_zones table not yet available — show empty map until robot scans
+            // === C++ INTEGRATION POINT ===
+            // Replace with: const liveZones = await RobotBridge.getDetectedZones();
+            const zones: DetectedZone[] = [];
 
             setMapData({
-                mappedArea: statusData?.mapped_area ?? 142,
-                obstacles: statusData?.obstacles ?? 3,
-                detectedZones: zones.length,
-                lastUpdated: statusData?.last_updated ? new Date(statusData.last_updated) : new Date(),
+                mappedArea: 0,
+                obstacles: 0,
+                detectedZones: 0,
+                lastUpdated: statusData?.updated_at ? new Date(statusData.updated_at) : new Date(),
                 robotPosition: {
-                    x: statusData?.robot_x ?? 48,
-                    y: statusData?.robot_y ?? 52
+                    // === C++ INTEGRATION POINT ===
+                    // Replace with: const pos = await RobotBridge.getRobotPosition();
+                    x: 50,
+                    y: 50,
                 },
-                coverage: statusData?.coverage ?? 85,
-                cleanedAreas: [
-                    { x: 10, y: 15, width: 35, height: 30 },
-                    { x: 55, y: 40, width: 25, height: 25 },
-                ],
+                coverage: 0,
+                cleanedAreas: [],
+                // === C++ INTEGRATION POINT ===
+                // Replace cleanedAreas with: const cleaned = await RobotBridge.getCleanedAreaPolygons();
             });
 
             setDetectedZones(zones);
@@ -238,6 +224,20 @@ export default function MapScreen() {
 
     useEffect(() => {
         fetchMapData();
+
+        // === C++ INTEGRATION POINT ===
+        // Subscribe to real-time robot position updates from hardware SLAM:
+        // const positionSub = RobotBridge.subscribeToPosition((x, y) => {
+        //   setMapData(prev => prev ? { ...prev, robotPosition: { x, y } } : null);
+        // });
+        // Subscribe to map updates (new rooms/obstacles detected):
+        // const mapSub = RobotBridge.subscribeToMap((snapshot) => {
+        //   setMapData(prev => prev ? { ...prev, ...snapshot } : null);
+        // });
+        // return () => {
+        //   positionSub.unsubscribe();
+        //   mapSub.unsubscribe();
+        // };
     }, []);
 
     const onRefresh = useCallback(() => {
@@ -348,6 +348,15 @@ export default function MapScreen() {
 
                         {/* Map Visualization */}
                         <View style={styles.mapContainer}>
+                            {/* Not-yet-scanned placeholder */}
+                            {mapData?.coverage === 0 && detectedZones.length === 0 && (
+                                <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', gap: 8 }]}>
+                                    <Ionicons name="scan-outline" size={40} color={textSecondary} style={{ opacity: 0.4 }} />
+                                    <AppText style={{ color: textSecondary, fontSize: 14, opacity: 0.6 }}>
+                                        No map data yet — start a scan
+                                    </AppText>
+                                </View>
+                            )}
                             {/* Grid Overlay */}
                             {showGrid && (
                                 <View style={styles.gridOverlay}>
@@ -583,7 +592,11 @@ export default function MapScreen() {
                                 {
                                     icon: 'download-outline' as keyof typeof Ionicons.glyphMap,
                                     label: 'Export',
-                                    action: () => Alert.alert('Export', 'Map export feature coming soon!'),
+                                    // === C++ INTEGRATION POINT ===
+                                // Export the occupancy grid / floor plan to PDF or image:
+                                // const mapImage = await RobotBridge.exportMapAsImage();
+                                // Share via expo-sharing or save to gallery via expo-media-library
+                                action: () => Alert.alert('Export Map', 'Connect your robot to export the floor plan.\n\n(C++ bridge: RobotBridge.exportMapAsImage())'),
                                     color: '#ec4899'
                                 },
                                 {
@@ -690,7 +703,7 @@ export default function MapScreen() {
                                         if (Platform.OS === 'ios') {
                                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                                         }
-                                        router.push(item.route);
+                                        router.push(item.route as any);
                                     }}
                                     activeOpacity={0.7}
                                 >
@@ -737,6 +750,7 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 32,
         fontWeight: '800',
+        fontFamily: 'SF-Pro-Display-Bold',
         letterSpacing: -0.5,
         marginBottom: 6,
     },

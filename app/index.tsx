@@ -31,7 +31,7 @@ export default function Index() {
 
             // Small delay to ensure navigation is ready
             setTimeout(() => {
-                router.replace(initialRoute);
+                router.replace(initialRoute as any);
                 setIsReady(true);
             }, 100);
 
@@ -39,7 +39,7 @@ export default function Index() {
             console.error('Error checking auth session:', error);
             // On error, default to login screen
             setTimeout(() => {
-                router.replace('/LoginScreen');
+                router.replace('/LoginScreen' as any);
                 setIsReady(true);
             }, 100);
         }

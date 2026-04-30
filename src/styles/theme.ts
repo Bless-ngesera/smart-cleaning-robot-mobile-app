@@ -42,6 +42,7 @@ export const useAppStyles = () => {
             paddingLeft: 46,
             paddingRight: 48,
             fontSize: 16,
+            fontFamily: 'SF-Pro-Display-Regular',
             borderColor: darkMode ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.15)',
             color: darkMode ? '#ffffff' : colors.text,
             backgroundColor: 'transparent',

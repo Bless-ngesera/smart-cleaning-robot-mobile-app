@@ -7,10 +7,10 @@ import {
     Alert,
     StyleSheet,
     TouchableOpacity,
-    Dimensions,
     Platform,
     Animated,
     Keyboard,
+    useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -27,9 +27,6 @@ import { useAuth } from '@/src/context/AuthContext';
 import { router } from 'expo-router';
 
 const AnimatedCard = Animated_.createAnimatedComponent(View);
-
-const { width } = Dimensions.get('window');
-const isLargeScreen = width >= 768;
 
 // Password requirements (same as SignupScreen)
 interface PasswordRequirement {
@@ -69,6 +66,8 @@ const passwordRequirements: PasswordRequirement[] = [
 export default function AccountSettings() {
     const { colors, darkMode } = useThemeContext();
     const { user } = useAuth();
+    const { width } = useWindowDimensions();
+    const isLargeScreen = width >= 768;
 
     // Design tokens - FIXED: defined inside component
     const cardBg = darkMode ? 'rgba(255,255,255,0.05)' : '#ffffff';
@@ -99,7 +98,7 @@ export default function AccountSettings() {
     // Warning visibility
     const [showPasswordWarning, setShowPasswordWarning] = useState(false);
     const warningAnim = useRef(new Animated.Value(0)).current;
-    const warningTimerRef = useRef<NodeJS.Timeout | null>(null); // FIXED: proper Timeout type
+    const warningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Loading states
     const [loading, setLoading] = useState(true);
@@ -422,6 +421,11 @@ export default function AccountSettings() {
                 showsVerticalScrollIndicator={false}
             >
                 <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
+                    {/* Back Navigation */}
+                    <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                        <Ionicons name="chevron-back" size={28} color={colors.primary} />
+                    </TouchableOpacity>
+
                     {/* Header */}
                     <View style={styles.headerSection}>
                         <AppText style={[styles.headerTitle, { color: textPrimary }]}>
@@ -451,6 +455,7 @@ export default function AccountSettings() {
                                     style={[styles.input, { color: textPrimary, borderColor: cardBorder }]}
                                     placeholder="Full name"
                                     placeholderTextColor={textSecondary + '80'}
+                                    allowFontScaling={false}
                                 />
                             </View>
                         </View>
@@ -492,6 +497,7 @@ export default function AccountSettings() {
                                     style={[styles.input, { color: textPrimary, borderColor: cardBorder }]}
                                     placeholder="••••••••"
                                     placeholderTextColor={textSecondary + '80'}
+                                    allowFontScaling={false}
                                 />
                                 <TouchableOpacity onPress={() => setShow({ ...show, current: !show.current })} style={styles.eye}>
                                     <Ionicons name={show.current ? 'eye-off-outline' : 'eye-outline'} size={20} color={textSecondary} />
@@ -517,6 +523,7 @@ export default function AccountSettings() {
                                     ]}
                                     placeholder="••••••••"
                                     placeholderTextColor={textSecondary + '80'}
+                                    allowFontScaling={false}
                                     onFocus={() => setIsNewPasswordFocused(true)}
                                     onBlur={() => setIsNewPasswordFocused(false)}
                                 />
@@ -602,6 +609,7 @@ export default function AccountSettings() {
                                     ]}
                                     placeholder="••••••••"
                                     placeholderTextColor={textSecondary + '80'}
+                                    allowFontScaling={false}
                                     onFocus={() => setIsConfirmPasswordFocused(true)}
                                     onBlur={() => setIsConfirmPasswordFocused(false)}
                                 />
@@ -662,6 +670,7 @@ export default function AccountSettings() {
                                     style={[styles.input, { color: textPrimary, borderColor: cardBorder }]}
                                     placeholder="••••••••"
                                     placeholderTextColor={textSecondary + '80'}
+                                    allowFontScaling={false}
                                 />
                                 <TouchableOpacity onPress={() => setShow({ ...show, delete: !show.delete })} style={styles.eye}>
                                     <Ionicons name={show.delete ? 'eye-off-outline' : 'eye-outline'} size={20} color={textSecondary} />
@@ -695,10 +704,19 @@ export default function AccountSettings() {
 const styles = StyleSheet.create({
     container: { flex: 1 },
 
+    backButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'flex-start',
+        marginBottom: 16,
+    },
+
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
-        paddingTop: 120,
+        paddingTop: 16,
         paddingBottom: 80,
     },
     scrollContentLarge: {
@@ -754,6 +772,7 @@ const styles = StyleSheet.create({
         paddingLeft: 52,
         paddingRight: 52,
         fontSize: 16,
+        fontFamily: 'SF-Pro-Display-Regular',
     },
     readOnly: {
         height: 52,
