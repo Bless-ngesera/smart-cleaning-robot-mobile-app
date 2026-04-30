@@ -107,12 +107,6 @@
         }
       ],
       "@react-native-community/datetimepicker",
-      [
-        "expo-barcode-scanner",
-        {
-          "cameraPermission": "Allow Smart Cleaner Pro to access your camera to scan robot QR codes."
-        }
-      ],
       "expo-image",
       "expo-web-browser"
     ],
