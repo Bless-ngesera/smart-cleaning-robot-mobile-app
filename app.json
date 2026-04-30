@@ -7,7 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "smartcleaner",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
@@ -16,7 +15,6 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.yourname.smartcleanerpro",
-      "buildNumber": "1.0.0",
       "infoPlist": {
         "UIBackgroundModes": [
           "bluetooth-central",
@@ -42,7 +40,6 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "package": "com.yourname.smartcleanerpro",
-      "versionCode": 1,
       "permissions": [
         "android.permission.BLUETOOTH",
         "android.permission.BLUETOOTH_ADMIN",
@@ -55,7 +52,6 @@
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.CAMERA"
       ],
-      "edgeToEdgeEnabled": true,
       "intentFilters": [
         {
           "action": "VIEW",
