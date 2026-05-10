@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { useAppNavigation } from '@/hooks/useAppNavigation';
 import * as Haptics from 'expo-haptics';
 
 import Header from '../src/components/Header';
@@ -25,6 +25,7 @@ import authService from '@/src/services/auth';
 import { useToast } from '@/src/context/ToastContext';
 
 export default function ForgotPasswordScreen() {
+  const { push, back, replace } = useAppNavigation();
     const { colors, darkMode } = useThemeContext();
     const { showToast } = useToast();
     const { width } = useWindowDimensions();
@@ -148,14 +149,14 @@ export default function ForgotPasswordScreen() {
         if (Platform.OS === 'ios') {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
-        router.replace('/LoginScreen');
+        replace('/LoginScreen');
     };
 
     const handleGoBack = () => {
         if (Platform.OS === 'ios') {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
-        router.back();
+        back();
     };
 
     if (loading) {

@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { useAppNavigation } from '@/hooks/useAppNavigation';
 import * as Haptics from 'expo-haptics';
 
 import Header from '../src/components/Header';
@@ -59,6 +59,7 @@ interface PasswordRequirement {
 }
 
 export default function SignupScreen() {
+  const { push, back, replace } = useAppNavigation();
     const { colors, darkMode } = useThemeContext();
     const { user } = useAuth();
     const { showToast } = useToast();
@@ -442,7 +443,7 @@ export default function SignupScreen() {
             } else {
                 setEmailCheckState('idle');
                 showToast('Account created successfully! Welcome aboard.', 'success');
-                router.replace('/(tabs)/01_DashboardScreen');
+                replace('/(tabs)/01_DashboardScreen');
             }
         } catch (err: any) {
             console.error('Signup error:', err);
@@ -471,7 +472,7 @@ export default function SignupScreen() {
                     'This email address is already associated with an account. Would you like to sign in instead?',
                     [
                         { text: 'Try Again', style: 'cancel' },
-                        { text: 'Sign In', onPress: () => router.push('/LoginScreen') }
+                        { text: 'Sign In', onPress: () => push('/LoginScreen') }
                     ]
                 );
             } else if (err?.code === 'INVALID_EMAIL') {
@@ -499,7 +500,7 @@ export default function SignupScreen() {
         if (Platform.OS === 'ios') {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
-        router.push('/LoginScreen');
+        push('/LoginScreen');
     }, []);
 
     const toggleTerms = useCallback(() => {
@@ -591,7 +592,7 @@ export default function SignupScreen() {
                                 <Button
                                     title="Go to Login"
                                     icon="log-in-outline"
-                                    onPress={() => router.replace('/LoginScreen')}
+                                    onPress={() => replace('/LoginScreen')}
                                     variant="primary"
                                     fullWidth
                                     style={{ marginTop: 8 }}

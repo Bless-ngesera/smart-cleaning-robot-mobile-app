@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { useAppNavigation } from '@/hooks/useAppNavigation';
 import * as Haptics from 'expo-haptics';
 
 import Header from '../src/components/Header';
@@ -48,6 +48,7 @@ interface FieldProps {
 }
 
 export default function LoginScreen() {
+  const { push, back, replace } = useAppNavigation();
     const { colors, darkMode } = useThemeContext();
     const { user } = useAuth();
     const { showToast } = useToast();
@@ -230,14 +231,14 @@ export default function LoginScreen() {
         if (Platform.OS === 'ios') {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
-        router.push('/ForgotPasswordScreen');
+        push('/ForgotPasswordScreen');
     }, []);
 
     const handleSignUp = useCallback(() => {
         if (Platform.OS === 'ios') {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
-        router.push('/SignupScreen');
+        push('/SignupScreen');
     }, []);
 
     /* ---------------------------------------------------------- */

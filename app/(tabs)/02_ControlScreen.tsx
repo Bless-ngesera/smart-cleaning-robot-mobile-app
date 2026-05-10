@@ -36,7 +36,7 @@ import {
     sendCommand,
     getConnectionStatus,
 } from '@/src/services/robotService';
-import { router } from 'expo-router';
+import { useAppNavigation } from '@/hooks/useAppNavigation';
 
 // === C++ BRIDGE / TYPE DEFINITIONS ===
 // For native robot control integration (JNI/Obj-C++):
@@ -55,6 +55,7 @@ import { router } from 'expo-router';
 // }
 
 export default function ControlScreen() {
+  const { push, back, replace } = useAppNavigation();
     const { colors, darkMode } = useThemeContext();
 
     const [busy, setBusy] = useState(false);
@@ -710,7 +711,7 @@ export default function ControlScreen() {
                                     if (Platform.OS === 'ios') {
                                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                                     }
-                                    router.push('/(tabs)/01_DashboardScreen');
+                                    push('/(tabs)/01_DashboardScreen');
                                 }}
                                 activeOpacity={0.7}
                             >
@@ -724,7 +725,7 @@ export default function ControlScreen() {
                                     if (Platform.OS === 'ios') {
                                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                                     }
-                                    router.push('/(tabs)/04_ScheduleScreen');
+                                    push('/(tabs)/04_ScheduleScreen');
                                 }}
                                 activeOpacity={0.7}
                             >
@@ -738,7 +739,7 @@ export default function ControlScreen() {
                                     if (Platform.OS === 'ios') {
                                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                                     }
-                                    router.push('/(tabs)/03_MapScreen');
+                                    push('/(tabs)/03_MapScreen');
                                 }}
                                 activeOpacity={0.7}
                             >

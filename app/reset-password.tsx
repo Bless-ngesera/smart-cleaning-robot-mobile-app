@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { useAppNavigation } from '@/hooks/useAppNavigation';
 import * as Haptics from 'expo-haptics';
 
 import Header from '../src/components/Header';
@@ -26,6 +26,7 @@ import { setSuppressNextUserUpdated } from '@/src/context/AuthContext';
 import { useToast } from '@/src/context/ToastContext';
 
 export default function ResetPasswordScreen() {
+  const { push, back, replace } = useAppNavigation();
     const { colors, darkMode } = useThemeContext();
     const { showToast } = useToast();
     const { width } = useWindowDimensions();
@@ -174,7 +175,7 @@ export default function ResetPasswordScreen() {
         if (Platform.OS === 'ios') {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
-        router.replace('/LoginScreen');
+        replace('/LoginScreen');
     };
 
     const getPasswordStrength = () => {
@@ -215,7 +216,7 @@ export default function ResetPasswordScreen() {
                     <Button
                         title="Request New Link"
                         icon="mail-outline"
-                        onPress={() => router.replace('/ForgotPasswordScreen')}
+                        onPress={() => replace('/ForgotPasswordScreen')}
                         variant="primary"
                         style={styles.errorButton}
                     />

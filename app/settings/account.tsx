@@ -24,11 +24,11 @@ import { useThemeContext } from '@/src/context/ThemeContext';
 import authService from '@/src/services/auth';
 import { supabase } from '@/src/services/supabase';
 import { useAuth } from '@/src/context/AuthContext';
-import { router } from 'expo-router';
+import { useAppNavigation } from '@/hooks/useAppNavigation';
 
 const AnimatedCard = Animated_.createAnimatedComponent(View);
 
-// Password requirements (same as SignupScreen)
+// Password requirements
 interface PasswordRequirement {
     id: string;
     label: string;
@@ -64,12 +64,13 @@ const passwordRequirements: PasswordRequirement[] = [
 ];
 
 export default function AccountSettings() {
+    const { back } = useAppNavigation();  // Only need back() here - no push/replace needed
     const { colors, darkMode } = useThemeContext();
     const { user } = useAuth();
     const { width } = useWindowDimensions();
     const isLargeScreen = width >= 768;
 
-    // Design tokens - FIXED: defined inside component
+    // Design tokens
     const cardBg = darkMode ? 'rgba(255,255,255,0.05)' : '#ffffff';
     const cardBorder = darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)';
     const textPrimary = darkMode ? '#ffffff' : colors.text;
@@ -133,7 +134,7 @@ export default function AccountSettings() {
     const allRequirementsMet = areAllRequirementsMet(newPassword);
 
     /* ---------------------------------------------------------- */
-    /* WARNING VISIBILITY MANAGEMENT (same as SignupScreen) */
+    /* WARNING VISIBILITY MANAGEMENT */
     /* ---------------------------------------------------------- */
     const showWarning = useCallback(() => {
         if (warningTimerRef.current) {
@@ -159,7 +160,7 @@ export default function AccountSettings() {
                 });
             }
         }, 10000);
-    }, []);
+    }, [warningAnim]);
 
     const hideWarning = useCallback(() => {
         if (warningTimerRef.current) {
@@ -174,7 +175,7 @@ export default function AccountSettings() {
         }).start(() => {
             setShowPasswordWarning(false);
         });
-    }, []);
+    }, [warningAnim]);
 
     // Check requirements and show warning if not met
     useEffect(() => {
@@ -183,7 +184,7 @@ export default function AccountSettings() {
         } else if (allRequirementsMet) {
             hideWarning();
         }
-    }, [newPassword, allRequirementsMet, isNewPasswordFocused]);
+    }, [newPassword, allRequirementsMet, isNewPasswordFocused, showWarning, hideWarning]);
 
     // Cleanup timers on unmount
     useEffect(() => {
@@ -219,8 +220,6 @@ export default function AccountSettings() {
                 if (currentUser) {
                     setEmail(currentUser.email || 'No email');
                     setFullName(currentUser.user_metadata?.full_name || '');
-                } else {
-                    router.replace('/LoginScreen');
                 }
             } catch (err) {
                 console.error('Failed to load user:', err);
@@ -259,7 +258,7 @@ export default function AccountSettings() {
     };
 
     /* ---------------------------------------------------------- */
-    /* UPDATE PASSWORD - ENHANCED WITH VALIDATION */
+    /* UPDATE PASSWORD */
     /* ---------------------------------------------------------- */
     const validatePasswordForm = useCallback((): boolean => {
         let valid = true;
@@ -293,7 +292,7 @@ export default function AccountSettings() {
         }
 
         return valid;
-    }, [currentPassword, newPassword, confirmPassword, allRequirementsMet, showWarning]);
+    }, [currentPassword, newPassword, confirmPassword, allRequirementsMet, showWarning, shakeField, newPasswordShake, confirmShake]);
 
     const updatePassword = async () => {
         haptic();
@@ -334,7 +333,6 @@ export default function AccountSettings() {
         } catch (e: any) {
             console.error('Password update error:', e);
 
-            // Handle specific error cases
             if (e.message?.includes('same as the old password')) {
                 Alert.alert('Error', 'New password must be different from your current password.');
             } else if (e.message?.includes('incorrect')) {
@@ -380,8 +378,6 @@ export default function AccountSettings() {
                                 throw new Error('Password is incorrect');
                             }
 
-                            // Note: Client-side delete is restricted in Supabase for security
-                            // This should be handled by a server-side function
                             Alert.alert(
                                 'Account Deletion',
                                 'For security reasons, account deletion must be handled by support. Please contact us at support@smartcleaner.com to delete your account.',
@@ -421,12 +417,11 @@ export default function AccountSettings() {
                 showsVerticalScrollIndicator={false}
             >
                 <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
-                    {/* Back Navigation */}
-                    <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                    {/* Back Navigation - Uses back() from hook */}
+                    <TouchableOpacity style={styles.backButton} onPress={() => back()}>
                         <Ionicons name="chevron-back" size={28} color={colors.primary} />
                     </TouchableOpacity>
 
-                    {/* Header */}
                     <View style={styles.headerSection}>
                         <AppText style={[styles.headerTitle, { color: textPrimary }]}>
                             Account Settings
@@ -798,7 +793,6 @@ const styles = StyleSheet.create({
         marginLeft: 4,
     },
 
-    // Warning styles (same as SignupScreen)
     warningContainer: {
         borderRadius: 12,
         borderWidth: 1,

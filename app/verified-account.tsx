@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
-import { router } from 'expo-router';
+import { useAppNavigation } from '@/hooks/useAppNavigation';
 
 import AppText from '../src/components/AppText';
 import Button from '../src/components/Button';
@@ -26,6 +26,7 @@ import { onAuthStateChange } from '@/src/services/supabase';
 const RESEND_COOLDOWN_SEC = 60;
 
 export default function VerifiedAccountScreen() {
+  const { push, back, replace } = useAppNavigation();
     const { colors, darkMode } = useThemeContext();
     const { showToast } = useToast();
     const { width } = useWindowDimensions();
@@ -143,7 +144,7 @@ export default function VerifiedAccountScreen() {
                 setCountdown((prev) => {
                     if (prev <= 1) {
                         clearInterval(timer);
-                        router.replace('/LoginScreen');
+                        replace('/LoginScreen');
                         return 0;
                     }
                     return prev - 1;
@@ -236,7 +237,7 @@ export default function VerifiedAccountScreen() {
         if (Platform.OS === 'ios') {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         }
-        router.replace('/LoginScreen');
+        replace('/LoginScreen');
     };
 
     // Animation interpolations

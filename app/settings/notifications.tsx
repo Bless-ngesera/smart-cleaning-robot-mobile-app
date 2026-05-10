@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { useAppNavigation } from '@/hooks/useAppNavigation';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import AppText from '../../src/components/AppText';
@@ -84,6 +84,7 @@ const NOTIF_ITEMS: NotifItem[] = [
 ];
 
 export default function NotificationsScreen() {
+  const { push, back, replace } = useAppNavigation();
     const { colors, darkMode } = useThemeContext();
 
     const { width } = useWindowDimensions();
@@ -134,7 +135,7 @@ export default function NotificationsScreen() {
             >
                 <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
                     {/* Back Navigation */}
-                    <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                    <TouchableOpacity style={styles.backButton} onPress={() => back()}>
                         <Ionicons name="chevron-back" size={28} color={colors.primary} />
                     </TouchableOpacity>
 

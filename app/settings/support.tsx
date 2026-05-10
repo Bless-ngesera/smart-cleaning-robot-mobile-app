@@ -11,12 +11,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { useAppNavigation } from '@/hooks/useAppNavigation';
 
 import AppText from '../../src/components/AppText';
 import { useThemeContext } from '@/src/context/ThemeContext';
 
 export default function HelpSupport() {
+  const { push, back, replace } = useAppNavigation();
     const { colors, darkMode } = useThemeContext();
 
     // Same as Dashboard
@@ -54,7 +55,7 @@ export default function HelpSupport() {
             >
                 <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
                     {/* Back Navigation */}
-                    <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                    <TouchableOpacity style={styles.backButton} onPress={() => back()}>
                         <Ionicons name="chevron-back" size={28} color={colors.primary} />
                     </TouchableOpacity>
 

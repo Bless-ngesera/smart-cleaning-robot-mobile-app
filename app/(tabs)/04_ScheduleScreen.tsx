@@ -20,7 +20,7 @@ import AppText from '../../src/components/AppText';
 import Button from '../../src/components/Button';
 import { useThemeContext } from '@/src/context/ThemeContext';
 import { supabase } from '@/src/services/supabase';
-import { router } from 'expo-router';
+import { useAppNavigation } from '@/hooks/useAppNavigation';
 
 type Entry = { id: string; day: string; time: string; enabled: boolean };
 
@@ -774,6 +774,7 @@ const ckS = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────
 
 export default function ScheduleScreen() {
+  const { push, back, replace } = useAppNavigation();
     const { colors, darkMode } = useThemeContext();
 
     const [schedule, setSchedule] = useState<Entry[]>([]);
@@ -1224,7 +1225,7 @@ export default function ScheduleScreen() {
                                     }]}
                                     onPress={() => {
                                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                        router.push(item.route as any);
+                                        push(item.route as any);
                                     }}
                                     activeOpacity={0.7}
                                 >

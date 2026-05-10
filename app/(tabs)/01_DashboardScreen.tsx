@@ -26,7 +26,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { router } from 'expo-router';
+import { useAppNavigation } from '@/hooks/useAppNavigation';
 
 import Loader from '../../src/components/Loader';
 import AppText from '../../src/components/AppText';
@@ -216,6 +216,7 @@ const pulseStyles = StyleSheet.create({
 // ---------------------------------------------------------------------------
 
 export default function DashboardScreen() {
+  const { push, back, replace } = useAppNavigation();
     const { colors, darkMode } = useThemeContext();
     const { width } = useWindowDimensions();
     const isLargeScreen = width >= 768;
@@ -496,7 +497,7 @@ export default function DashboardScreen() {
                                 ]}
                                 onPress={() => {
                                     // Navigate to Settings tab instead of non-existent route
-                                    router.push('../settings/connection');
+                                    push('../settings/connection');
                                 }}
                                 activeOpacity={0.7}
                             >
@@ -640,7 +641,7 @@ export default function DashboardScreen() {
                                         if (Platform.OS === 'ios') {
                                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                                         }
-                                        router.push(action.route as any);
+                                        push(action.route as any);
                                     }}
                                     activeOpacity={0.7}
                                 >

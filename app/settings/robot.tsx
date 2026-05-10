@@ -9,24 +9,24 @@ import {
     TouchableOpacity,
     Platform,
     useWindowDimensions,
+    ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { router } from 'expo-router';
+import { useAppNavigation } from '@/hooks/useAppNavigation';
 
 import Loader from '../../src/components/Loader';
 import AppText from '../../src/components/AppText';
-import Button from '../../src/components/Button';
 import { useThemeContext } from '@/src/context/ThemeContext';
 import { supabase } from '@/src/services/supabase';
 
-// Optional QR scanner import (will be null in Expo Go)
+// Optional QR scanner import – will be null if not available
 let BarCodeScanner: any = null;
 try {
     BarCodeScanner = require('expo-barcode-scanner').BarCodeScanner;
 } catch {
-    // expo-barcode-scanner not installed or not supported → fallback
+    // expo-barcode-scanner not installed – ignore
 }
 
 type RobotInfo = {
@@ -42,7 +42,76 @@ type RobotInfo = {
     firmware_version: string | null;
 };
 
+// Local button component with proper contrast
+const ThemedButton = ({
+    title,
+    onPress,
+    variant = 'primary',
+    loading = false,
+    disabled = false,
+    fullWidth = false,
+    style,
+    icon,
+}: {
+    title: string;
+    onPress: () => void;
+    variant?: 'primary' | 'danger' | 'outline';
+    loading?: boolean;
+    disabled?: boolean;
+    fullWidth?: boolean;
+    style?: any;
+    icon?: keyof typeof Ionicons.glyphMap;
+}) => {
+    const { colors, darkMode } = useThemeContext();
+
+    let bgColor = colors.primary;
+    let textColor = '#FFFFFF';
+    let borderColor = 'transparent';
+
+    if (variant === 'danger') {
+        bgColor = colors.error || '#dc2626';
+        textColor = '#FFFFFF';
+    } else if (variant === 'outline') {
+        bgColor = 'transparent';
+        textColor = colors.primary;
+        borderColor = colors.primary;
+    } else {
+        bgColor = colors.primary;
+        textColor = '#FFFFFF';
+    }
+
+    const opacity = disabled ? 0.6 : 1;
+
+    return (
+        <TouchableOpacity
+            onPress={onPress}
+            disabled={disabled || loading}
+            style={[
+                styles.button,
+                {
+                    backgroundColor: bgColor,
+                    borderColor: borderColor,
+                    borderWidth: variant === 'outline' ? 1 : 0,
+                    opacity,
+                },
+                fullWidth && { width: '100%' },
+                style,
+            ]}
+        >
+            {loading ? (
+                <ActivityIndicator color={textColor} />
+            ) : (
+                <View style={styles.buttonContent}>
+                    {icon && <Ionicons name={icon} size={20} color={textColor} style={{ marginRight: 8 }} />}
+                    <AppText style={[styles.buttonText, { color: textColor }]}>{title}</AppText>
+                </View>
+            )}
+        </TouchableOpacity>
+    );
+};
+
 export default function RobotManagement() {
+  const { push, back, replace } = useAppNavigation();
     const { colors, darkMode } = useThemeContext();
 
     const [robots, setRobots] = useState<RobotInfo[]>([]);
@@ -60,21 +129,31 @@ export default function RobotManagement() {
     const [wifiIp, setWifiIp] = useState('');
     const [registering, setRegistering] = useState(false);
 
-    // QR Scanner (only if module is available)
+    // QR Scanner
     const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
     const [scanningQR, setScanningQR] = useState(false);
 
-    // Responsive
+    // Toast messages (auto-dismiss after 6 seconds)
+    const [toastMessage, setToastMessage] = useState<string | null>(null);
+    let toastTimeout: NodeJS.Timeout | null = null;
+
+    const showToast = (msg: string) => {
+        if (toastTimeout) clearTimeout(toastTimeout);
+        setToastMessage(msg);
+        toastTimeout = setTimeout(() => setToastMessage(null), 6000);
+    };
+
+    // Responsive layout
     const { width } = useWindowDimensions();
     const isLargeScreen = width >= 768;
 
-    // Design tokens - FIXED: Moved inside component to access colors and darkMode
+    // Theme tokens
     const cardBg = darkMode ? 'rgba(255,255,255,0.05)' : '#ffffff';
     const cardBorderColor = darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)';
     const textPrimary = darkMode ? '#ffffff' : colors.text;
     const textSecondary = darkMode ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.60)';
 
-    // Fetch all user's robots
+    // Fetch robots
     const fetchRobots = async () => {
         setLoading(true);
         try {
@@ -90,7 +169,9 @@ export default function RobotManagement() {
             if (error) throw error;
 
             setRobots(data || []);
-            setShowForm(data.length === 0 && !isEditing);
+            if (data.length === 0 && !showForm && !isEditing) {
+                setShowForm(true);
+            }
         } catch (err: any) {
             console.error('Failed to fetch robots:', err);
             Alert.alert('Error', 'Could not load your robots');
@@ -103,10 +184,9 @@ export default function RobotManagement() {
         fetchRobots();
     }, []);
 
-    // Camera permission (only if BarCodeScanner exists)
+    // Camera permissions for QR scanner
     useEffect(() => {
         if (!BarCodeScanner) return;
-
         (async () => {
             const { status } = await BarCodeScanner.requestPermissionsAsync();
             setHasCameraPermission(status === 'granted');
@@ -121,12 +201,10 @@ export default function RobotManagement() {
             );
             return;
         }
-
         if (hasCameraPermission === null) {
             Alert.alert('Waiting', 'Requesting camera permission...');
             return;
         }
-
         if (hasCameraPermission === false) {
             Alert.alert(
                 'No Camera Access',
@@ -134,7 +212,6 @@ export default function RobotManagement() {
             );
             return;
         }
-
         setScanningQR(true);
     };
 
@@ -145,7 +222,7 @@ export default function RobotManagement() {
             setSerialNumber(parsed.serial || parsed.id || '');
             if (parsed.name) setRobotName(parsed.name);
             if (parsed.type && ['wifi', 'ble'].includes(parsed.type)) setConnectionType(parsed.type);
-            Alert.alert('QR Scanned', `Robot serial: ${parsed.serial || parsed.id || 'Detected'}`);
+            showToast(`QR scanned: ${parsed.serial || parsed.id || 'Detected'}`);
         } catch {
             Alert.alert('Invalid QR', 'Could not read robot information from this code.');
         }
@@ -154,6 +231,7 @@ export default function RobotManagement() {
     const saveOrUpdateRobot = async () => {
         if (!robotName.trim()) return Alert.alert('Error', 'Robot name is required');
         if (!serialNumber.trim()) return Alert.alert('Error', 'Serial number is required');
+        if (connectionType === 'wifi' && !wifiIp.trim()) return Alert.alert('Error', 'Wi-Fi IP is required for Wi-Fi connection');
 
         setRegistering(true);
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -186,7 +264,7 @@ export default function RobotManagement() {
 
             if (error) throw error;
 
-            Alert.alert('Success', isEditing ? 'Robot updated!' : 'Robot registered!');
+            showToast(isEditing ? 'Robot updated successfully!' : 'Robot registered successfully!');
             resetForm();
             await fetchRobots();
         } catch (err: any) {
@@ -224,7 +302,7 @@ export default function RobotManagement() {
 
                             if (error) throw error;
 
-                            Alert.alert('Deleted', `${name} has been removed.`);
+                            showToast(`${name} has been removed.`);
                             await fetchRobots();
                         } catch (err: any) {
                             Alert.alert('Error', 'Failed to delete robot');
@@ -248,8 +326,9 @@ export default function RobotManagement() {
     const checkUpdates = async () => {
         setChecking(true);
         try {
+            // Simulate API call
             await new Promise(resolve => setTimeout(resolve, 1500));
-            Alert.alert('Firmware Check', 'All your robots are up to date');
+            showToast('All your robots are up to date');
         } catch {
             Alert.alert('Error', 'Failed to check for updates');
         } finally {
@@ -271,7 +350,7 @@ export default function RobotManagement() {
                         setRestarting(true);
                         try {
                             await new Promise(resolve => setTimeout(resolve, 1500));
-                            Alert.alert('Success', 'Restart command sent');
+                            showToast('Restart command sent to robot');
                         } catch {
                             Alert.alert('Error', 'Failed to restart robot');
                         } finally {
@@ -297,12 +376,12 @@ export default function RobotManagement() {
                 showsVerticalScrollIndicator={false}
             >
                 <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
-                    {/* Back Navigation */}
-                    <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+                    {/* Back button */}
+                    <TouchableOpacity style={styles.backButton} onPress={() => back()}>
                         <Ionicons name="chevron-back" size={28} color={colors.primary} />
                     </TouchableOpacity>
 
-                    {/* Large Header */}
+                    {/* Header */}
                     <View style={styles.headerSection}>
                         <AppText style={[styles.headerTitle, { color: textPrimary }]}>
                             Robot Management
@@ -312,7 +391,7 @@ export default function RobotManagement() {
                         </AppText>
                     </View>
 
-                    {/* Form (Register or Edit) */}
+                    {/* Registration / Edit Form */}
                     {showForm && (
                         <View style={[styles.sectionCard, { backgroundColor: cardBg, borderColor: cardBorderColor }]}>
                             <AppText style={[styles.sectionTitle, { color: textPrimary }]}>
@@ -387,15 +466,15 @@ export default function RobotManagement() {
                             )}
 
                             <View style={styles.buttonRow}>
-                                <Button
+                                <ThemedButton
                                     title={isEditing ? 'Update Robot' : 'Register Robot'}
                                     loading={registering}
                                     onPress={saveOrUpdateRobot}
-                                    disabled={registering || !robotName.trim() || !serialNumber.trim()}
+                                    disabled={registering || !robotName.trim() || !serialNumber.trim() || (connectionType === 'wifi' && !wifiIp.trim())}
                                     fullWidth
                                     style={{ flex: 1 }}
                                 />
-                                <Button
+                                <ThemedButton
                                     title="Cancel"
                                     variant="outline"
                                     onPress={resetForm}
@@ -404,7 +483,7 @@ export default function RobotManagement() {
                             </View>
 
                             {BarCodeScanner && (
-                                <Button
+                                <ThemedButton
                                     title="Scan QR Code"
                                     icon="qr-code-outline"
                                     variant="outline"
@@ -417,7 +496,7 @@ export default function RobotManagement() {
                         </View>
                     )}
 
-                    {/* Robots List */}
+                    {/* Robots List (only shown when not in form) */}
                     {!showForm && (
                         <>
                             {robots.length > 0 ? (
@@ -444,14 +523,14 @@ export default function RobotManagement() {
                                             <Ionicons
                                                 name={
                                                     r.status === 'Online' ? 'checkmark-circle' :
-                                                        r.status === 'Charging' ? 'battery-charging' :
-                                                            r.status === 'Error' ? 'alert-circle' : 'cloud-offline'
+                                                    r.status === 'Charging' ? 'battery-charging' :
+                                                    r.status === 'Error' ? 'alert-circle' : 'cloud-offline'
                                                 }
                                                 size={20}
                                                 color={
                                                     r.status === 'Online' ? colors.primary :
-                                                        r.status === 'Charging' ? '#f59e0b' :
-                                                            r.status === 'Error' ? '#ef4444' : textSecondary
+                                                    r.status === 'Charging' ? '#f59e0b' :
+                                                    r.status === 'Error' ? '#ef4444' : textSecondary
                                                 }
                                             />
                                             <AppText style={[styles.infoText, { color: textPrimary }]}>
@@ -499,7 +578,7 @@ export default function RobotManagement() {
                                 </AppText>
                             )}
 
-                            <Button
+                            <ThemedButton
                                 title="Register New Robot"
                                 icon="add-circle-outline"
                                 onPress={() => {
@@ -510,7 +589,7 @@ export default function RobotManagement() {
                                 style={{ marginTop: 24 }}
                             />
 
-                            <Button
+                            <ThemedButton
                                 title="Check for Updates"
                                 icon="cloud-upload-outline"
                                 onPress={checkUpdates}
@@ -520,7 +599,7 @@ export default function RobotManagement() {
                                 style={{ marginTop: 12 }}
                             />
 
-                            <Button
+                            <ThemedButton
                                 title="Restart Robot"
                                 icon="refresh-outline"
                                 onPress={restartRobot}
@@ -540,6 +619,13 @@ export default function RobotManagement() {
                 </AppText>
             </ScrollView>
 
+            {/* Floating toast (auto‑dismiss after 6 seconds) */}
+            {toastMessage !== null && (
+                <View style={[styles.floatingToast, { backgroundColor: cardBg }]}>
+                    <AppText style={{ color: textPrimary, fontSize: 14 }}>{toastMessage}</AppText>
+                </View>
+            )}
+
             {/* QR Scanner Overlay */}
             {scanningQR && BarCodeScanner && (
                 <View style={StyleSheet.absoluteFillObject}>
@@ -547,10 +633,7 @@ export default function RobotManagement() {
                         onBarCodeScanned={handleQRScanned}
                         style={StyleSheet.absoluteFillObject}
                     />
-                    <TouchableOpacity
-                        style={styles.closeScanner}
-                        onPress={() => setScanningQR(false)}
-                    >
+                    <TouchableOpacity style={styles.closeScanner} onPress={() => setScanningQR(false)}>
                         <Ionicons name="close-circle" size={48} color="white" />
                     </TouchableOpacity>
                     <AppText style={styles.scannerText}>
@@ -563,9 +646,7 @@ export default function RobotManagement() {
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1
-    },
+    container: { flex: 1 },
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
@@ -583,16 +664,9 @@ const styles = StyleSheet.create({
         alignItems: 'flex-start',
         marginBottom: 16,
     },
-
-    wrapper: {
-        width: '100%'
-    },
-    largeWrapper: {
-        maxWidth: 480
-    },
-    headerSection: {
-        marginBottom: 32,
-    },
+    wrapper: { width: '100%' },
+    largeWrapper: { maxWidth: 480 },
+    headerSection: { marginBottom: 32 },
     headerTitle: {
         fontSize: 35,
         fontWeight: '800',
@@ -621,16 +695,9 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginBottom: 16,
     },
-    cardActions: {
-        flexDirection: 'row',
-    },
-    field: {
-        marginBottom: 16,
-    },
-    label: {
-        fontSize: 14,
-        marginBottom: 6,
-    },
+    cardActions: { flexDirection: 'row' },
+    field: { marginBottom: 16 },
+    label: { fontSize: 14, marginBottom: 6 },
     input: {
         height: 52,
         borderRadius: 14,
@@ -639,10 +706,7 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontFamily: 'SF-Pro-Display-Regular',
     },
-    pickerRow: {
-        flexDirection: 'row',
-        gap: 12,
-    },
+    pickerRow: { flexDirection: 'row', gap: 12 },
     pickerOption: {
         flex: 1,
         flexDirection: 'row',
@@ -653,27 +717,38 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         gap: 8,
     },
-    buttonRow: {
-        flexDirection: 'row',
-        gap: 12,
-        marginTop: 8,
-    },
-    infoRow: {
-        flexDirection: 'row',
+    buttonRow: { flexDirection: 'row', gap: 12, marginTop: 8 },
+    button: {
+        paddingVertical: 14,
+        paddingHorizontal: 24,
+        borderRadius: 14,
         alignItems: 'center',
-        marginBottom: 12,
-        gap: 8,
+        justifyContent: 'center',
     },
-    infoText: {
-        fontSize: 16,
-        fontWeight: '500',
-    },
+    buttonContent: { flexDirection: 'row', alignItems: 'center' },
+    buttonText: { fontSize: 16, fontWeight: '600' },
+    infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12, gap: 8 },
+    infoText: { fontSize: 16, fontWeight: '500' },
     footer: {
         textAlign: 'center',
         marginTop: 32,
         fontSize: 12.5,
         opacity: 0.65,
         letterSpacing: 0.3,
+    },
+    floatingToast: {
+        position: 'absolute',
+        bottom: 100,
+        left: 24,
+        right: 24,
+        padding: 14,
+        borderRadius: 12,
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 2 },
+        elevation: 4,
     },
     closeScanner: {
         position: 'absolute',

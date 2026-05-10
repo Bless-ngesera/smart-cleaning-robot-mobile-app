@@ -22,7 +22,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { router } from 'expo-router';
+import { useAppNavigation } from '@/hooks/useAppNavigation';
 
 import Loader from '../../src/components/Loader';
 import AppText from '../../src/components/AppText';
@@ -121,6 +121,7 @@ const pulseStyles = StyleSheet.create({
 
 // Main Screen
 export default function MapScreen() {
+  const { push, back, replace } = useAppNavigation();
     const { colors, darkMode } = useThemeContext();
     const { width } = useWindowDimensions();
     const isLargeScreen = width >= 768;
@@ -703,7 +704,7 @@ export default function MapScreen() {
                                         if (Platform.OS === 'ios') {
                                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                                         }
-                                        router.push(item.route as any);
+                                        push(item.route as any);
                                     }}
                                     activeOpacity={0.7}
                                 >
