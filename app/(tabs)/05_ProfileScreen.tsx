@@ -1,5 +1,7 @@
 // app/(tabs)/05_ProfileScreen.tsx
 import React, { useState, useEffect, useCallback } from 'react';
+import { disableSystemFontScaling } from '@/src/utils/disableFontScaling';
+disableSystemFontScaling();
 import {
     View,
     Alert,
@@ -14,7 +16,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAppNavigation } from '@/hooks/useAppNavigation';
 
 import AppText from '@/src/components/AppText';
-import Button from '@/src/components/Button';
 import { useThemeContext } from '@/src/context/ThemeContext';
 import { supabase } from '@/src/services/supabase';
 
@@ -45,8 +46,83 @@ const QUICK_LINKS = [
     { icon: 'grid-outline'            as keyof typeof Ionicons.glyphMap, label: 'Dashboard', route: '/(tabs)/01_DashboardScreen', color: '#6366f1' },
     { icon: 'game-controller-outline' as keyof typeof Ionicons.glyphMap, label: 'Control',   route: '/(tabs)/02_ControlScreen',   color: '#10B981' },
     { icon: 'map-outline'             as keyof typeof Ionicons.glyphMap, label: 'Map',        route: '/(tabs)/03_MapScreen',       color: '#14b8a6' },
-    { icon: 'calendar-outline'        as keyof typeof Ionicons.glyphMap, label: 'Schedule',  route: '/(tabs)/04_ScheduleScreen',  color: '#f59e0b' },
+    { icon: 'calendar-outline'        as keyof typeof Ionicons.glyphMap, label: 'Schedule',   route: '/(tabs)/04_ScheduleScreen',  color: '#f59e0b' },
 ];
+
+/* ------------------------------------------------------------------ */
+/*  ACTION BUTTON  (replaces <Button> for guaranteed text contrast)    */
+/* ------------------------------------------------------------------ */
+interface ActionButtonProps {
+    title: string;
+    icon?: keyof typeof Ionicons.glyphMap;
+    onPress: () => void;
+    variant?: 'primary' | 'outline' | 'disabled';
+    danger?: boolean;
+    primaryColor: string;
+    style?: object;
+}
+
+function ActionButton({ title, icon, onPress, variant = 'primary', danger = false, primaryColor, style }: ActionButtonProps) {
+    const isDisabled = variant === 'disabled';
+    const isOutline  = variant === 'outline';
+
+    const accentColor = danger ? '#EF4444' : primaryColor;
+
+    const bg = isDisabled
+        ? 'rgba(255,255,255,0.08)'
+        : isOutline
+        ? 'transparent'
+        : accentColor;
+
+    const borderColor = isDisabled ? 'rgba(255,255,255,0.12)' : accentColor;
+
+    const textColor = isDisabled
+        ? 'rgba(255,255,255,0.35)'
+        : isOutline
+        ? accentColor
+        : '#ffffff';
+
+    return (
+        <TouchableOpacity
+            onPress={onPress}
+            disabled={isDisabled}
+            activeOpacity={isDisabled ? 1 : 0.78}
+            style={[
+                abS.btn,
+                { backgroundColor: bg, borderColor, borderWidth: isOutline || isDisabled ? 1.5 : 0 },
+                style,
+            ]}
+        >
+            {icon && (
+                <Ionicons
+                    name={icon}
+                    size={18}
+                    color={textColor}
+                    style={{ marginRight: 6 }}
+                />
+            )}
+            <AppText style={[abS.label, { color: textColor }]}>
+                {title}
+            </AppText>
+        </TouchableOpacity>
+    );
+}
+
+const abS = StyleSheet.create({
+    btn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 14,
+        paddingVertical: 15,
+        paddingHorizontal: 20,
+    },
+    label: {
+        fontSize: 16,
+        fontWeight: '700',
+        letterSpacing: 0.2,
+    },
+});
 
 /* ------------------------------------------------------------------ */
 /*  COMPONENT                                                           */
@@ -225,9 +301,9 @@ export default function ProfileScreen() {
                         {/* Stats row */}
                         <View style={[styles.statsRow, { borderTopColor: dividerColor }]}>
                             {[
-                                { value: String(totalCleanings),        label: 'Cleanings' },
-                                { value: `${totalRuntimeHours}h`,       label: 'Runtime'   },
-                                { value: `${efficiency}%`,              label: 'Efficiency'},
+                                { value: String(totalCleanings),  label: 'Cleanings'  },
+                                { value: `${totalRuntimeHours}h`, label: 'Runtime'    },
+                                { value: `${efficiency}%`,        label: 'Efficiency' },
                             ].map((stat, i, arr) => (
                                 <React.Fragment key={stat.label}>
                                     <View style={styles.statItem}>
@@ -312,12 +388,13 @@ export default function ProfileScreen() {
 
                     {/* ─── Logout ──────────────────────────────────────── */}
                     <View style={styles.logoutContainer}>
-                        <Button
+                        <ActionButton
                             title="Logout"
                             icon="log-out-outline"
                             onPress={handleLogout}
                             variant="outline"
                             danger
+                            primaryColor={colors.primary}
                         />
                     </View>
 
@@ -377,7 +454,7 @@ const styles = StyleSheet.create({
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
-        paddingTop: 16,        // title starts at the very top of the safe area
+        paddingTop: 16,
         paddingBottom: 80,
     },
     scrollContentLarge: {

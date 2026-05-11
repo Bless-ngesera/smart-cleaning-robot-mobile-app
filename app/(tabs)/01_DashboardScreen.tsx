@@ -33,18 +33,6 @@ import AppText from '../../src/components/AppText';
 import { useThemeContext } from '@/src/context/ThemeContext';
 import { supabase } from '@/src/services/supabase';
 
-// === C++ BRIDGE / TYPE DEFINITIONS ===
-// If using native modules for enhanced hardware integration (JNI/Obj-C++):
-// declare module 'react-native' {
-//   interface NativeModulesStatic {
-//     RobotBridge: {
-//       getRobotStatus(): Promise<RobotStatus>;
-//       subscribeToStatusUpdates(callback: (status: RobotStatus) => void): Promise<void>;
-//       unsubscribeFromStatusUpdates(): Promise<void>;
-//     }
-//   }
-// }
-
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -59,9 +47,6 @@ interface RobotStatus {
     errors: string[];
     status: RobotStatusCode;
     connectionType: ConnectionType;
-    // === C++ INTEGRATION POINT ===
-    // Add extra telemetry fields returned by RobotBridge here
-    // e.g., currentSpeed, cleanedArea, sensorReadings, etc.
 }
 
 // ---------------------------------------------------------------------------
@@ -78,15 +63,10 @@ function formatLastCleaned(raw: string | null): string {
         const diffHours = Math.floor(diffMs / 3600000);
         const diffDays = Math.floor(diffMs / 86400000);
 
-        if (diffMins < 60) {
-            return `${diffMins} min${diffMins !== 1 ? 's' : ''} ago`;
-        } else if (diffHours < 24) {
-            return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
-        } else if (diffDays < 7) {
-            return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
-        } else {
-            return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
-        }
+        if (diffMins < 60)  return `${diffMins} min${diffMins !== 1 ? 's' : ''} ago`;
+        if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? 's' : ''} ago`;
+        if (diffDays < 7)   return `${diffDays} day${diffDays !== 1 ? 's' : ''} ago`;
+        return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
     } catch {
         return 'Invalid date';
     }
@@ -109,9 +89,6 @@ function batteryIcon(level: number): keyof typeof Ionicons.glyphMap {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-/**
- * Animated battery bar with smooth fill animation
- */
 function BatteryBar({ level, color, darkMode }: { level: number; color: string; darkMode: boolean }) {
     const anim = useRef(new Animated.Value(0)).current;
 
@@ -133,55 +110,31 @@ function BatteryBar({ level, color, darkMode }: { level: number; color: string; 
             batteryBarStyles.track,
             { backgroundColor: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' },
         ]}>
-            <Animated.View
-                style={[
-                    batteryBarStyles.fill,
-                    {
-                        width: animatedWidth,
-                        backgroundColor: color,
-                    }
-                ]}
-            />
+            <Animated.View style={[batteryBarStyles.fill, { width: animatedWidth, backgroundColor: color }]} />
         </View>
     );
 }
 
 const batteryBarStyles = StyleSheet.create({
-    track: {
-        height: 8,
-        borderRadius: 4,
-        overflow: 'hidden',
-        marginTop: 12,
-    },
-    fill: {
-        height: '100%',
-        borderRadius: 4,
-    },
+    track: { height: 8, borderRadius: 4, overflow: 'hidden', marginTop: 12 },
+    fill:  { height: '100%', borderRadius: 4 },
 });
 
-/**
- * Pulsing dot indicator for active/cleaning status
- */
 function PulsingDot({ active }: { active: boolean }) {
-    const scale = useRef(new Animated.Value(1)).current;
+    const scale   = useRef(new Animated.Value(1)).current;
     const opacity = useRef(new Animated.Value(1)).current;
 
     useEffect(() => {
-        if (!active) {
-            scale.setValue(1);
-            opacity.setValue(1);
-            return;
-        }
-
+        if (!active) { scale.setValue(1); opacity.setValue(1); return; }
         const loop = Animated.loop(
             Animated.parallel([
                 Animated.sequence([
-                    Animated.timing(scale, { toValue: 1.4, duration: 1000, useNativeDriver: true }),
-                    Animated.timing(scale, { toValue: 1, duration: 1000, useNativeDriver: true }),
+                    Animated.timing(scale,   { toValue: 1.4, duration: 1000, useNativeDriver: true }),
+                    Animated.timing(scale,   { toValue: 1,   duration: 1000, useNativeDriver: true }),
                 ]),
                 Animated.sequence([
                     Animated.timing(opacity, { toValue: 0.6, duration: 1000, useNativeDriver: true }),
-                    Animated.timing(opacity, { toValue: 1, duration: 1000, useNativeDriver: true }),
+                    Animated.timing(opacity, { toValue: 1,   duration: 1000, useNativeDriver: true }),
                 ]),
             ]),
         );
@@ -190,25 +143,15 @@ function PulsingDot({ active }: { active: boolean }) {
     }, [active, scale, opacity]);
 
     return (
-        <Animated.View
-            style={[
-                pulseStyles.dot,
-                {
-                    backgroundColor: active ? '#22c55e' : '#94a3b8',
-                    transform: [{ scale }],
-                    opacity,
-                },
-            ]}
-        />
+        <Animated.View style={[
+            pulseStyles.dot,
+            { backgroundColor: active ? '#22c55e' : '#94a3b8', transform: [{ scale }], opacity },
+        ]} />
     );
 }
 
 const pulseStyles = StyleSheet.create({
-    dot: {
-        width: 10,
-        height: 10,
-        borderRadius: 5,
-    },
+    dot: { width: 10, height: 10, borderRadius: 5 },
 });
 
 // ---------------------------------------------------------------------------
@@ -216,25 +159,23 @@ const pulseStyles = StyleSheet.create({
 // ---------------------------------------------------------------------------
 
 export default function DashboardScreen() {
-  const { push, back, replace } = useAppNavigation();
+    const { push } = useAppNavigation();
     const { colors, darkMode } = useThemeContext();
     const { width } = useWindowDimensions();
     const isLargeScreen = width >= 768;
 
-    const [status, setStatus] = useState<RobotStatus | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
+    const [status, setStatus]           = useState<RobotStatus | null>(null);
+    const [loading, setLoading]         = useState(true);
+    const [refreshing, setRefreshing]   = useState(false);
     const [weeklyRuntime, setWeeklyRuntime] = useState<string>('—');
-    const [weeklyArea, setWeeklyArea] = useState<string>('—');
+    const [weeklyArea, setWeeklyArea]   = useState<string>('—');
 
-    // Design tokens for consistent styling with LoginScreen
-    const cardBg = darkMode ? 'rgba(255,255,255,0.05)' : '#ffffff';
-    const cardBorder = darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)';
-    const textPrimary = darkMode ? '#ffffff' : colors.text;
+    const cardBg        = darkMode ? 'rgba(255,255,255,0.05)' : '#ffffff';
+    const cardBorder    = darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)';
+    const textPrimary   = darkMode ? '#ffffff' : colors.text;
     const textSecondary = darkMode ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.60)';
-    const dividerColor = darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)';
+    const dividerColor  = darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)';
 
-    // Fetch weekly cleaning stats from cleaning_sessions table
     const fetchWeeklyStats = useCallback(async (userId: string) => {
         try {
             const oneWeekAgo = new Date();
@@ -249,7 +190,6 @@ export default function DashboardScreen() {
 
             if (!sessions || sessions.length === 0) return;
 
-            // Parse duration strings like "45 min", "1h 30m", "2h"
             let totalMins = 0;
             for (const s of sessions) {
                 if (!s.duration) continue;
@@ -257,39 +197,26 @@ export default function DashboardScreen() {
                 const mMatch = s.duration.match(/(\d+)\s*m(?:in)?/);
                 totalMins += (hMatch ? parseInt(hMatch[1]) * 60 : 0) + (mMatch ? parseInt(mMatch[1]) : 0);
             }
+            setWeeklyRuntime(`${(totalMins / 60).toFixed(1)}h`);
 
-            const hours = (totalMins / 60).toFixed(1);
-            setWeeklyRuntime(`${hours}h`);
-
-            // Parse area strings like "142 m²", "50m²"
             let totalArea = 0;
             for (const s of sessions) {
                 if (!s.area) continue;
                 const aMatch = s.area.match(/(\d+(?:\.\d+)?)/);
                 if (aMatch) totalArea += parseFloat(aMatch[1]);
             }
-
             setWeeklyArea(`${Math.round(totalArea)}m²`);
         } catch (err) {
             console.error('[DashboardScreen] fetchWeeklyStats error:', err);
         }
     }, []);
 
-    // === C++ BRIDGE / FETCH STATUS FROM SUPABASE ===
     const fetchStatus = useCallback(async () => {
         try {
             const { data: { user } } = await supabase.auth.getUser();
-            if (!user?.id) {
-                throw new Error('No authenticated user');
-            }
+            if (!user?.id) throw new Error('No authenticated user');
 
-            // Fetch weekly stats in parallel with status
             fetchWeeklyStats(user.id);
-
-            // === C++ INTEGRATION POINT ===
-            // Replace Supabase call with native module:
-            // const nativeStatus = await RobotBridge.getRobotStatus();
-            // setStatus(nativeStatus);
 
             const { data, error } = await supabase
                 .from('robots')
@@ -299,41 +226,30 @@ export default function DashboardScreen() {
                 .limit(1)
                 .maybeSingle();
 
-            if (error && error.code !== 'PGRST116') {
-                throw error;
-            }
+            if (error && error.code !== 'PGRST116') throw error;
 
             if (!data) {
-                // No robot registered yet – show fallback values
                 setStatus({
-                    batteryLevel: 0,
-                    isCleaning: false,
-                    lastCleaned: 'Never',
-                    errors: ['No robot data available'],
-                    status: 'Offline',
-                    connectionType: 'none',
+                    batteryLevel: 0, isCleaning: false, lastCleaned: 'Never',
+                    errors: ['No robot data available'], status: 'Offline', connectionType: 'none',
                 });
                 return;
             }
 
             setStatus({
-                batteryLevel: data.battery ?? 0,
-                isCleaning: data.mode === 'cleaning',
-                lastCleaned: data.updated_at ?? 'Never',
-                errors: [],
-                status: (data.status as RobotStatusCode) ?? 'Offline',
+                batteryLevel:   data.battery ?? 0,
+                isCleaning:     data.status === 'Online',
+                lastCleaned:    data.updated_at ?? 'Never',
+                errors:         [],
+                status:         (data.status as RobotStatusCode) ?? 'Offline',
                 connectionType: 'none',
             });
         } catch (err: any) {
             console.error('[DashboardScreen] fetchStatus error:', err);
             Alert.alert('Connection Error', 'Unable to load robot status. Please try again.');
             setStatus({
-                batteryLevel: 0,
-                isCleaning: false,
-                lastCleaned: 'Never',
-                errors: ['Failed to load status'],
-                status: 'Offline',
-                connectionType: 'none',
+                batteryLevel: 0, isCleaning: false, lastCleaned: 'Never',
+                errors: ['Failed to load status'], status: 'Offline', connectionType: 'none',
             });
         } finally {
             setLoading(false);
@@ -341,50 +257,25 @@ export default function DashboardScreen() {
         }
     }, [fetchWeeklyStats]);
 
-    // Initial fetch only - no auto-refresh
-    useEffect(() => {
-        fetchStatus();
-
-        // === C++ INTEGRATION POINT ===
-        // Subscribe to real-time hardware updates:
-        // RobotBridge.subscribeToStatusUpdates((newStatus) => {
-        //   setStatus(newStatus);
-        // });
-        //
-        // return () => {
-        //   RobotBridge.unsubscribeFromStatusUpdates();
-        // };
-    }, [fetchStatus]);
+    useEffect(() => { fetchStatus(); }, [fetchStatus]);
 
     const onRefresh = useCallback(() => {
-        if (Platform.OS === 'ios') {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        }
+        if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         setRefreshing(true);
         fetchStatus();
     }, [fetchStatus]);
 
-    // Derived state
     const batteryLevel = status?.batteryLevel ?? 0;
-    const isCleaning = status?.isCleaning ?? false;
-    const isConnected = status?.connectionType !== 'none';
-    const bColor = batteryColor(batteryLevel);
+    const isCleaning   = status?.isCleaning ?? false;
+    const isConnected  = status?.connectionType !== 'none';
+    const bColor       = batteryColor(batteryLevel);
 
-    if (loading && !status) {
-        return <Loader message="Loading dashboard..." />;
-    }
-
-    // ---------------------------------------------------------------------------
-    // Render
-    // ---------------------------------------------------------------------------
+    if (loading && !status) return <Loader message="Loading dashboard..." />;
 
     return (
         <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             <ScrollView
-                contentContainerStyle={[
-                    styles.scrollContent,
-                    isLargeScreen && styles.scrollContentLarge,
-                ]}
+                contentContainerStyle={[styles.scrollContent, isLargeScreen && styles.scrollContentLarge]}
                 refreshControl={
                     <RefreshControl
                         refreshing={refreshing}
@@ -396,7 +287,8 @@ export default function DashboardScreen() {
                 showsVerticalScrollIndicator={false}
             >
                 <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
-                    {/* Large Header - always visible, positioned higher */}
+
+                    {/* Header */}
                     <View style={styles.headerSection}>
                         <AppText style={[styles.headerTitle, { color: textPrimary }]}>
                             Dashboard
@@ -406,26 +298,15 @@ export default function DashboardScreen() {
                         </AppText>
                     </View>
 
-                    {/* Robot Status Card - matches LoginScreen card styling */}
+                    {/* Robot Status Card */}
                     <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
                         <View style={styles.robotHeader}>
                             <View style={[
                                 styles.robotAvatar,
-                                {
-                                    backgroundColor: isCleaning
-                                        ? 'rgba(34,197,94,0.15)'
-                                        : darkMode
-                                            ? 'rgba(59,130,246,0.16)'
-                                            : 'rgba(59,130,246,0.12)',
-                                },
+                                { backgroundColor: isCleaning ? 'rgba(34,197,94,0.15)' : darkMode ? 'rgba(59,130,246,0.16)' : 'rgba(59,130,246,0.12)' },
                             ]}>
-                                <Ionicons
-                                    name="hardware-chip"
-                                    size={28}
-                                    color={isCleaning ? '#22c55e' : colors.primary}
-                                />
+                                <Ionicons name="hardware-chip" size={28} color={isCleaning ? '#22c55e' : colors.primary} />
                             </View>
-
                             <View style={styles.robotInfo}>
                                 <AppText style={[styles.robotName, { color: textPrimary }]}>
                                     Smart Cleaner Pro
@@ -437,13 +318,10 @@ export default function DashboardScreen() {
                                     </AppText>
                                 </View>
                             </View>
-
                             <TouchableOpacity
                                 style={styles.refreshButton}
                                 onPress={() => {
-                                    if (Platform.OS === 'ios') {
-                                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                    }
+                                    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                                     fetchStatus();
                                 }}
                                 activeOpacity={0.7}
@@ -454,59 +332,34 @@ export default function DashboardScreen() {
 
                         <View style={[styles.divider, { backgroundColor: dividerColor }]} />
 
-                        {/* Battery Section */}
+                        {/* Battery */}
                         <View style={styles.batterySection}>
                             <View style={styles.batteryHeader}>
                                 <View style={styles.batteryLabelRow}>
                                     <Ionicons name={batteryIcon(batteryLevel)} size={20} color={bColor} />
-                                    <AppText style={[styles.fieldLabel, { color: textSecondary }]}>
-                                        Battery Level
-                                    </AppText>
+                                    <AppText style={[styles.fieldLabel, { color: textSecondary }]}>Battery Level</AppText>
                                 </View>
-                                <AppText style={[styles.batteryPercent, { color: bColor }]}>
-                                    {batteryLevel}%
-                                </AppText>
+                                <AppText style={[styles.batteryPercent, { color: bColor }]}>{batteryLevel}%</AppText>
                             </View>
                             <BatteryBar level={batteryLevel} color={bColor} darkMode={darkMode} />
                         </View>
 
                         <View style={[styles.divider, { backgroundColor: dividerColor }]} />
 
-                        {/* Connection Status */}
+                        {/* Connection */}
                         <View style={styles.connectionSection}>
                             <View style={styles.connectionRow}>
-                                <View style={[
-                                    styles.connectionDot,
-                                    { backgroundColor: isConnected ? '#22c55e' : '#ef4444' }
-                                ]} />
+                                <View style={[styles.connectionDot, { backgroundColor: isConnected ? '#22c55e' : '#ef4444' }]} />
                                 <AppText style={[styles.connectionText, { color: textSecondary }]}>
-                                    {isConnected
-                                        ? `Connected via ${status?.connectionType.toUpperCase()}`
-                                        : 'Not Connected'}
+                                    {isConnected ? `Connected via ${status?.connectionType.toUpperCase()}` : 'Not Connected'}
                                 </AppText>
                             </View>
-
                             <TouchableOpacity
-                                style={[
-                                    styles.connectionButton,
-                                    {
-                                        backgroundColor: darkMode
-                                            ? 'rgba(59,130,246,0.16)'
-                                            : 'rgba(59,130,246,0.12)',
-                                    },
-                                ]}
-                                onPress={() => {
-                                    // Navigate to Settings tab instead of non-existent route
-                                    push('../settings/connection');
-                                }}
+                                style={[styles.connectionButton, { backgroundColor: darkMode ? 'rgba(59,130,246,0.16)' : 'rgba(59,130,246,0.12)' }]}
+                                onPress={() => push('../settings/connection')}
                                 activeOpacity={0.7}
                             >
-                                <Ionicons
-                                    name="link-outline"
-                                    size={18}
-                                    color={colors.primary}
-                                    style={{ marginRight: 10 }}
-                                />
+                                <Ionicons name="link-outline" size={18} color={colors.primary} style={{ marginRight: 10 }} />
                                 <AppText style={[styles.connectionButtonText, { color: colors.primary }]}>
                                     {isConnected ? 'Manage Connection' : 'Connect Robot'}
                                 </AppText>
@@ -517,39 +370,14 @@ export default function DashboardScreen() {
                     {/* Quick Stats Row */}
                     <View style={styles.statsRow}>
                         {[
-                            {
-                                icon: 'checkmark-circle-outline' as keyof typeof Ionicons.glyphMap,
-                                color: isCleaning ? '#22c55e' : '#94a3b8',
-                                value: isCleaning ? 'Active' : 'Idle',
-                                label: 'Status'
-                            },
-                            {
-                                icon: 'time-outline' as keyof typeof Ionicons.glyphMap,
-                                color: '#a78bfa',
-                                value: weeklyRuntime,
-                                label: 'Runtime'
-                            },
-                            {
-                                icon: 'map-outline' as keyof typeof Ionicons.glyphMap,
-                                color: '#fb923c',
-                                value: weeklyArea,
-                                label: 'This Week'
-                            },
-                        ].map((stat) => (
-                            <View
-                                key={stat.label}
-                                style={[
-                                    styles.statCard,
-                                    { backgroundColor: cardBg, borderColor: cardBorder }
-                                ]}
-                            >
+                            { icon: 'checkmark-circle-outline' as const, color: isCleaning ? '#22c55e' : '#94a3b8', value: isCleaning ? 'Active' : 'Idle',  label: 'Status'    },
+                            { icon: 'time-outline'              as const, color: '#a78bfa',                           value: weeklyRuntime,                   label: 'Runtime'   },
+                            { icon: 'map-outline'               as const, color: '#fb923c',                           value: weeklyArea,                      label: 'This Week' },
+                        ].map(stat => (
+                            <View key={stat.label} style={[styles.statCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
                                 <Ionicons name={stat.icon} size={24} color={stat.color} />
-                                <AppText style={[styles.statValue, { color: textPrimary }]}>
-                                    {stat.value}
-                                </AppText>
-                                <AppText style={[styles.statLabel, { color: textSecondary }]}>
-                                    {stat.label}
-                                </AppText>
+                                <AppText style={[styles.statValue, { color: textPrimary }]}>{stat.value}</AppText>
+                                <AppText style={[styles.statLabel, { color: textSecondary }]}>{stat.label}</AppText>
                             </View>
                         ))}
                     </View>
@@ -557,15 +385,8 @@ export default function DashboardScreen() {
                     {/* Last Session Card */}
                     <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
                         <View style={styles.cardHeader}>
-                            <Ionicons
-                                name="calendar-outline"
-                                size={18}
-                                color={colors.primary}
-                                style={{ marginRight: 8 }}
-                            />
-                            <AppText style={[styles.cardTitle, { color: textSecondary }]}>
-                                Last Cleaning Session
-                            </AppText>
+                            <Ionicons name="calendar-outline" size={18} color={colors.primary} style={{ marginRight: 8 }} />
+                            <AppText style={[styles.cardTitle, { color: textSecondary }]}>Last Cleaning Session</AppText>
                         </View>
                         <AppText style={[styles.cardValue, { color: textPrimary }]}>
                             {formatLastCleaned(status?.lastCleaned ?? 'Never')}
@@ -579,9 +400,7 @@ export default function DashboardScreen() {
                                 <Ionicons name="warning-outline" size={20} color="#fbbf24" />
                             </View>
                             <View style={styles.errorContent}>
-                                <AppText style={styles.errorText}>
-                                    {status.errors[0]}
-                                </AppText>
+                                <AppText style={styles.errorText}>{status.errors[0]}</AppText>
                                 {status.errors.length > 1 && (
                                     <AppText style={styles.errorCount}>
                                         +{status.errors.length - 1} more issue{status.errors.length - 1 !== 1 ? 's' : ''}
@@ -594,68 +413,34 @@ export default function DashboardScreen() {
                     {/* Quick Actions Card */}
                     <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
                         <View style={styles.cardHeader}>
-                            <Ionicons
-                                name="flash-outline"
-                                size={18}
-                                color={colors.primary}
-                                style={{ marginRight: 8 }}
-                            />
-                            <AppText style={[styles.cardTitle, { color: textSecondary }]}>
-                                Quick Actions
-                            </AppText>
+                            <Ionicons name="flash-outline" size={18} color={colors.primary} style={{ marginRight: 8 }} />
+                            <AppText style={[styles.cardTitle, { color: textSecondary }]}>Quick Actions</AppText>
                         </View>
-
                         <View style={[styles.divider, { backgroundColor: dividerColor, marginVertical: 16 }]} />
-
                         <View style={styles.actionsGrid}>
                             {[
-                                {
-                                    icon: 'game-controller-outline' as keyof typeof Ionicons.glyphMap,
-                                    label: 'Control',
-                                    route: '/(tabs)/02_ControlScreen',
-                                    color: '#6366f1'
-                                },
-                                {
-                                    icon: 'calendar-outline' as keyof typeof Ionicons.glyphMap,
-                                    label: 'Schedule',
-                                    route: '/(tabs)/04_ScheduleScreen',
-                                    color: '#ec4899'
-                                },
-                                {
-                                    icon: 'map-outline' as keyof typeof Ionicons.glyphMap,
-                                    label: 'Map',
-                                    route: '/(tabs)/03_MapScreen',
-                                    color: '#14b8a6'
-                                },
-                            ].map((action) => (
+                                { icon: 'game-controller-outline' as const, label: 'Control',  route: '/(tabs)/02_ControlScreen',  color: '#6366f1' },
+                                { icon: 'calendar-outline'         as const, label: 'Schedule', route: '/(tabs)/04_ScheduleScreen', color: '#ec4899' },
+                                { icon: 'map-outline'              as const, label: 'Map',      route: '/(tabs)/03_MapScreen',      color: '#14b8a6' },
+                            ].map(action => (
                                 <TouchableOpacity
                                     key={action.label}
-                                    style={[
-                                        styles.actionButton,
-                                        {
-                                            backgroundColor: `${action.color}${darkMode ? '1a' : '12'}`,
-                                            borderColor: `${action.color}30`,
-                                        }
-                                    ]}
+                                    style={[styles.actionButton, { backgroundColor: `${action.color}${darkMode ? '1a' : '12'}`, borderColor: `${action.color}30` }]}
                                     onPress={() => {
-                                        if (Platform.OS === 'ios') {
-                                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                        }
+                                        if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                                         push(action.route as any);
                                     }}
                                     activeOpacity={0.7}
                                 >
                                     <Ionicons name={action.icon} size={24} color={action.color} />
-                                    <AppText style={[styles.actionLabel, { color: textPrimary }]}>
-                                        {action.label}
-                                    </AppText>
+                                    <AppText style={[styles.actionLabel, { color: textPrimary }]}>{action.label}</AppText>
                                 </TouchableOpacity>
                             ))}
                         </View>
                     </View>
+
                 </View>
 
-                {/* Footer */}
                 <AppText style={[styles.footer, { color: textSecondary }]}>
                     Version 1.0.0 • Smart Cleaner Pro © 2026
                 </AppText>
@@ -665,36 +450,33 @@ export default function DashboardScreen() {
 }
 
 // ---------------------------------------------------------------------------
-// Styles - Consistent with LoginScreen
+// Styles
+// NOTE: No fontFamily anywhere — React Native's default cross-platform font
+// is immune to the phone's font-type accessibility setting. If you add a custom
+// font, load it via expo-font and add its name to LOADED_FONTS in AppText.tsx.
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
 
-    // Scroll content
     scrollContent: {
         flexGrow: 1,
         paddingHorizontal: 24,
-        paddingTop: 25, // Increased significantly so header sits higher / more premium spacing from top
+        paddingTop: 25,
         paddingBottom: 80,
     },
-    scrollContentLarge: {
-        alignItems: 'center',
-    },
+    scrollContentLarge: { alignItems: 'center' },
 
-    wrapper: { width: '100%' },
+    wrapper:      { width: '100%' },
     largeWrapper: { maxWidth: 480 },
 
-    // Header section (large, always visible, positioned higher)
-    headerSection: {
-        marginBottom: 32, // Slightly more breathing room
-    },
+    headerSection: { marginBottom: 32 },
     headerTitle: {
         fontSize: 32,
         fontWeight: '800',
-        fontFamily: 'SF-Pro-Display-Bold',
         letterSpacing: -0.5,
         marginBottom: 6,
+        // ✗ NO fontFamily — removed 'SF-Pro-Display-Bold' which caused Android fallback
     },
     headerSubtitle: {
         fontSize: 16,
@@ -702,7 +484,6 @@ const styles = StyleSheet.create({
         letterSpacing: 0.1,
     },
 
-    // Cards - matching LoginScreen styling
     card: {
         borderRadius: 24,
         padding: 24,
@@ -710,205 +491,47 @@ const styles = StyleSheet.create({
         marginBottom: 20,
     },
 
-    // Robot status section
-    robotHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 20,
-    },
-    robotAvatar: {
-        width: 52,
-        height: 52,
-        borderRadius: 14,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: 14,
-    },
-    robotInfo: {
-        flex: 1,
-    },
-    robotName: {
-        fontSize: 17,
-        fontWeight: '700',
-        letterSpacing: -0.3,
-        marginBottom: 6,
-    },
-    statusRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-    statusText: {
-        fontSize: 14,
-        fontWeight: '500',
-    },
-    refreshButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 12,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
+    robotHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+    robotAvatar: { width: 52, height: 52, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginRight: 14 },
+    robotInfo:   { flex: 1 },
+    robotName:   { fontSize: 17, fontWeight: '700', letterSpacing: -0.3, marginBottom: 6 },
+    statusRow:   { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    statusText:  { fontSize: 14, fontWeight: '500' },
+    refreshButton: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
 
-    divider: {
-        height: 1,
-        marginVertical: 20,
-    },
+    divider: { height: 1, marginVertical: 20 },
 
-    // Battery section
-    batterySection: {
-        marginBottom: 0,
-    },
-    batteryHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-    },
-    batteryLabelRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-    fieldLabel: {
-        fontSize: 14,
-        fontWeight: '500',
-    },
-    batteryPercent: {
-        fontSize: 17,
-        fontWeight: '700',
-        letterSpacing: -0.2,
-    },
+    batterySection: {},
+    batteryHeader:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    batteryLabelRow:{ flexDirection: 'row', alignItems: 'center', gap: 8 },
+    fieldLabel:     { fontSize: 14, fontWeight: '500' },
+    batteryPercent: { fontSize: 17, fontWeight: '700', letterSpacing: -0.2 },
 
-    // Connection section
-    connectionSection: {
-        marginBottom: 0,
-    },
-    connectionRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 10,
-        marginBottom: 16,
-    },
-    connectionDot: {
-        width: 10,
-        height: 10,
-        borderRadius: 5,
-    },
-    connectionText: {
-        flex: 1,
-        fontSize: 14,
-        fontWeight: '500',
-    },
-    connectionButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: 48,
-        borderRadius: 14,
-    },
-    connectionButtonText: {
-        fontSize: 15,
-        fontWeight: '600',
-    },
+    connectionSection:    {},
+    connectionRow:        { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
+    connectionDot:        { width: 10, height: 10, borderRadius: 5 },
+    connectionText:       { flex: 1, fontSize: 14, fontWeight: '500' },
+    connectionButton:     { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', height: 48, borderRadius: 14 },
+    connectionButtonText: { fontSize: 15, fontWeight: '600' },
 
-    // Stats row
-    statsRow: {
-        flexDirection: 'row',
-        gap: 12,
-        marginBottom: 20,
-    },
-    statCard: {
-        flex: 1,
-        borderRadius: 18,
-        paddingVertical: 20,
-        paddingHorizontal: 8,
-        alignItems: 'center',
-        borderWidth: 1,
-        gap: 8,
-    },
-    statValue: {
-        fontSize: 16,
-        fontWeight: '700',
-        letterSpacing: -0.2,
-    },
-    statLabel: {
-        fontSize: 11,
-        fontWeight: '500',
-        textTransform: 'uppercase',
-        letterSpacing: 0.6,
-    },
+    statsRow: { flexDirection: 'row', gap: 12, marginBottom: 20 },
+    statCard:  { flex: 1, borderRadius: 18, paddingVertical: 20, paddingHorizontal: 8, alignItems: 'center', borderWidth: 1, gap: 8 },
+    statValue: { fontSize: 16, fontWeight: '700', letterSpacing: -0.2 },
+    statLabel: { fontSize: 11, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 0.6 },
 
-    // Card header
-    cardHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 12,
-    },
-    cardTitle: {
-        fontSize: 14,
-        fontWeight: '500',
-    },
-    cardValue: {
-        fontSize: 17,
-        fontWeight: '600',
-        letterSpacing: -0.2,
-    },
+    cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+    cardTitle:  { fontSize: 14, fontWeight: '500' },
+    cardValue:  { fontSize: 17, fontWeight: '600', letterSpacing: -0.2 },
 
-    // Error banner
-    errorBanner: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        backgroundColor: 'rgba(251,191,36,0.12)',
-        borderWidth: 1,
-        borderColor: 'rgba(251,191,36,0.3)',
-        borderRadius: 14,
-        padding: 16,
-        marginBottom: 20,
-        gap: 12,
-    },
-    errorIconContainer: {
-        marginTop: 2,
-    },
-    errorContent: {
-        flex: 1,
-    },
-    errorText: {
-        color: '#fbbf24',
-        fontSize: 14,
-        fontWeight: '500',
-        marginBottom: 4,
-    },
-    errorCount: {
-        color: '#fbbf24',
-        fontSize: 12,
-        fontWeight: '400',
-        opacity: 0.8,
-    },
+    errorBanner:      { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: 'rgba(251,191,36,0.12)', borderWidth: 1, borderColor: 'rgba(251,191,36,0.3)', borderRadius: 14, padding: 16, marginBottom: 20, gap: 12 },
+    errorIconContainer: { marginTop: 2 },
+    errorContent:     { flex: 1 },
+    errorText:        { color: '#fbbf24', fontSize: 14, fontWeight: '500', marginBottom: 4 },
+    errorCount:       { color: '#fbbf24', fontSize: 12, fontWeight: '400', opacity: 0.8 },
 
-    // Actions grid
-    actionsGrid: {
-        flexDirection: 'row',
-        gap: 12,
-    },
-    actionButton: {
-        flex: 1,
-        borderRadius: 14,
-        borderWidth: 1,
-        paddingVertical: 18,
-        alignItems: 'center',
-        gap: 10,
-    },
-    actionLabel: {
-        fontSize: 13,
-        fontWeight: '600',
-    },
+    actionsGrid:  { flexDirection: 'row', gap: 12 },
+    actionButton: { flex: 1, borderRadius: 14, borderWidth: 1, paddingVertical: 18, alignItems: 'center', gap: 10 },
+    actionLabel:  { fontSize: 13, fontWeight: '600' },
 
-    // Footer
-    footer: {
-        textAlign: 'center',
-        marginTop: 32,
-        fontSize: 12.5,
-        opacity: 0.65,
-        letterSpacing: 0.3,
-    },
+    footer: { textAlign: 'center', marginTop: 32, fontSize: 12.5, opacity: 0.65, letterSpacing: 0.3 },
 });

@@ -8,6 +8,8 @@
 // ============================================================
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { disableSystemFontScaling } from '@/src/utils/disableFontScaling';
+disableSystemFontScaling();
 import {
     View,
     TouchableOpacity,
