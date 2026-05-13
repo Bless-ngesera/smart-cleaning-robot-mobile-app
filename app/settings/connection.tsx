@@ -1,5 +1,5 @@
 // app/settings/connection.tsx
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -13,36 +13,14 @@ import {
   KeyboardAvoidingView,
   StatusBar,
   Animated,
+  RefreshControl,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useThemeContext } from '@/src/context/ThemeContext';
 import AppText from '@/src/components/AppText';
-import { supabase } from '@/src/services/supabase';
-
-interface Robot {
-  id: string;
-  name: string;
-  serial_number: string;
-  connection_type: string;
-  status: string;
-  battery: number;
-  mode: string;
-  is_online: boolean;
-  last_seen: string;
-}
-
-interface RobotStatus {
-  id: string;
-  robot_id: string;
-  status: string;
-  battery: number;
-  left_sensor: number;
-  right_sensor: number;
-  movement: string;
-  mode: string;
-  last_updated: string;
-}
+import { ProductionRobotService, Robot, RobotStatus } from '@/src/services/ProductionRobotService';
 
 interface ToastMessage {
   id: string;
@@ -52,24 +30,20 @@ interface ToastMessage {
 
 export default function ConnectionScreen() {
   const { colors, darkMode } = useThemeContext();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const isTablet = width > 768;
 
   // State
   const [robots, setRobots] = useState<Robot[]>([]);
-  const [selectedRobot, setSelectedRobot] = useState<Robot | null>(null);
+  const [currentRobot, setCurrentRobot] = useState<Robot | null>(null);
   const [robotStatus, setRobotStatus] = useState<RobotStatus | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
-  const [isConnected, setIsConnected] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const [realtimeSubscription, setRealtimeSubscription] = useState<any>(null);
-  
-  // Form states
-  const [showAddRobot, setShowAddRobot] = useState(false);
-  const [newRobotName, setNewRobotName] = useState('');
-  const [newRobotSerial, setNewRobotSerial] = useState('');
-  const [addingRobot, setAddingRobot] = useState(false);
+  const [showClaimModal, setShowClaimModal] = useState(false);
+  const [claimSerial, setClaimSerial] = useState('');
+  const [claiming, setClaiming] = useState(false);
 
   // Theme colors
   const cardBg = darkMode ? '#1e1e2e' : '#ffffff';
@@ -81,94 +55,37 @@ export default function ConnectionScreen() {
   const errorColor = '#ff4757';
   const infoColor = '#2196f3';
 
-  // Show toast at bottom
+  // Toast helper
   const showToast = useCallback((text: string, type: ToastMessage['type']) => {
     const id = Date.now().toString();
     setToasts(prev => [...prev, { id, text, type }]);
     setTimeout(() => {
-      setToasts(prev => prev.filter(toast => toast.id !== id));
+      setToasts(prev => prev.filter(t => t.id !== id));
     }, 6000);
   }, []);
 
-  // Load user's robots from database
+  // Load user's robots
   const loadRobots = useCallback(async () => {
     try {
       setLoading(true);
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData.user) return;
-
-      const { data, error } = await supabase
-        .from('robots')
-        .select('*')
-        .eq('owner_id', userData.user.id)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      setRobots(data || []);
+      const userRobots = await ProductionRobotService.getUserRobots();
+      setRobots(userRobots);
       
-      // Check if any robot is already connected
-      const connectedRobot = data?.find(r => r.is_online === true);
-      if (connectedRobot) {
-        setSelectedRobot(connectedRobot);
-        setIsConnected(true);
-        await fetchRobotStatus(connectedRobot.id);
-        await subscribeToRobotStatus(connectedRobot.id);
+      // Check if already connected
+      if (ProductionRobotService.isConnected()) {
+        const robot = ProductionRobotService.getCurrentRobot();
+        if (robot) {
+          setCurrentRobot(robot);
+          const status = await ProductionRobotService.fetchLatestStatus();
+          if (status) setRobotStatus(status);
+        }
       }
     } catch (error: any) {
-      console.error('Load robots error:', error);
       showToast(error.message || 'Failed to load robots', 'error');
     } finally {
       setLoading(false);
     }
   }, []);
-
-  // Fetch robot status from database
-  const fetchRobotStatus = async (robotId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('robot_status')
-        .select('*')
-        .eq('robot_id', robotId)
-        .order('last_updated', { ascending: false })
-        .limit(1);
-
-      if (error) throw error;
-      
-      if (data && data.length > 0) {
-        setRobotStatus(data[0]);
-      }
-    } catch (error: any) {
-      console.error('Fetch status error:', error);
-    }
-  };
-
-  // Subscribe to real-time robot status updates
-  const subscribeToRobotStatus = async (robotId: string) => {
-    // Clean up existing subscription
-    if (realtimeSubscription) {
-      realtimeSubscription.unsubscribe();
-    }
-
-    const subscription = supabase
-      .channel(`robot-status-${robotId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'robot_status',
-          filter: `robot_id=eq.${robotId}`,
-        },
-        (payload) => {
-          console.log('Real-time status update:', payload.new);
-          setRobotStatus(payload.new as RobotStatus);
-        }
-      )
-      .subscribe();
-
-    setRealtimeSubscription(subscription);
-  };
 
   // Connect to robot
   const connectToRobot = async (robot: Robot) => {
@@ -176,152 +93,84 @@ export default function ConnectionScreen() {
     showToast(`Connecting to ${robot.name}...`, 'info');
 
     try {
-      // Update robot online status in database
-      const { error: updateError } = await supabase
-        .from('robots')
-        .update({
-          is_online: true,
-          last_seen: new Date().toISOString(),
-          status: 'online',
-        })
-        .eq('id', robot.id);
-
-      if (updateError) throw updateError;
-
-      setSelectedRobot(robot);
-      setIsConnected(true);
+      const result = await ProductionRobotService.connectToRobot(robot.serial_number);
       
-      // Fetch latest status
-      await fetchRobotStatus(robot.id);
-      
-      // Subscribe to real-time updates
-      await subscribeToRobotStatus(robot.id);
-      
-      showToast(`✓ Connected to ${robot.name}`, 'success');
+      if (result.success && result.robot) {
+        setCurrentRobot(result.robot);
+        
+        // Subscribe to status updates
+        const unsubscribe = ProductionRobotService.onStatusChange((status) => {
+          setRobotStatus(status);
+        });
+        
+        const status = await ProductionRobotService.fetchLatestStatus();
+        if (status) setRobotStatus(status);
+        
+        showToast(`✓ Connected to ${robot.name}`, 'success');
+        
+        // Cleanup on unmount
+        return () => unsubscribe();
+      } else {
+        throw new Error(result.error || 'Connection failed');
+      }
     } catch (error: any) {
-      console.error('Connect error:', error);
       showToast(error.message || 'Connection failed', 'error');
-      setIsConnected(false);
     } finally {
       setIsConnecting(false);
     }
   };
 
-  // Disconnect from robot
+  // Disconnect
   const disconnect = async () => {
-    if (!selectedRobot) return;
-
-    try {
-      const { error } = await supabase
-        .from('robots')
-        .update({
-          is_online: false,
-          status: 'offline',
-        })
-        .eq('id', selectedRobot.id);
-
-      if (error) throw error;
-
-      if (realtimeSubscription) {
-        realtimeSubscription.unsubscribe();
-      }
-
-      setSelectedRobot(null);
-      setRobotStatus(null);
-      setIsConnected(false);
-      showToast('Disconnected from robot', 'info');
-    } catch (error: any) {
-      console.error('Disconnect error:', error);
-      showToast(error.message || 'Failed to disconnect', 'error');
-    }
+    await ProductionRobotService.disconnect();
+    setCurrentRobot(null);
+    setRobotStatus(null);
+    showToast('Disconnected from robot', 'info');
   };
 
-  // Send command to robot
+  // Send command
   const sendCommand = async (command: string) => {
-    if (!selectedRobot) {
-      showToast('No robot selected', 'error');
+    if (!ProductionRobotService.isConnected()) {
+      showToast('No robot connected', 'error');
       return;
     }
 
-    try {
-      // Insert command into command_queue
-      const { data: userData } = await supabase.auth.getUser();
-      const { error } = await supabase
-        .from('command_queue')
-        .insert({
-          robot_id: selectedRobot.id,
-          command: command,
-          status: 'pending',
-          user_id: userData.user?.id,
-          created_at: new Date().toISOString(),
-        });
-
-      if (error) throw error;
-
-      // Also log to robot_logs
-      await supabase.from('robot_logs').insert({
-        robot_id: selectedRobot.id,
-        event_type: 'command',
-        message: command,
-        created_at: new Date().toISOString(),
-      });
-
-      showToast(`✓ Command "${command}" sent`, 'success');
-    } catch (error: any) {
-      console.error('Send command error:', error);
-      showToast(error.message || `Failed to send ${command}`, 'error');
+    const result = await ProductionRobotService.sendCommand(command);
+    if (result.success) {
+      showToast(result.message, 'success');
+    } else {
+      showToast(result.message, 'error');
     }
   };
 
-  // Add new robot
-  const addNewRobot = async () => {
-    if (!newRobotName.trim()) {
-      showToast('Please enter robot name', 'error');
-      return;
-    }
-    if (!newRobotSerial.trim()) {
+  // Claim new robot
+  const claimRobot = async () => {
+    if (!claimSerial.trim()) {
       showToast('Please enter serial number', 'error');
       return;
     }
 
-    setAddingRobot(true);
+    setClaiming(true);
     try {
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData.user) throw new Error('User not logged in');
-
-      const { data, error } = await supabase
-        .from('robots')
-        .insert({
-          owner_id: userData.user.id,
-          name: newRobotName.trim(),
-          serial_number: newRobotSerial.trim(),
-          connection_type: 'cloud',
-          status: 'offline',
-          battery: 100,
-          mode: 'MANUAL',
-          is_online: false,
-          created_at: new Date().toISOString(),
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      setRobots(prev => [data, ...prev]);
-      setNewRobotName('');
-      setNewRobotSerial('');
-      setShowAddRobot(false);
-      showToast('✓ Robot added successfully', 'success');
+      const result = await ProductionRobotService.claimRobot(claimSerial.trim().toUpperCase());
+      
+      if (result.success && result.robot) {
+        setRobots(prev => [result.robot!, ...prev]);
+        setShowClaimModal(false);
+        setClaimSerial('');
+        showToast(`✓ Robot "${result.robot.name}" added to your account`, 'success');
+      } else {
+        throw new Error(result.error || 'Failed to claim robot');
+      }
     } catch (error: any) {
-      console.error('Add robot error:', error);
-      showToast(error.message || 'Failed to add robot', 'error');
+      showToast(error.message || 'Failed to claim robot', 'error');
     } finally {
-      setAddingRobot(false);
+      setClaiming(false);
     }
   };
 
   // Delete robot
-  const deleteRobot = async (robot: Robot) => {
+  const deleteRobot = (robot: Robot) => {
     Alert.alert(
       'Delete Robot',
       `Are you sure you want to delete ${robot.name}?`,
@@ -331,21 +180,16 @@ export default function ConnectionScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            try {
-              const { error } = await supabase
-                .from('robots')
-                .delete()
-                .eq('id', robot.id);
-
-              if (error) throw error;
-
+            if (currentRobot?.id === robot.id) {
+              await disconnect();
+            }
+            
+            const success = await ProductionRobotService.deleteRobot(robot.id);
+            if (success) {
               setRobots(prev => prev.filter(r => r.id !== robot.id));
-              if (selectedRobot?.id === robot.id) {
-                await disconnect();
-              }
               showToast(`✓ ${robot.name} deleted`, 'success');
-            } catch (error: any) {
-              showToast(error.message || 'Failed to delete robot', 'error');
+            } else {
+              showToast('Failed to delete robot', 'error');
             }
           },
         },
@@ -353,37 +197,18 @@ export default function ConnectionScreen() {
     );
   };
 
-  // Test connection
-  const testConnection = async () => {
-    if (!selectedRobot) {
-      showToast('No robot selected', 'error');
-      return;
-    }
-
-    showToast('Testing connection...', 'info');
-    
-    if (robotStatus && robotStatus.last_updated) {
-      const lastUpdate = new Date(robotStatus.last_updated);
-      const now = new Date();
-      const diffSeconds = (now.getTime() - lastUpdate.getTime()) / 1000;
-      
-      if (diffSeconds < 30) {
-        showToast(`✓ Robot responding! Battery: ${robotStatus.battery}% | Mode: ${robotStatus.mode}`, 'success');
-      } else {
-        showToast('⚠ Robot not responding. Last update was ' + Math.floor(diffSeconds) + ' seconds ago', 'error');
-      }
-    } else {
-      showToast('No status data available', 'error');
-    }
+  // Refresh
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadRobots();
+    setRefreshing(false);
   };
 
-  // Load robots on mount
+  // Initial load
   useEffect(() => {
     loadRobots();
     return () => {
-      if (realtimeSubscription) {
-        realtimeSubscription.unsubscribe();
-      }
+      ProductionRobotService.disconnect();
     };
   }, []);
 
@@ -433,10 +258,8 @@ export default function ConnectionScreen() {
         style={styles.keyboardView}
       >
         <ScrollView
-          contentContainerStyle={[
-            styles.scrollContent,
-            isTablet && styles.scrollContentTablet,
-          ]}
+          contentContainerStyle={[styles.scrollContent, isTablet && styles.scrollContentTablet]}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -445,73 +268,18 @@ export default function ConnectionScreen() {
             <Ionicons name="hardware-chip-outline" size={48} color={colors.primary} />
             <AppText style={[styles.title, { color: textPrimary }]}>Smart Cleaner Pro</AppText>
             <AppText style={[styles.subtitle, { color: textSec }]}>
-              {isConnected ? 'Connected to robot' : 'Select a robot to connect'}
+              {currentRobot ? `Connected to ${currentRobot.name}` : 'Connect to your robot'}
             </AppText>
           </View>
 
-          {/* Add Robot Button */}
-          {!showAddRobot && (
-            <TouchableOpacity
-              style={[styles.addBtn, { backgroundColor: colors.primary, borderColor: colors.primary }]}
-              onPress={() => setShowAddRobot(true)}
-            >
-              <Ionicons name="add" size={24} color="#fff" />
-              <AppText style={styles.addBtnText}>Add New Robot</AppText>
-            </TouchableOpacity>
-          )}
-
-          {/* Add Robot Form */}
-          {showAddRobot && (
-            <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-              <View style={styles.cardHeader}>
-                <Ionicons name="add-circle" size={24} color={colors.primary} />
-                <AppText style={[styles.cardTitle, { color: textPrimary }]}>Register New Robot</AppText>
-              </View>
-
-              <AppText style={[styles.label, { color: textSec }]}>Robot Name</AppText>
-              <TextInput
-                style={[styles.input, { backgroundColor: inputBg, borderColor: cardBorder, color: textPrimary }]}
-                placeholder="e.g., Living Room Bot"
-                placeholderTextColor={textSec}
-                value={newRobotName}
-                onChangeText={setNewRobotName}
-              />
-
-              <AppText style={[styles.label, { color: textSec }]}>Serial Number</AppText>
-              <TextInput
-                style={[styles.input, { backgroundColor: inputBg, borderColor: cardBorder, color: textPrimary }]}
-                placeholder="Enter robot serial number"
-                placeholderTextColor={textSec}
-                value={newRobotSerial}
-                onChangeText={setNewRobotSerial}
-                autoCapitalize="characters"
-              />
-
-              <View style={styles.addRobotActions}>
-                <TouchableOpacity
-                  style={[styles.cancelBtn, { borderColor: cardBorder }]}
-                  onPress={() => {
-                    setShowAddRobot(false);
-                    setNewRobotName('');
-                    setNewRobotSerial('');
-                  }}
-                >
-                  <AppText style={[styles.cancelBtnText, { color: textSec }]}>Cancel</AppText>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.saveBtn, { backgroundColor: colors.primary }]}
-                  onPress={addNewRobot}
-                  disabled={addingRobot}
-                >
-                  {addingRobot ? (
-                    <ActivityIndicator color="#fff" size="small" />
-                  ) : (
-                    <AppText style={styles.saveBtnText}>Register</AppText>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
+          {/* Claim Robot Button */}
+          <TouchableOpacity
+            style={[styles.claimBtn, { backgroundColor: colors.primary }]}
+            onPress={() => setShowClaimModal(true)}
+          >
+            <Ionicons name="add-circle" size={24} color="#fff" />
+            <AppText style={styles.claimBtnText}>Add New Robot</AppText>
+          </TouchableOpacity>
 
           {/* Robots List */}
           {loading ? (
@@ -522,9 +290,9 @@ export default function ConnectionScreen() {
           ) : robots.length === 0 ? (
             <View style={[styles.emptyContainer, { backgroundColor: inputBg }]}>
               <Ionicons name="hardware-chip-outline" size={48} color={textSec} />
-              <AppText style={[styles.emptyText, { color: textSec }]}>No robots found</AppText>
+              <AppText style={[styles.emptyText, { color: textPrimary }]}>No Robots Found</AppText>
               <AppText style={[styles.emptySubtext, { color: textSec }]}>
-                Tap "Add New Robot" to register your robot
+                Tap "Add New Robot" to register your robot using its serial number
               </AppText>
             </View>
           ) : (
@@ -533,64 +301,84 @@ export default function ConnectionScreen() {
               
               {robots.map((robot) => (
                 <View key={robot.id} style={[styles.robotCard, { backgroundColor: cardBg, borderColor: cardBorder }]}>
+                  {/* Robot Info */}
                   <View style={styles.robotInfo}>
-                    <View style={styles.robotIcon}>
+                    <View style={[styles.robotIcon, { backgroundColor: `${colors.primary}15` }]}>
                       <Ionicons name="hardware-chip" size={24} color={colors.primary} />
                     </View>
                     <View style={styles.robotDetails}>
-                      <View style={styles.robotNameRow}>
+                      <View style={styles.robotHeader}>
                         <AppText style={[styles.robotName, { color: textPrimary }]}>{robot.name}</AppText>
                         <View style={[styles.statusBadge, { backgroundColor: robot.is_online ? `${successColor}20` : `${errorColor}20` }]}>
-                          <View style={[styles.statusIndicator, { backgroundColor: robot.is_online ? successColor : errorColor }]} />
-                          <AppText style={[styles.statusBadgeText, { color: robot.is_online ? successColor : errorColor }]}>
+                          <View style={[styles.statusDot, { backgroundColor: robot.is_online ? successColor : errorColor }]} />
+                          <AppText style={[styles.statusText, { color: robot.is_online ? successColor : errorColor }]}>
                             {robot.is_online ? 'Online' : 'Offline'}
                           </AppText>
                         </View>
                       </View>
                       <AppText style={[styles.robotSerial, { color: textSec }]}>SN: {robot.serial_number}</AppText>
-                      {robot.battery > 0 && (
-                        <View style={styles.batteryRow}>
+                      <View style={styles.robotStats}>
+                        <View style={styles.statItem}>
                           <Ionicons name="battery-half" size={14} color={textSec} />
-                          <AppText style={[styles.robotBattery, { color: textSec }]}>{robot.battery}%</AppText>
+                          <AppText style={[styles.statText, { color: textSec }]}>{robot.battery}%</AppText>
                         </View>
-                      )}
+                        <View style={styles.statDivider} />
+                        <View style={styles.statItem}>
+                          <Ionicons name="options" size={14} color={textSec} />
+                          <AppText style={[styles.statText, { color: textSec }]}>{robot.mode}</AppText>
+                        </View>
+                      </View>
                     </View>
                   </View>
-                  
+
+                  {/* Actions */}
                   <View style={styles.robotActions}>
-                    {selectedRobot?.id === robot.id && isConnected ? (
+                    {currentRobot?.id === robot.id ? (
                       <>
                         <TouchableOpacity
-                          style={[styles.controlBtn, { backgroundColor: `${infoColor}15` }]}
-                          onPress={testConnection}
+                          style={[styles.actionBtn, { backgroundColor: `${infoColor}15`, borderColor: infoColor }]}
+                          onPress={async () => {
+                            const status = await ProductionRobotService.fetchLatestStatus();
+                            if (status) {
+                              showToast(`Battery: ${status.battery}% | Mode: ${status.mode}`, 'info');
+                            } else {
+                              showToast('Robot responding', 'success');
+                            }
+                          }}
                         >
-                          <Ionicons name="pulse" size={18} color={infoColor} />
-                          <AppText style={[styles.controlBtnText, { color: infoColor }]}>Test</AppText>
+                          <Ionicons name="pulse" size={16} color={infoColor} />
+                          <AppText style={[styles.actionBtnText, { color: infoColor }]}>Test</AppText>
                         </TouchableOpacity>
                         <TouchableOpacity
-                          style={[styles.controlBtn, { backgroundColor: `${errorColor}15` }]}
+                          style={[styles.actionBtn, { backgroundColor: `${errorColor}15`, borderColor: errorColor }]}
                           onPress={disconnect}
                         >
-                          <Ionicons name="power" size={18} color={errorColor} />
-                          <AppText style={[styles.controlBtnText, { color: errorColor }]}>Disconnect</AppText>
+                          <Ionicons name="power" size={16} color={errorColor} />
+                          <AppText style={[styles.actionBtnText, { color: errorColor }]}>Disconnect</AppText>
                         </TouchableOpacity>
                       </>
                     ) : (
                       <>
                         <TouchableOpacity
-                          style={[styles.controlBtn, { backgroundColor: `${colors.primary}15` }]}
+                          style={[styles.actionBtn, { backgroundColor: `${colors.primary}15`, borderColor: colors.primary }]}
                           onPress={() => connectToRobot(robot)}
                           disabled={isConnecting}
                         >
-                          <Ionicons name="link" size={18} color={colors.primary} />
-                          <AppText style={[styles.controlBtnText, { color: colors.primary }]}>Connect</AppText>
+                          {isConnecting ? (
+                            <ActivityIndicator size="small" color={colors.primary} />
+                          ) : (
+                            <>
+                              <Ionicons name="link" size={16} color={colors.primary} />
+                              <AppText style={[styles.actionBtnText, { color: colors.primary }]}>Connect</AppText>
+                            </>
+                          )}
                         </TouchableOpacity>
                         <TouchableOpacity
-                          style={[styles.controlBtn, { backgroundColor: `${errorColor}15` }]}
+                          style={[styles.actionBtn, { backgroundColor: `${errorColor}15`, borderColor: errorColor }]}
                           onPress={() => deleteRobot(robot)}
                         >
-                          <Ionicons name="trash" size={18} color={errorColor} />
-                          <AppText style={[styles.controlBtnText, { color: errorColor }]}>Delete</AppText>
+                          <Ionicons name="trash" size={16} color={errorColor} />
+                          <AppText style={[styles.actionBtnText, { color: errorColor }]}>Delete</AppText>
                         </TouchableOpacity>
                       </>
                     )}
@@ -600,102 +388,163 @@ export default function ConnectionScreen() {
             </View>
           )}
 
-          {/* Robot Status Panel - Shows REAL database data */}
-          {isConnected && selectedRobot && robotStatus && (
+          {/* Connected Robot Status */}
+          {currentRobot && robotStatus && (
             <View style={[styles.statusCard, { backgroundColor: cardBg, borderColor: `${successColor}40` }]}>
               <View style={styles.statusHeader}>
                 <View style={styles.statusHeaderLeft}>
                   <View style={[styles.statusDot, { backgroundColor: successColor }]} />
-                  <AppText style={[styles.cardTitle, { color: textPrimary }]}>
-                    {selectedRobot.name} - Live Status
-                  </AppText>
+                  <AppText style={[styles.cardTitle, { color: textPrimary }]}>Live Status</AppText>
                 </View>
-                <View style={[styles.badge, { backgroundColor: `${successColor}20` }]}>
-                  <AppText style={[styles.badgeText, { color: successColor }]}>LIVE</AppText>
+                <View style={[styles.liveBadge, { backgroundColor: `${successColor}20` }]}>
+                  <View style={[styles.liveDot, { backgroundColor: successColor }]} />
+                  <AppText style={[styles.liveText, { color: successColor }]}>LIVE</AppText>
                 </View>
               </View>
 
               <View style={styles.statusGrid}>
                 <View style={styles.statusItem}>
-                  <Ionicons name="battery-full" size={22} color={robotStatus.battery > 20 ? successColor : errorColor} />
+                  <Ionicons name="battery-full" size={24} color={robotStatus.battery > 20 ? successColor : errorColor} />
                   <AppText style={[styles.statusLabel, { color: textSec }]}>Battery</AppText>
                   <AppText style={[styles.statusValue, { color: textPrimary }]}>{robotStatus.battery}%</AppText>
                 </View>
                 
                 <View style={styles.statusItem}>
-                  <Ionicons name="analytics" size={22} color={infoColor} />
+                  <Ionicons name="analytics" size={24} color={infoColor} />
                   <AppText style={[styles.statusLabel, { color: textSec }]}>Status</AppText>
                   <AppText style={[styles.statusValue, { color: textPrimary }]}>{robotStatus.status}</AppText>
                 </View>
                 
                 <View style={styles.statusItem}>
-                  <Ionicons name="options" size={22} color={colors.primary} />
+                  <Ionicons name="move" size={24} color="#ff9800" />
+                  <AppText style={[styles.statusLabel, { color: textSec }]}>Movement</AppText>
+                  <AppText style={[styles.statusValue, { color: textPrimary }]}>{robotStatus.movement}</AppText>
+                </View>
+                
+                <View style={styles.statusItem}>
+                  <Ionicons name="options" size={24} color={colors.primary} />
                   <AppText style={[styles.statusLabel, { color: textSec }]}>Mode</AppText>
                   <AppText style={[styles.statusValue, { color: textPrimary }]}>{robotStatus.mode}</AppText>
                 </View>
               </View>
 
-              {/* Sensor Data - REAL data from database */}
+              {/* Sensors */}
               {(robotStatus.left_sensor > 0 || robotStatus.right_sensor > 0) && (
                 <View style={styles.sensorContainer}>
-                  <AppText style={[styles.sensorTitle, { color: textSec }]}>Sensor Readings</AppText>
+                  <AppText style={[styles.sensorTitle, { color: textSec }]}>Sensors (cm)</AppText>
                   <View style={styles.sensorRow}>
                     <View style={styles.sensorItem}>
                       <AppText style={[styles.sensorLabel, { color: textSec }]}>Left</AppText>
-                      <AppText style={[styles.sensorValue, { color: textPrimary }]}>{robotStatus.left_sensor} cm</AppText>
+                      <AppText style={[styles.sensorValue, { color: textPrimary }]}>{robotStatus.left_sensor}</AppText>
                     </View>
                     <View style={styles.sensorDivider} />
                     <View style={styles.sensorItem}>
                       <AppText style={[styles.sensorLabel, { color: textSec }]}>Right</AppText>
-                      <AppText style={[styles.sensorValue, { color: textPrimary }]}>{robotStatus.right_sensor} cm</AppText>
+                      <AppText style={[styles.sensorValue, { color: textPrimary }]}>{robotStatus.right_sensor}</AppText>
                     </View>
                   </View>
                 </View>
               )}
 
-              {/* Last Updated */}
-              <AppText style={[styles.lastUpdated, { color: textSec }]}>
-                Last update: {new Date(robotStatus.last_updated).toLocaleTimeString()}
-              </AppText>
-
               {/* Quick Commands */}
               <View style={styles.commandsGrid}>
                 <TouchableOpacity
-                  style={[styles.commandBtn, { backgroundColor: `${colors.primary}10`, borderColor: colors.primary }]}
+                  style={[styles.commandBtn, { backgroundColor: `${colors.primary}15`, borderColor: colors.primary }]}
                   onPress={() => sendCommand('FORWARD')}
                 >
-                  <Ionicons name="arrow-up" size={28} color={colors.primary} />
-                  <AppText style={[styles.commandText, { color: colors.primary }]}>Forward</AppText>
+                  <Ionicons name="arrow-up" size={24} color={colors.primary} />
+                  <AppText style={[styles.commandText, { color: colors.primary }]}>FWD</AppText>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.commandBtn, { backgroundColor: `${errorColor}10`, borderColor: errorColor }]}
+                  style={[styles.commandBtn, { backgroundColor: `${errorColor}15`, borderColor: errorColor }]}
                   onPress={() => sendCommand('STOP')}
                 >
-                  <Ionicons name="stop" size={28} color={errorColor} />
-                  <AppText style={[styles.commandText, { color: errorColor }]}>Stop</AppText>
+                  <Ionicons name="stop" size={24} color={errorColor} />
+                  <AppText style={[styles.commandText, { color: errorColor }]}>STOP</AppText>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.commandBtn, { backgroundColor: `${successColor}10`, borderColor: successColor }]}
+                  style={[styles.commandBtn, { backgroundColor: `${successColor}15`, borderColor: successColor }]}
                   onPress={() => sendCommand('AUTO_MODE')}
                 >
-                  <Ionicons name="scan" size={28} color={successColor} />
-                  <AppText style={[styles.commandText, { color: successColor }]}>Auto</AppText>
+                  <Ionicons name="scan" size={24} color={successColor} />
+                  <AppText style={[styles.commandText, { color: successColor }]}>AUTO</AppText>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.commandBtn, { backgroundColor: `${infoColor}10`, borderColor: infoColor }]}
+                  style={[styles.commandBtn, { backgroundColor: `${infoColor}15`, borderColor: infoColor }]}
                   onPress={() => sendCommand('RETURN_CHARGE')}
                 >
-                  <Ionicons name="home" size={28} color={infoColor} />
-                  <AppText style={[styles.commandText, { color: infoColor }]}>Charge</AppText>
+                  <Ionicons name="home" size={24} color={infoColor} />
+                  <AppText style={[styles.commandText, { color: infoColor }]}>CHARGE</AppText>
                 </TouchableOpacity>
               </View>
+
+              <AppText style={[styles.lastUpdated, { color: textSec }]}>
+                Last update: {new Date(robotStatus.last_updated).toLocaleTimeString()}
+              </AppText>
             </View>
           )}
+
+          {/* Info Box */}
+          <View style={[styles.infoBox, { backgroundColor: `${infoColor}10`, borderColor: `${infoColor}30` }]}>
+            <Ionicons name="information-circle" size={20} color={infoColor} />
+            <AppText style={[styles.infoText, { color: textSec }]}>
+              To connect a robot, make sure it's registered and you have its serial number. 
+              Contact your robot supplier for the serial number.
+            </AppText>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Claim Robot Modal */}
+      <Modal visible={showClaimModal} animationType="slide" transparent={true}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: cardBg }]}>
+            <View style={styles.modalHeader}>
+              <AppText style={[styles.modalTitle, { color: textPrimary }]}>Add New Robot</AppText>
+              <TouchableOpacity onPress={() => setShowClaimModal(false)}>
+                <Ionicons name="close" size={24} color={textSec} />
+              </TouchableOpacity>
+            </View>
+
+            <AppText style={[styles.modalLabel, { color: textSec }]}>Robot Serial Number</AppText>
+            <TextInput
+              style={[styles.modalInput, { backgroundColor: inputBg, borderColor: cardBorder, color: textPrimary }]}
+              placeholder="Enter serial number (e.g., ROBOT_001)"
+              placeholderTextColor={textSec}
+              value={claimSerial}
+              onChangeText={setClaimSerial}
+              autoCapitalize="characters"
+              autoCorrect={false}
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={[styles.modalCancelBtn, { borderColor: cardBorder }]}
+                onPress={() => {
+                  setShowClaimModal(false);
+                  setClaimSerial('');
+                }}
+              >
+                <AppText style={[styles.modalCancelText, { color: textSec }]}>Cancel</AppText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalConfirmBtn, { backgroundColor: colors.primary }]}
+                onPress={claimRobot}
+                disabled={claiming}
+              >
+                {claiming ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <AppText style={styles.modalConfirmText}>Add Robot</AppText>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -705,100 +554,94 @@ const styles = StyleSheet.create({
   keyboardView: { flex: 1 },
   scrollContent: { padding: 20, paddingBottom: 100 },
   scrollContentTablet: { maxWidth: 600, alignSelf: 'center', width: '100%' },
-  
+
   // Header
   header: { alignItems: 'center', marginBottom: 24, marginTop: Platform.OS === 'ios' ? 20 : 10 },
   title: { fontSize: 26, fontWeight: '800', marginTop: 12, marginBottom: 6, textAlign: 'center' },
   subtitle: { fontSize: 14, textAlign: 'center', opacity: 0.7 },
-  
-  // Add Button
-  addBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 16,
-  },
-  addBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  
-  // Cards
-  card: { borderRadius: 20, borderWidth: 1, padding: 20, marginBottom: 16 },
-  statusCard: { borderRadius: 20, borderWidth: 2, padding: 20, marginBottom: 16 },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 20 },
-  cardTitle: { fontSize: 18, fontWeight: '700' },
-  
-  // Form
-  label: { fontSize: 13, fontWeight: '600', marginBottom: 8, opacity: 0.7 },
-  input: { height: 50, borderRadius: 12, borderWidth: 1, paddingHorizontal: 16, fontSize: 16, marginBottom: 16 },
-  
-  // Add Robot Actions
-  addRobotActions: { flexDirection: 'row', gap: 12, marginTop: 8 },
-  cancelBtn: { flex: 1, padding: 14, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
-  cancelBtnText: { fontSize: 14, fontWeight: '600' },
-  saveBtn: { flex: 1, padding: 14, borderRadius: 12, alignItems: 'center' },
-  saveBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-  
-  // Loading & Empty States
+
+  // Claim Button
+  claimBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 14, borderRadius: 12, marginBottom: 20 },
+  claimBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+
+  // Loading & Empty
   loadingContainer: { alignItems: 'center', padding: 40, gap: 12 },
   loadingText: { fontSize: 14 },
   emptyContainer: { alignItems: 'center', padding: 40, borderRadius: 20, gap: 12 },
   emptyText: { fontSize: 16, fontWeight: '600' },
-  emptySubtext: { fontSize: 13, textAlign: 'center', opacity: 0.7 },
-  
+  emptySubtext: { fontSize: 13, textAlign: 'center', opacity: 0.7, marginTop: 4 },
+
   // Robots List
-  robotsList: { gap: 12 },
+  robotsList: { gap: 12, marginBottom: 16 },
   sectionTitle: { fontSize: 16, fontWeight: '700', marginBottom: 8 },
   robotCard: { borderRadius: 16, borderWidth: 1, padding: 16 },
   robotInfo: { flexDirection: 'row', gap: 12, marginBottom: 12 },
-  robotIcon: { width: 50, height: 50, borderRadius: 25, backgroundColor: 'rgba(0,0,0,0.05)', alignItems: 'center', justifyContent: 'center' },
+  robotIcon: { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
   robotDetails: { flex: 1 },
-  robotNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 },
+  robotHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
   robotName: { fontSize: 16, fontWeight: '700' },
-  robotSerial: { fontSize: 12, opacity: 0.7, marginBottom: 4 },
-  batteryRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  robotBattery: { fontSize: 12 },
-  
+  robotSerial: { fontSize: 12, opacity: 0.7, marginBottom: 6 },
+  robotStats: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  statItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  statText: { fontSize: 12 },
+  statDivider: { width: 1, height: 12, backgroundColor: 'rgba(0,0,0,0.1)' },
+
   // Status Badge
   statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 },
-  statusIndicator: { width: 6, height: 6, borderRadius: 3 },
-  statusBadgeText: { fontSize: 10, fontWeight: '600' },
-  
-  // Robot Actions
-  robotActions: { flexDirection: 'row', gap: 12 },
-  controlBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 10, borderRadius: 10 },
-  controlBtnText: { fontSize: 13, fontWeight: '600' },
-  
-  // Status Display
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusText: { fontSize: 10, fontWeight: '600' },
+
+  // Actions
+  robotActions: { flexDirection: 'row', gap: 10 },
+  actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 10, borderRadius: 10, borderWidth: 1 },
+  actionBtnText: { fontSize: 13, fontWeight: '600' },
+
+  // Status Card
+  statusCard: { borderRadius: 20, borderWidth: 2, padding: 20, marginBottom: 16 },
   statusHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
   statusHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  statusDot: { width: 10, height: 10, borderRadius: 5 },
-  badge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
-  badgeText: { fontSize: 11, fontWeight: '700' },
-  statusGrid: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 24 },
-  statusItem: { alignItems: 'center', gap: 8 },
-  statusLabel: { fontSize: 12, opacity: 0.7 },
-  statusValue: { fontSize: 18, fontWeight: '700' },
-  
+  cardTitle: { fontSize: 18, fontWeight: '700' },
+  liveBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  liveDot: { width: 8, height: 8, borderRadius: 4 },
+  liveText: { fontSize: 11, fontWeight: '700' },
+  statusGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-around', marginBottom: 20 },
+  statusItem: { alignItems: 'center', gap: 6, minWidth: '22%' },
+  statusLabel: { fontSize: 11, opacity: 0.7 },
+  statusValue: { fontSize: 16, fontWeight: '700' },
+
   // Sensors
-  sensorContainer: { marginBottom: 16 },
+  sensorContainer: { marginBottom: 20 },
   sensorTitle: { fontSize: 12, fontWeight: '600', marginBottom: 8, opacity: 0.7 },
   sensorRow: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 12, borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(0,0,0,0.1)' },
-  sensorItem: { alignItems: 'center', gap: 4 },
+  sensorItem: { alignItems: 'center', gap: 4, flex: 1 },
   sensorDivider: { width: 1, backgroundColor: 'rgba(0,0,0,0.1)' },
   sensorLabel: { fontSize: 11, opacity: 0.7 },
-  
-  // Last Updated
-  lastUpdated: { fontSize: 10, textAlign: 'center', marginBottom: 16, opacity: 0.5 },
-  
+  sensorValue: { fontSize: 18, fontWeight: '600' },
+
   // Commands
-  commandsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  commandBtn: { flex: 1, minWidth: '45%', alignItems: 'center', gap: 8, padding: 14, borderRadius: 12, borderWidth: 1 },
-  commandText: { fontSize: 12, fontWeight: '600' },
-  
+  commandsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 12 },
+  commandBtn: { flex: 1, minWidth: '22%', alignItems: 'center', gap: 6, padding: 12, borderRadius: 12, borderWidth: 1 },
+  commandText: { fontSize: 11, fontWeight: '600' },
+  lastUpdated: { fontSize: 10, textAlign: 'center', opacity: 0.5 },
+
+  // Info Box
+  infoBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, padding: 16, borderRadius: 12, borderWidth: 1, marginTop: 8 },
+  infoText: { flex: 1, fontSize: 13, lineHeight: 18 },
+
   // Toast
   toast: { position: 'absolute', flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 14, gap: 12, zIndex: 9999, elevation: 8, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
   toastText: { flex: 1, color: '#fff', fontSize: 14, fontWeight: '500' },
+
+  // Modal
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 20 },
+  modalContent: { borderRadius: 20, padding: 20 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  modalTitle: { fontSize: 18, fontWeight: '700' },
+  modalLabel: { fontSize: 13, fontWeight: '600', marginBottom: 8, opacity: 0.7 },
+  modalInput: { height: 50, borderRadius: 12, borderWidth: 1, paddingHorizontal: 16, fontSize: 16, marginBottom: 20 },
+  modalActions: { flexDirection: 'row', gap: 12 },
+  modalCancelBtn: { flex: 1, padding: 14, borderRadius: 12, borderWidth: 1, alignItems: 'center' },
+  modalCancelText: { fontSize: 14, fontWeight: '600' },
+  modalConfirmBtn: { flex: 1, padding: 14, borderRadius: 12, alignItems: 'center' },
+  modalConfirmText: { color: '#fff', fontSize: 14, fontWeight: '600' },
 });
