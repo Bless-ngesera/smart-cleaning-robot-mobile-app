@@ -8,7 +8,8 @@
       "Bash(npx --no-install tsc --noEmit)",
       "Bash(curl *)",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(k\\) for k in d.get\\('definitions',{}\\).keys\\(\\)]\")",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "PowerShell(Get-ChildItem \"C:\\\\Apps\\\\smart-cleaning-robot\\\\assets\" -Recurse -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })"
     ]
   }
 }

@@ -3,6 +3,9 @@
     "name": "Smart Cleaner Pro",
     "slug": "smart-cleaning-robot-mobile-app",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "smartcleaner",
@@ -14,7 +17,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.yourname.smartcleanerpro",
+      "bundleIdentifier": "com.blessnges.smartcleanerpro",
       "infoPlist": {
         "UIBackgroundModes": [
           "bluetooth-central",
@@ -23,6 +26,7 @@
         "NSBluetoothAlwaysUsageDescription": "This app needs Bluetooth to connect and control your smart cleaning robot.",
         "NSBluetoothPeripheralUsageDescription": "This app needs Bluetooth to connect and control your smart cleaning robot.",
         "NSLocalNetworkUsageDescription": "This app needs local network access to communicate with your robot over Wi-Fi.",
+        "NSCameraUsageDescription": "Allow Smart Cleaner Pro to access camera for QR scanning to pair your device.",
         "CFBundleURLTypes": [
           {
             "CFBundleURLSchemes": [
@@ -39,7 +43,8 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "package": "com.yourname.smartcleanerpro",
+      "package": "com.blessnges.smartcleanerpro",
+      "usesCleartextTraffic": true,
       "permissions": [
         "android.permission.BLUETOOTH",
         "android.permission.BLUETOOTH_ADMIN",
@@ -108,7 +113,13 @@
       ],
       "@react-native-community/datetimepicker",
       "expo-image",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-barcode-scanner",
+        {
+          "cameraPermission": "Allow Smart Cleaner Pro to access camera for QR scanning"
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

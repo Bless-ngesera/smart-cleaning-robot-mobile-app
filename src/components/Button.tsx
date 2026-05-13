@@ -1,140 +1,142 @@
 // src/components/Button.tsx
+//
+// Shared button used across every screen.
+// Uses AppText so SF Pro Display renders on both iOS and Android.
+// Supports: primary, outline, danger, disabled variants.
+
 import React from 'react';
 import {
     TouchableOpacity,
-    Text,
-    ActivityIndicator,
-    View,
     StyleSheet,
     ViewStyle,
-    TextStyle,
+    ActivityIndicator,
+    View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useThemeContext } from '@/src/context/ThemeContext';
+import AppText from '@/src/components/AppText';
 
-type IoniconName = keyof typeof Ionicons.glyphMap;
+/* ─────────────────────────────────────────────────────────────────────────────
+   TYPES
+───────────────────────────────────────────────────────────────────────────── */
+type Variant = 'primary' | 'outline' | 'danger' | 'disabled';
 
-interface ButtonProps {
-    title: string;
-    onPress: () => void;
-    variant?: 'primary' | 'secondary' | 'outline' | 'danger' | 'disabled';
-    size?: 'small' | 'medium' | 'large';
+type Props = {
+    title:     string;
+    onPress:   () => void;
+    variant?:  Variant;
+    icon?:     keyof typeof Ionicons.glyphMap;
+    loading?:  boolean;
     disabled?: boolean;
-    icon?: IoniconName;
-    loading?: boolean;
     fullWidth?: boolean;
-    style?: ViewStyle;
-    textStyle?: TextStyle;
-    danger?: boolean;
-}
+    style?:    ViewStyle;
+    danger?:   boolean;   // shorthand for variant='danger' on outline buttons
+};
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   COMPONENT
+───────────────────────────────────────────────────────────────────────────── */
 export default function Button({
     title,
     onPress,
-    variant = 'primary',
-    size = 'medium',
-    disabled = false,
+    variant  = 'primary',
     icon,
-    loading = false,
+    loading  = false,
+    disabled = false,
     fullWidth = false,
     style,
-    textStyle,
-    danger = false,
-}: ButtonProps) {
-    const { colors, darkMode } = useThemeContext();
+    danger   = false,
+}: Props) {
+    const { colors } = useThemeContext();
 
-    const primaryColor = colors.primary ?? '#2563eb';
-    const textBase = colors.text ?? (darkMode ? '#f3f4f6' : '#111827');
-    const disabledBg = colors.muted ?? (darkMode ? '#374151' : '#d1d5db');
-    const borderColor = colors.border ?? (darkMode ? '#374151' : '#e5e7eb');
+    // Resolve effective variant
+    const effectiveVariant: Variant =
+        disabled ? 'disabled' :
+        danger   ? 'danger'   :
+        variant;
 
-    const effectiveVariant = danger ? 'danger' : variant;
+    const isDisabled = effectiveVariant === 'disabled' || disabled || loading;
 
-    const getBackground = () => {
-        if (disabled || effectiveVariant === 'disabled') return disabledBg;
-        if (effectiveVariant === 'primary') return primaryColor;
-        if (effectiveVariant === 'danger') return '#ef4444';
-        if (effectiveVariant === 'secondary') return colors.card ?? '#ffffff';
-        return 'transparent';
-    };
+    // Background
+    const bg =
+        effectiveVariant === 'primary'  ? colors.primary            :
+        effectiveVariant === 'danger'   ? '#DC2626'                  :
+        effectiveVariant === 'outline'  ? 'transparent'             :
+                                          'rgba(120,120,120,0.15)';
 
-    const getBorder = () => {
-        if (disabled || effectiveVariant === 'disabled') return disabledBg;
-        if (effectiveVariant === 'outline' || effectiveVariant === 'secondary') return borderColor;
-        return 'transparent';
-    };
+    // Text / icon colour
+    const fg =
+        effectiveVariant === 'primary'  ? '#ffffff'                  :
+        effectiveVariant === 'danger'   ? '#ffffff'                  :
+        effectiveVariant === 'outline'  ? colors.primary             :
+                                          'rgba(140,140,140,0.85)';
 
-    const getTextColor = () => {
-        if (disabled || effectiveVariant === 'disabled') return darkMode ? '#9ca3af' : '#6b7280';
-        if (effectiveVariant === 'primary' || effectiveVariant === 'danger') return '#ffffff';
-        return primaryColor;
-    };
+    // Border
+    const borderColor =
+        effectiveVariant === 'outline'  ? colors.primary             :
+        effectiveVariant === 'disabled' ? 'rgba(120,120,120,0.25)'   :
+                                          'transparent';
 
-    const sizeConfig = {
-        small: { paddingVertical: 10, paddingHorizontal: 16, fontSize: 14, iconSize: 18 },
-        medium: { paddingVertical: 14, paddingHorizontal: 20, fontSize: 16, iconSize: 20 },
-        large: { paddingVertical: 16, paddingHorizontal: 24, fontSize: 18, iconSize: 24 },
-    };
-
-    const currentSize = sizeConfig[size];
-
-    const buttonStyle: ViewStyle = {
-        width: fullWidth ? '100%' : undefined,
-        height: currentSize.paddingVertical * 2 + currentSize.fontSize + 4,
-        paddingVertical: currentSize.paddingVertical,
-        paddingHorizontal: currentSize.paddingHorizontal,
-        borderRadius: 14,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: getBackground(),
-        borderColor: getBorder(),
-        borderWidth: effectiveVariant === 'outline' || effectiveVariant === 'secondary' ? 1.5 : 0,
-        opacity: disabled || loading || effectiveVariant === 'disabled' ? 0.6 : 1,
-        ...style,
-    };
-
-    const textStyleFinal: TextStyle = {
-        fontSize: currentSize.fontSize,
-        fontWeight: '600',
-        fontFamily: 'SF-Pro-Display-Semibold',
-        color: getTextColor(),
-        marginLeft: icon ? 8 : 0,
-        ...textStyle,
-    };
+    const hasBorder = effectiveVariant === 'outline' || effectiveVariant === 'disabled';
 
     return (
         <TouchableOpacity
-            style={buttonStyle}
-            onPress={onPress}
-            disabled={disabled || loading || effectiveVariant === 'disabled'}
-            activeOpacity={disabled || loading ? 1 : 0.85}
-            accessibilityLabel={title}
-            accessibilityRole="button"
-            accessibilityState={{ disabled: disabled || loading }}
+            onPress={isDisabled ? undefined : onPress}
+            activeOpacity={isDisabled ? 1 : 0.78}
+            style={[
+                s.btn,
+                fullWidth && s.fullWidth,
+                {
+                    backgroundColor: bg,
+                    borderColor,
+                    borderWidth: hasBorder ? 1.5 : 0,
+                },
+                style,
+            ]}
         >
             {loading ? (
-                <ActivityIndicator color={getTextColor()} size="small" />
+                <ActivityIndicator size="small" color={fg} />
             ) : (
-                <View style={styles.content}>
-                    {icon && (
-                        <Ionicons
-                            name={icon}
-                            size={currentSize.iconSize}
-                            color={getTextColor()}
-                        />
-                    )}
-                    <Text style={textStyleFinal} allowFontScaling={false}>{title}</Text>
+                <View style={s.inner}>
+                    {icon ? (
+                        <Ionicons name={icon} size={18} color={fg} style={s.icon} />
+                    ) : null}
+                    <AppText style={[s.label, { color: fg }]}>
+                        {title}
+                    </AppText>
                 </View>
             )}
         </TouchableOpacity>
     );
 }
 
-const styles = StyleSheet.create({
-    content: {
-        flexDirection: 'row',
-        alignItems: 'center',
+/* ─────────────────────────────────────────────────────────────────────────────
+   STYLES
+───────────────────────────────────────────────────────────────────────────── */
+const s = StyleSheet.create({
+    btn: {
+        paddingVertical:   15,
+        paddingHorizontal: 20,
+        borderRadius:      14,
+        minHeight:         52,
+        alignItems:        'center',
+        justifyContent:    'center',
+    },
+    fullWidth: {
+        width: '100%',
+    },
+    inner: {
+        flexDirection:  'row',
+        alignItems:     'center',
         justifyContent: 'center',
+        gap:            8,
+    },
+    icon: {
+        // no margin needed — gap on inner handles spacing
+    },
+    label: {
+        fontSize:      16,
+        fontWeight:    '700',   // → SF-Pro-Display-Bold via AppText
+        letterSpacing: 0.2,
     },
 });

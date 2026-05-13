@@ -1,11 +1,10 @@
 // src/components/Header.tsx
 //
-// Shared screen header used on every tab and settings screen.
+// Shared screen header — tab screens and settings screens both use this.
 //
-// RULES (enforced here):
-//   • NEVER raw <Text> — always <AppText>.
-//   • NEVER fontFamily in StyleSheet — AppText maps fontWeight → Inter .ttf.
-//   • allowFontScaling / maxFontSizeMultiplier are set inside AppText globally.
+// FONT RULE: every string goes through <AppText> which maps fontWeight to the
+// correct SF Pro Display .otf file. Never use raw <Text> here.
+// No external responsive-utils dependency — plain pixel values only.
 
 import React from 'react';
 import {
@@ -33,90 +32,59 @@ type Props = {
 /* ─────────────────────────────────────────────────────────────────────────────
    COMPONENT
 ───────────────────────────────────────────────────────────────────────────── */
-export default function Header({
-    title,
-    subtitle,
-    onSettings,
-    onBack,
-    style,
-}: Props) {
+export default function Header({ title, subtitle, onSettings, onBack, style }: Props) {
     const { colors, darkMode } = useThemeContext();
 
-    // ── Dark-mode design tokens (match every other screen) ──────────────────
-    const textPrimary = darkMode ? '#ffffff'                    : colors.text;
-    const textSec     = darkMode ? 'rgba(255,255,255,0.65)'    : 'rgba(0,0,0,0.55)';
-    const iconBg      = darkMode ? 'rgba(255,255,255,0.08)'    : 'rgba(0,0,0,0.06)';
+    const textPrimary = darkMode ? '#ffffff'                 : colors.text;
+    const textSec     = darkMode ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.55)';
+    const iconBg      = darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
 
     return (
-        <View style={[styles.container, style]}>
+        <View style={[s.container, style]}>
 
-            {/* ── Left: optional back chevron + title block ─────────────── */}
-            <View style={styles.left}>
+            {/* Left: optional back chevron + title block */}
+            <View style={s.left}>
 
-                {onBack && (
+                {onBack ? (
                     <TouchableOpacity
                         onPress={onBack}
-                        style={[styles.iconBtn, { backgroundColor: iconBg }]}
+                        style={[s.iconBtn, { backgroundColor: iconBg }]}
                         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                         activeOpacity={0.7}
                     >
-                        <Ionicons
-                            name="chevron-back"
-                            size={20}
-                            color={textPrimary}
-                        />
+                        <Ionicons name="chevron-back" size={22} color={textPrimary} />
                     </TouchableOpacity>
-                )}
+                ) : null}
 
-                <View style={onBack ? styles.titleWithBack : styles.titleBlock}>
-
+                <View style={s.titleBlock}>
                     {/*
-                     * fontWeight '800' → AppText maps this to Inter-ExtraBold.ttf
-                     * Do NOT add fontFamily here — AppText injects it.
-                     */}
-                    <AppText
-                        style={[
-                            styles.title,
-                            { color: textPrimary },
-                        ]}
-                        fontWeight="800"
-                    >
+                      fontWeight '800' in the style object → AppText reads it
+                      and injects fontFamily:'SF-Pro-Display-Bold' automatically.
+                      Do NOT set fontFamily here.
+                    */}
+                    <AppText style={[s.title, { color: textPrimary }]}>
                         {title}
                     </AppText>
 
-                    {/*
-                     * fontWeight '400' → AppText maps this to Inter-Regular.ttf
-                     */}
                     {subtitle ? (
-                        <AppText
-                            style={[
-                                styles.subtitle,
-                                { color: textSec },
-                            ]}
-                            fontWeight="400"
-                        >
+                        <AppText style={[s.subtitle, { color: textSec }]}>
                             {subtitle}
                         </AppText>
                     ) : null}
-
                 </View>
             </View>
 
-            {/* ── Right: optional settings cog ──────────────────────────── */}
-            {onSettings && (
+            {/* Right: optional settings cog */}
+            {onSettings ? (
                 <TouchableOpacity
                     onPress={onSettings}
-                    style={[styles.iconBtn, { backgroundColor: iconBg }]}
+                    style={[s.iconBtn, { backgroundColor: iconBg }]}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                     activeOpacity={0.7}
                 >
-                    <Ionicons
-                        name="settings-outline"
-                        size={20}
-                        color={textPrimary}
-                    />
+                    <Ionicons name="settings-outline" size={22} color={textPrimary} />
                 </TouchableOpacity>
-            )}
+            ) : null}
 
         </View>
     );
@@ -124,16 +92,16 @@ export default function Header({
 
 /* ─────────────────────────────────────────────────────────────────────────────
    STYLES
-   ⚠️  NO fontFamily here — AppText handles that from fontWeight.
-   ⚠️  NO textTransform — unreliable with custom fonts on Android.
-       Call .toUpperCase() in JSX if you need all-caps.
+   ⚠  No fontFamily — AppText resolves that from fontWeight.
+   ⚠  No textTransform:'uppercase' — unreliable on Android with custom fonts.
+      Use .toUpperCase() in JSX when you need all-caps.
 ───────────────────────────────────────────────────────────────────────────── */
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
     container: {
         flexDirection:     'row',
         alignItems:        'flex-start',
         justifyContent:    'space-between',
-        paddingHorizontal: 20,
+        paddingHorizontal: 24,
         paddingTop:        Platform.OS === 'android' ? 12 : 4,
         paddingBottom:     8,
     },
@@ -145,32 +113,31 @@ const styles = StyleSheet.create({
         gap:           10,
     },
 
-    // Used when there's a back button — let title fill remaining width
-    titleWithBack: {
-        flex: 1,
-    },
-
-    // Used when there's no back button — same flex so subtitle wraps properly
     titleBlock: {
         flex: 1,
     },
 
     title: {
-        fontSize:   28,
-        lineHeight: 34,
+        fontSize:      32,
+        fontWeight:    '800',  // → SF-Pro-Display-Bold via AppText
+        lineHeight:    38,
+        letterSpacing: -0.5,
     },
 
     subtitle: {
-        fontSize:   14,
-        marginTop:  2,
-        lineHeight: 20,
+        fontSize:      15,
+        fontWeight:    '400',  // → SF-Pro-Display-Regular via AppText
+        marginTop:     4,
+        lineHeight:    20,
+        letterSpacing: 0.1,
     },
 
     iconBtn: {
-        width:          38,
-        height:         38,
-        borderRadius:   19,
+        width:          40,
+        height:         40,
+        borderRadius:   20,
         alignItems:     'center',
         justifyContent: 'center',
+        marginTop:      4,   // visually align with top of title
     },
 });
