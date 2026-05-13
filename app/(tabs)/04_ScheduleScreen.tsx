@@ -15,6 +15,7 @@ import {
     Animated,
     RefreshControl,
     TextStyle,
+    StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,7 +25,15 @@ import Loader from '@/src/components/Loader';
 import AppText from '@/src/components/AppText';
 import { useThemeContext } from '@/src/context/ThemeContext';
 import { supabase } from '@/src/services/supabase';
+import { ProductionRobotService as robotService } from '@/src/services/ProductionRobotService';
 import { useAppNavigation } from '@/hooks/useAppNavigation';
+
+// Toast Message Interface
+interface ToastMessage {
+    id: string;
+    text: string;
+    type: 'success' | 'error' | 'info' | 'warning';
+}
 
 /* ────────────────────────────────────────────────────────────────────
    TYPES
@@ -66,7 +75,7 @@ function isUpcoming(entry: Entry): boolean {
 
 function isMissed(entry: Entry): boolean {
     const d = parseScheduledAt(entry.scheduled_at);
-    return entry.enabled && d.getTime() < Date.now();
+    return entry.enabled && d.getTime() < Date.now() && !entry.acknowledged;
 }
 
 function countdown(iso: string): string {
@@ -161,7 +170,6 @@ function CalendarPicker({ visible, onClose, onConfirm, initialDate, minimumDate,
                         {cells.map((day, idx) => {
                             if (!day) return <View key={`e${idx}`} style={calS.dayCell} />;
                             const dis = isDisabled(day), sel = isSelected(day), tod = isToday(day);
-                            // Fix TS2322: build style array with proper TextStyle objects, no boolean spreads
                             const dayTextStyle: TextStyle[] = [
                                 calS.dayText,
                                 { color: dis ? (darkMode ? 'rgba(255,255,255,0.18)' : '#ccc') : sel ? '#fff' : tod ? primaryColor : txP },
@@ -384,9 +392,7 @@ const ckS = StyleSheet.create({
 ──────────────────────────────────────────────────────────────────── */
 interface MissedBannerProps {
     count: number;
-    onDismiss: () => void;
     onAcknowledgeAll: () => void;
-    darkMode: boolean;
 }
 
 function MissedBanner({ count, onAcknowledgeAll }: MissedBannerProps) {
@@ -425,7 +431,7 @@ const missedS = StyleSheet.create({
 });
 
 /* ────────────────────────────────────────────────────────────────────
-   INLINE ACTION BUTTONS  (replaces <Button> to guarantee text contrast)
+   INLINE ACTION BUTTONS
 ──────────────────────────────────────────────────────────────────── */
 interface ActionButtonProps {
     title: string;
@@ -452,7 +458,7 @@ function ActionButton({ title, icon, onPress, variant = 'primary', style, primar
 
     const textColor = isDisabled
         ? 'rgba(255,255,255,0.35)'
-        : '#ffffff';
+        : isOutline ? primaryColor : '#ffffff';
 
     return (
         <TouchableOpacity
@@ -515,12 +521,44 @@ export default function ScheduleScreen() {
     const [selTime, setSelTime] = useState<Date | null>(null);
     const [missedShown, setMissedShown] = useState(false);
     const [countdownTick, setCountdownTick] = useState(0);
+    const [toasts, setToasts] = useState<ToastMessage[]>([]);
+    const toastAnimations = useRef<{ [key: string]: Animated.Value }>({});
 
     const cardBg = darkMode ? 'rgba(255,255,255,0.05)' : '#ffffff';
     const cardBorder = darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)';
-    const textPrimary = darkMode ? '#ffffff' : colors.text;
+    const textPrimary = darkMode ? '#ffffff' : '#1a1a2e';
     const textSec = darkMode ? 'rgba(255,255,255,0.65)' : 'rgba(0,0,0,0.55)';
     const divColor = darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+    const successColor = '#10B981';
+    const errorColor = '#EF4444';
+    const warningColor = '#F59E0B';
+    const infoColor = '#3B82F6';
+
+    // Show toast message
+    const showToast = useCallback((text: string, type: ToastMessage['type']) => {
+        const id = Date.now().toString();
+        const fadeAnim = new Animated.Value(0);
+        const slideAnim = new Animated.Value(-100);
+        
+        toastAnimations.current[id] = fadeAnim;
+        
+        setToasts(prev => [...prev, { id, text, type }]);
+        
+        Animated.parallel([
+            Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
+            Animated.spring(slideAnim, { toValue: 0, tension: 50, friction: 7, useNativeDriver: true }),
+        ]).start();
+        
+        setTimeout(() => {
+            Animated.parallel([
+                Animated.timing(fadeAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+                Animated.timing(slideAnim, { toValue: -100, duration: 300, useNativeDriver: true }),
+            ]).start(() => {
+                setToasts(prev => prev.filter(toast => toast.id !== id));
+                delete toastAnimations.current[id];
+            });
+        }, 5000);
+    }, []);
 
     useEffect(() => {
         const id = setInterval(() => setCountdownTick(t => t + 1), 30000);
@@ -563,8 +601,9 @@ export default function ScheduleScreen() {
         if (missed.length > 0 && !missedShown) {
             if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
             setMissedShown(true);
+            showToast(`${missed.length} cleaning session${missed.length !== 1 ? 's were' : ' was'} missed`, 'warning');
         }
-    }, [missed.length, missedShown]);
+    }, [missed.length, missedShown, showToast]);
 
     const fetchEntries = useCallback(async (silent = false) => {
         if (!silent) { setBusy(true); setLoadingMsg('Syncing schedule…'); }
@@ -589,20 +628,28 @@ export default function ScheduleScreen() {
                     .from('schedules')
                     .update({ missed: true })
                     .in('id', toMarkMissed.map((e: Entry) => e.id));
+                
+                if (!silent) {
+                    showToast(`${toMarkMissed.length} routine${toMarkMissed.length !== 1 ? 's were' : ' was'} marked as missed`, 'warning');
+                }
             }
 
             setEntries((data || []).map((e: Entry) => ({
                 ...e,
                 missed: e.missed || toMarkMissed.some(m => m.id === e.id),
             })));
+            
+            if (!silent) {
+                showToast('Schedule synced successfully', 'success');
+            }
         } catch (err: any) {
             console.error('[Schedule] fetch error:', err);
-            if (!silent) Alert.alert('Sync Error', err.message || 'Could not load schedule.');
+            if (!silent) showToast(err.message || 'Could not load schedule', 'error');
         } finally {
             setBusy(false);
             setRefreshing(false);
         }
-    }, []);
+    }, [showToast]);
 
     useEffect(() => { fetchEntries(); }, [fetchEntries]);
 
@@ -613,12 +660,16 @@ export default function ScheduleScreen() {
         setEntries(prev => prev.map(e => ids.includes(e.id) ? { ...e, acknowledged: true } : e));
         try {
             await supabase.from('schedules').update({ acknowledged: true }).in('id', ids);
-        } catch (err) { console.error('[Schedule] acknowledge error:', err); }
-    }, [missed]);
+            showToast(`${ids.length} missed session${ids.length !== 1 ? 's' : ''} dismissed`, 'success');
+        } catch (err) { 
+            console.error('[Schedule] acknowledge error:', err);
+            showToast('Failed to dismiss missed sessions', 'error');
+        }
+    }, [missed, showToast]);
 
     const addRoutine = useCallback(async () => {
         if (!selDate || !selTime) {
-            Alert.alert('Missing info', 'Please select both a date and time.');
+            showToast('Please select both a date and time', 'warning');
             return;
         }
         const scheduledAt = new Date(
@@ -626,7 +677,7 @@ export default function ScheduleScreen() {
             selTime.getHours(), selTime.getMinutes(), 0, 0
         );
         if (scheduledAt.getTime() <= Date.now()) {
-            Alert.alert('Invalid time', 'Please select a future date and time.');
+            showToast('Please select a future date and time', 'warning');
             return;
         }
 
@@ -655,11 +706,11 @@ export default function ScheduleScreen() {
                 (a, b) => parseScheduledAt(a.scheduled_at).getTime() - parseScheduledAt(b.scheduled_at).getTime()
             ));
             setSelDate(null); setSelTime(null);
-            Alert.alert('Routine added ✓', `Scheduled for ${formatDisplayDate(selDate)} at ${formatDisplayTime(selTime)}`);
+            showToast(`✓ Routine added for ${formatDisplayDate(selDate)} at ${formatDisplayTime(selTime)}`, 'success');
         } catch (err: any) {
-            Alert.alert('Error', err.message || 'Failed to add routine.');
+            showToast(err.message || 'Failed to add routine', 'error');
         } finally { setBusy(false); }
-    }, [selDate, selTime]);
+    }, [selDate, selTime, showToast]);
 
     const toggleRoutine = useCallback(async (id: string) => {
         if (Platform.OS !== 'web') Haptics.selectionAsync();
@@ -670,11 +721,12 @@ export default function ScheduleScreen() {
         try {
             const { error } = await supabase.from('schedules').update({ enabled: newEnabled }).eq('id', id);
             if (error) throw error;
+            showToast(`Routine ${newEnabled ? 'enabled' : 'disabled'}`, 'success');
         } catch (err) {
             setEntries(prev => prev.map(e => e.id === id ? { ...e, enabled: item.enabled } : e));
-            Alert.alert('Error', 'Failed to update routine.');
+            showToast('Failed to update routine', 'error');
         }
-    }, [entries]);
+    }, [entries, showToast]);
 
     const deleteRoutine = useCallback(async (id: string) => {
         Alert.alert('Delete Routine', 'Remove this scheduled cleaning?', [
@@ -688,13 +740,14 @@ export default function ScheduleScreen() {
                         const { error } = await supabase.from('schedules').delete().eq('id', id);
                         if (error) throw error;
                         setEntries(prev => prev.filter(e => e.id !== id));
+                        showToast('Routine deleted', 'success');
                     } catch (err: any) {
-                        Alert.alert('Error', err.message || 'Failed to delete.');
+                        showToast(err.message || 'Failed to delete', 'error');
                     } finally { setBusy(false); }
                 },
             },
         ]);
-    }, []);
+    }, [showToast]);
 
     const clearUpcoming = useCallback(async () => {
         if (upcoming.length === 0) return;
@@ -710,18 +763,70 @@ export default function ScheduleScreen() {
                         const { error } = await supabase.from('schedules').delete().in('id', ids);
                         if (error) throw error;
                         setEntries(prev => prev.filter(e => !ids.includes(e.id)));
+                        showToast(`${ids.length} upcoming routine${ids.length !== 1 ? 's' : ''} cleared`, 'success');
                     } catch (err: any) {
-                        Alert.alert('Error', err.message || 'Failed to clear.');
+                        showToast(err.message || 'Failed to clear', 'error');
                     } finally { setBusy(false); }
                 },
             },
         ]);
-    }, [upcoming]);
+    }, [upcoming, showToast]);
+
+    // Render toast messages
+    const renderToasts = () => {
+        const statusBarHeight = StatusBar.currentHeight || (Platform.OS === 'ios' ? 47 : 0);
+        
+        return toasts.map((toast, index) => {
+            const toastColor = toast.type === 'success' ? successColor : toast.type === 'error' ? errorColor : toast.type === 'warning' ? warningColor : infoColor;
+            const fadeAnim = toastAnimations.current[toast.id] || new Animated.Value(1);
+            
+            return (
+                <Animated.View
+                    key={toast.id}
+                    style={[
+                        styles.toast,
+                        {
+                            backgroundColor: toastColor,
+                            top: statusBarHeight + 10 + (index * 70),
+                            left: 16,
+                            right: 16,
+                            opacity: fadeAnim,
+                        },
+                    ]}
+                >
+                    <Ionicons
+                        name={toast.type === 'success' ? 'checkmark-circle' : toast.type === 'error' ? 'alert-circle' : toast.type === 'warning' ? 'warning' : 'information-circle'}
+                        size={22}
+                        color="#fff"
+                    />
+                    <AppText style={styles.toastText}>{toast.text}</AppText>
+                    <TouchableOpacity
+                        onPress={() => {
+                            const anim = toastAnimations.current[toast.id];
+                            if (anim) {
+                                Animated.timing(anim, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => {
+                                    setToasts(prev => prev.filter(t => t.id !== toast.id));
+                                    delete toastAnimations.current[toast.id];
+                                });
+                            }
+                        }}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                        <Ionicons name="close" size={18} color="rgba(255,255,255,0.9)" />
+                    </TouchableOpacity>
+                </Animated.View>
+            );
+        });
+    };
 
     if (busy) return <Loader message={loadingMsg} />;
 
     return (
         <SafeAreaView style={[s.container, { backgroundColor: colors.background }]} edges={['top']}>
+            <StatusBar barStyle={darkMode ? 'light-content' : 'dark-content'} />
+            
+            {renderToasts()}
+
             <ScrollView
                 contentContainerStyle={[s.scroll, isLargeScreen && s.scrollLarge]}
                 showsVerticalScrollIndicator={false}
@@ -739,9 +844,7 @@ export default function ScheduleScreen() {
                     {missed.length > 0 && (
                         <MissedBanner
                             count={missed.length}
-                            onDismiss={() => setMissedShown(true)}
                             onAcknowledgeAll={acknowledgeAll}
-                            darkMode={darkMode}
                         />
                     )}
 
@@ -807,7 +910,7 @@ export default function ScheduleScreen() {
                         </View>
                     )}
 
-                    {/* Sync button — custom for guaranteed text visibility */}
+                    {/* Sync button */}
                     <ActionButton
                         title="Sync from Robot"
                         icon="sync-outline"
@@ -860,7 +963,6 @@ export default function ScheduleScreen() {
                                 : <Ionicons name="chevron-forward" size={16} color={textSec} />}
                         </TouchableOpacity>
 
-                        {/* Add Routine button — custom for guaranteed text visibility */}
                         <View style={{ marginTop: 16 }}>
                             <ActionButton
                                 title="Add Routine"
@@ -1006,29 +1108,6 @@ export default function ScheduleScreen() {
                             Routines are time-based — the robot uses its sensors and cameras to adapt intelligently to your environment.
                         </AppText>
                     </View>
-
-                    {/* Quick Links */}
-                    <View style={[s.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-                        <AppText style={[s.cardTitle, { color: textPrimary, marginBottom: 14 }]}>Quick Links</AppText>
-                        <View style={s.quickRow}>
-                            {[
-                                { icon: 'grid-outline' as const, label: 'Dashboard', route: '/(tabs)/01_DashboardScreen', color: '#6366f1' },
-                                { icon: 'game-controller-outline' as const, label: 'Control', route: '/(tabs)/02_ControlScreen', color: '#10B981' },
-                                { icon: 'map-outline' as const, label: 'Map', route: '/(tabs)/03_MapScreen', color: '#14b8a6' },
-                            ].map(item => (
-                                <TouchableOpacity
-                                    key={item.label}
-                                    style={[s.quickTile, { backgroundColor: `${item.color}${darkMode ? '1a' : '12'}`, borderColor: `${item.color}30` }]}
-                                    onPress={() => { if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); push(item.route); }}
-                                    activeOpacity={0.7}
-                                >
-                                    <Ionicons name={item.icon} size={24} color={item.color} />
-                                    <AppText style={[s.quickLbl, { color: textPrimary }]}>{item.label}</AppText>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-                    </View>
-
                 </View>
                 <AppText style={[s.footer, { color: textSec }]}>Version 1.0.0 • Smart Cleaner Pro © 2026</AppText>
             </ScrollView>
@@ -1057,7 +1136,7 @@ export default function ScheduleScreen() {
 /* Styles */
 const s = StyleSheet.create({
     container: { flex: 1 },
-    scroll: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 16, paddingBottom: 80 },
+    scroll: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 16, paddingBottom: 100 },
     scrollLarge: { alignItems: 'center' },
     wrapper: { width: '100%' },
     wrapperLarge: { maxWidth: 480 },
@@ -1127,9 +1206,14 @@ const s = StyleSheet.create({
     tip: { borderRadius: 12, padding: 14, borderWidth: 1, flexDirection: 'row', gap: 10, alignItems: 'flex-start', marginBottom: 20 },
     tipText: { flex: 1, fontSize: 13, lineHeight: 20 },
 
-    quickRow: { flexDirection: 'row', gap: 12 },
-    quickTile: { flex: 1, borderRadius: 14, borderWidth: 1, paddingVertical: 18, alignItems: 'center', gap: 8 },
-    quickLbl: { fontSize: 12, fontWeight: '600' },
-
     footer: { textAlign: 'center', marginTop: 28, fontSize: 12, opacity: 0.55, letterSpacing: 0.3 },
+
+    toast: { position: 'absolute', flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 14, gap: 12, zIndex: 9999, elevation: 8, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
+    toastText: { flex: 1, color: '#fff', fontSize: 14, fontWeight: '500', lineHeight: 20 },
+});
+
+// Add the toast styles at the bottom of the existing styles
+const styles = StyleSheet.create({
+    toast: s.toast,
+    toastText: s.toastText,
 });

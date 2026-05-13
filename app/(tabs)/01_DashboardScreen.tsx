@@ -409,38 +409,7 @@ export default function DashboardScreen() {
                             </View>
                         </View>
                     )}
-
-                    {/* Quick Actions Card */}
-                    <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-                        <View style={styles.cardHeader}>
-                            <Ionicons name="flash-outline" size={18} color={colors.primary} style={{ marginRight: 8 }} />
-                            <AppText style={[styles.cardTitle, { color: textSecondary }]}>Quick Actions</AppText>
-                        </View>
-                        <View style={[styles.divider, { backgroundColor: dividerColor, marginVertical: 16 }]} />
-                        <View style={styles.actionsGrid}>
-                            {[
-                                { icon: 'game-controller-outline' as const, label: 'Control',  route: '/(tabs)/02_ControlScreen',  color: '#6366f1' },
-                                { icon: 'calendar-outline'         as const, label: 'Schedule', route: '/(tabs)/04_ScheduleScreen', color: '#ec4899' },
-                                { icon: 'map-outline'              as const, label: 'Map',      route: '/(tabs)/03_MapScreen',      color: '#14b8a6' },
-                            ].map(action => (
-                                <TouchableOpacity
-                                    key={action.label}
-                                    style={[styles.actionButton, { backgroundColor: `${action.color}${darkMode ? '1a' : '12'}`, borderColor: `${action.color}30` }]}
-                                    onPress={() => {
-                                        if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                        push(action.route as any);
-                                    }}
-                                    activeOpacity={0.7}
-                                >
-                                    <Ionicons name={action.icon} size={24} color={action.color} />
-                                    <AppText style={[styles.actionLabel, { color: textPrimary }]}>{action.label}</AppText>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-                    </View>
-
                 </View>
-
                 <AppText style={[styles.footer, { color: textSecondary }]}>
                     Version 1.0.0 • Smart Cleaner Pro © 2026
                 </AppText>

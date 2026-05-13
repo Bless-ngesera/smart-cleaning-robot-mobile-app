@@ -11,6 +11,7 @@ import {
     Animated,
     Keyboard,
     useWindowDimensions,
+    StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,6 +26,13 @@ import authService from '@/src/services/auth';
 import { supabase } from '@/src/services/supabase';
 import { useAuth } from '@/src/context/AuthContext';
 import { useAppNavigation } from '@/hooks/useAppNavigation';
+
+// Toast Message Interface
+interface ToastMessage {
+    id: string;
+    text: string;
+    type: 'success' | 'error' | 'info' | 'warning';
+}
 
 const AnimatedCard = Animated_.createAnimatedComponent(View);
 
@@ -63,8 +71,14 @@ const passwordRequirements: PasswordRequirement[] = [
     },
 ];
 
+// Design tokens
+const successColor = '#10B981';
+const errorColor = '#EF4444';
+const warningColor = '#F59E0B';
+const infoColor = '#3B82F6';
+
 export default function AccountSettings() {
-    const { back } = useAppNavigation();  // Only need back() here - no push/replace needed
+    const { back } = useAppNavigation();
     const { colors, darkMode } = useThemeContext();
     const { user } = useAuth();
     const { width } = useWindowDimensions();
@@ -73,7 +87,7 @@ export default function AccountSettings() {
     // Design tokens
     const cardBg = darkMode ? 'rgba(255,255,255,0.05)' : '#ffffff';
     const cardBorder = darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)';
-    const textPrimary = darkMode ? '#ffffff' : colors.text;
+    const textPrimary = darkMode ? '#ffffff' : '#1a1a2e';
     const textSecondary = darkMode ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.60)';
 
     // Form state
@@ -110,6 +124,8 @@ export default function AccountSettings() {
     // Error states
     const [newPasswordError, setNewPasswordError] = useState('');
     const [confirmError, setConfirmError] = useState('');
+    const [toasts, setToasts] = useState<ToastMessage[]>([]);
+    const toastAnimations = useRef<{ [key: string]: Animated.Value }>({});
 
     // Animation refs for shake effects
     const newPasswordShake = useRef(new Animated.Value(0)).current;
@@ -117,6 +133,32 @@ export default function AccountSettings() {
 
     // Mounted ref for cleanup
     const mountedRef = useRef(true);
+
+    // Show toast message
+    const showToast = useCallback((text: string, type: ToastMessage['type']) => {
+        const id = Date.now().toString();
+        const fadeAnim = new Animated.Value(0);
+        const slideAnim = new Animated.Value(-100);
+        
+        toastAnimations.current[id] = fadeAnim;
+        
+        setToasts(prev => [...prev, { id, text, type }]);
+        
+        Animated.parallel([
+            Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
+            Animated.spring(slideAnim, { toValue: 0, tension: 50, friction: 7, useNativeDriver: true }),
+        ]).start();
+        
+        setTimeout(() => {
+            Animated.parallel([
+                Animated.timing(fadeAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+                Animated.timing(slideAnim, { toValue: -100, duration: 300, useNativeDriver: true }),
+            ]).start(() => {
+                setToasts(prev => prev.filter(toast => toast.id !== id));
+                delete toastAnimations.current[id];
+            });
+        }, 5000);
+    }, []);
 
     // Password requirements status
     const getRequirementStatus = useCallback((pwd: string) => {
@@ -216,20 +258,21 @@ export default function AccountSettings() {
     useEffect(() => {
         const loadUser = async () => {
             try {
-                const { user: currentUser } = await authService.getCurrentUser();
+                const { data: { user: currentUser } } = await supabase.auth.getUser();
                 if (currentUser) {
                     setEmail(currentUser.email || 'No email');
                     setFullName(currentUser.user_metadata?.full_name || '');
                 }
             } catch (err) {
                 console.error('Failed to load user:', err);
+                showToast('Failed to load user data', 'error');
             } finally {
                 setLoading(false);
             }
         };
 
         loadUser();
-    }, []);
+    }, [showToast]);
 
     const haptic = () => {
         if (Platform.OS !== 'web') Haptics.selectionAsync();
@@ -240,7 +283,8 @@ export default function AccountSettings() {
     /* ---------------------------------------------------------- */
     const saveName = async () => {
         if (!fullName.trim()) {
-            return Alert.alert('Error', 'Full name cannot be empty');
+            showToast('Full name cannot be empty', 'warning');
+            return;
         }
         haptic();
         setSavingName(true);
@@ -249,9 +293,10 @@ export default function AccountSettings() {
                 data: { full_name: fullName.trim() },
             });
             if (error) throw error;
-            Alert.alert('Saved', 'Your name has been updated');
+            showToast('Name updated successfully', 'success');
         } catch (e: any) {
-            Alert.alert('Error', e.message || 'Failed to save name');
+            console.error('Name update error:', e);
+            showToast(e.message || 'Failed to save name', 'error');
         } finally {
             setSavingName(false);
         }
@@ -266,7 +311,7 @@ export default function AccountSettings() {
         setConfirmError('');
 
         if (!currentPassword) {
-            Alert.alert('Error', 'Current password is required');
+            showToast('Current password is required', 'warning');
             valid = false;
         }
 
@@ -292,7 +337,7 @@ export default function AccountSettings() {
         }
 
         return valid;
-    }, [currentPassword, newPassword, confirmPassword, allRequirementsMet, showWarning, shakeField, newPasswordShake, confirmShake]);
+    }, [currentPassword, newPassword, confirmPassword, allRequirementsMet, showWarning, shakeField, newPasswordShake, confirmShake, showToast]);
 
     const updatePassword = async () => {
         haptic();
@@ -304,23 +349,28 @@ export default function AccountSettings() {
 
         try {
             // Verify current password first
-            const signInResponse = await authService.signIn(email, currentPassword);
+            const { error: signInError } = await supabase.auth.signInWithPassword({
+                email: email,
+                password: currentPassword,
+            });
 
-            if (!signInResponse.success) {
-                throw new Error('Current password is incorrect');
+            if (signInError) {
+                if (signInError.message.includes('Invalid login credentials')) {
+                    showToast('Current password is incorrect', 'error');
+                } else {
+                    showToast(signInError.message, 'error');
+                }
+                return;
             }
 
             // Update password
-            const response = await authService.resetPassword(newPassword);
+            const { error } = await supabase.auth.updateUser({
+                password: newPassword,
+            });
 
-            if (!response.success) {
-                throw new Error(response.error?.message);
-            }
+            if (error) throw error;
 
-            Alert.alert(
-                'Success',
-                'Password updated successfully. Please use your new password next time you log in.'
-            );
+            showToast('Password updated successfully! Please use your new password next login.', 'success');
 
             // Clear form
             setCurrentPassword('');
@@ -334,16 +384,14 @@ export default function AccountSettings() {
             console.error('Password update error:', e);
 
             if (e.message?.includes('same as the old password')) {
-                Alert.alert('Error', 'New password must be different from your current password.');
-            } else if (e.message?.includes('incorrect')) {
-                Alert.alert('Error', 'Current password is incorrect.');
+                showToast('New password must be different from your current password', 'warning');
             } else if (e.message?.includes('weak')) {
                 setNewPasswordError('Password is too weak');
                 shakeField(newPasswordShake);
                 showWarning();
-                Alert.alert('Weak Password', 'Please choose a stronger password.');
+                showToast('Please choose a stronger password', 'warning');
             } else {
-                Alert.alert('Error', e.message || 'Failed to update password');
+                showToast(e.message || 'Failed to update password', 'error');
             }
         } finally {
             setSavingPassword(false);
@@ -355,7 +403,8 @@ export default function AccountSettings() {
     /* ---------------------------------------------------------- */
     const deleteAccount = async () => {
         if (!deletePassword) {
-            return Alert.alert('Error', 'Please enter your password to confirm');
+            showToast('Please enter your password to confirm', 'warning');
+            return;
         }
 
         Alert.alert(
@@ -372,15 +421,21 @@ export default function AccountSettings() {
 
                         try {
                             // Verify password first
-                            const signInResponse = await authService.signIn(email, deletePassword);
+                            const { error: signInError } = await supabase.auth.signInWithPassword({
+                                email: email,
+                                password: deletePassword,
+                            });
 
-                            if (!signInResponse.success) {
-                                throw new Error('Password is incorrect');
+                            if (signInError) {
+                                showToast('Password is incorrect', 'error');
+                                return;
                             }
 
+                            // Note: Account deletion via Supabase requires admin privileges
+                            // This is the safe approach for production apps
                             Alert.alert(
-                                'Account Deletion',
-                                'For security reasons, account deletion must be handled by support. Please contact us at support@smartcleaner.com to delete your account.',
+                                'Account Deletion Request',
+                                'For security reasons, account deletion requires additional verification. Please contact support@smartcleaner.com to request account deletion.',
                                 [
                                     {
                                         text: 'OK',
@@ -390,7 +445,7 @@ export default function AccountSettings() {
                             );
 
                         } catch (e: any) {
-                            Alert.alert('Error', e.message || 'Failed to verify password');
+                            showToast(e.message || 'Failed to verify password', 'error');
                         } finally {
                             setDeleting(false);
                         }
@@ -398,6 +453,53 @@ export default function AccountSettings() {
                 },
             ]
         );
+    };
+
+    // Render toast messages
+    const renderToasts = () => {
+        const statusBarHeight = StatusBar.currentHeight || (Platform.OS === 'ios' ? 47 : 0);
+        
+        return toasts.map((toast, index) => {
+            const toastColor = toast.type === 'success' ? successColor : toast.type === 'error' ? errorColor : toast.type === 'warning' ? warningColor : infoColor;
+            const fadeAnim = toastAnimations.current[toast.id] || new Animated.Value(1);
+            
+            return (
+                <Animated.View
+                    key={toast.id}
+                    style={[
+                        toastStyles.toast,
+                        {
+                            backgroundColor: toastColor,
+                            top: statusBarHeight + 10 + (index * 70),
+                            left: 16,
+                            right: 16,
+                            opacity: fadeAnim,
+                        },
+                    ]}
+                >
+                    <Ionicons
+                        name={toast.type === 'success' ? 'checkmark-circle' : toast.type === 'error' ? 'alert-circle' : toast.type === 'warning' ? 'warning' : 'information-circle'}
+                        size={22}
+                        color="#fff"
+                    />
+                    <AppText style={toastStyles.toastText}>{toast.text}</AppText>
+                    <TouchableOpacity
+                        onPress={() => {
+                            const anim = toastAnimations.current[toast.id];
+                            if (anim) {
+                                Animated.timing(anim, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => {
+                                    setToasts(prev => prev.filter(t => t.id !== toast.id));
+                                    delete toastAnimations.current[toast.id];
+                                });
+                            }
+                        }}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                        <Ionicons name="close" size={18} color="rgba(255,255,255,0.9)" />
+                    </TouchableOpacity>
+                </Animated.View>
+            );
+        });
     };
 
     if (loading) {
@@ -408,7 +510,11 @@ export default function AccountSettings() {
     /* RENDER */
     /* ---------------------------------------------------------- */
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+            <StatusBar barStyle={darkMode ? 'light-content' : 'dark-content'} />
+            
+            {renderToasts()}
+
             <ScrollView
                 contentContainerStyle={[
                     styles.scrollContent,
@@ -417,8 +523,8 @@ export default function AccountSettings() {
                 showsVerticalScrollIndicator={false}
             >
                 <View style={[styles.wrapper, isLargeScreen && styles.largeWrapper]}>
-                    {/* Back Navigation - Uses back() from hook */}
-                    <TouchableOpacity style={styles.backButton} onPress={() => back()}>
+                    {/* Back Navigation */}
+                    <TouchableOpacity style={styles.backButton} onPress={() => back()} activeOpacity={0.7}>
                         <Ionicons name="chevron-back" size={28} color={colors.primary} />
                     </TouchableOpacity>
 
@@ -457,7 +563,7 @@ export default function AccountSettings() {
 
                         <View style={styles.field}>
                             <AppText style={[styles.label, { color: textSecondary }]}>Email</AppText>
-                            <View style={[styles.inputWrapper, styles.readOnly]}>
+                            <View style={[styles.inputWrapper, styles.readOnly, { borderColor: cardBorder }]}>
                                 <Ionicons name="mail-outline" size={20} color={colors.primary} style={styles.inputIcon} />
                                 <AppText style={{ color: textSecondary }}>{email}</AppText>
                             </View>
@@ -513,7 +619,7 @@ export default function AccountSettings() {
                                         styles.input,
                                         {
                                             color: textPrimary,
-                                            borderColor: newPasswordError ? '#ef4444' : cardBorder
+                                            borderColor: newPasswordError ? errorColor : cardBorder
                                         }
                                     ]}
                                     placeholder="••••••••"
@@ -550,7 +656,7 @@ export default function AccountSettings() {
                                 ]}
                             >
                                 <View style={styles.warningHeader}>
-                                    <Ionicons name="warning-outline" size={20} color="#F59E0B" />
+                                    <Ionicons name="warning-outline" size={20} color={warningColor} />
                                     <AppText style={styles.warningTitle}>Password Requirements</AppText>
                                 </View>
 
@@ -559,15 +665,13 @@ export default function AccountSettings() {
                                         <Ionicons
                                             name={req.met ? 'checkmark-circle' : 'close-circle'}
                                             size={16}
-                                            color={req.met ? '#10B981' : '#ef4444'}
+                                            color={req.met ? successColor : errorColor}
                                         />
                                         <AppText
                                             style={[
                                                 styles.warningText,
                                                 {
-                                                    color: req.met
-                                                        ? '#10B981'
-                                                        : (darkMode ? '#ef4444' : '#dc2626'),
+                                                    color: req.met ? successColor : (darkMode ? errorColor : '#dc2626'),
                                                     textDecorationLine: req.met ? 'line-through' : 'none',
                                                 },
                                             ]}
@@ -599,7 +703,7 @@ export default function AccountSettings() {
                                         styles.input,
                                         {
                                             color: textPrimary,
-                                            borderColor: confirmError ? '#ef4444' : cardBorder
+                                            borderColor: confirmError ? errorColor : cardBorder
                                         }
                                     ]}
                                     placeholder="••••••••"
@@ -623,12 +727,12 @@ export default function AccountSettings() {
                                 <Ionicons
                                     name={newPassword === confirmPassword ? 'checkmark-circle' : 'close-circle'}
                                     size={16}
-                                    color={newPassword === confirmPassword ? '#10B981' : '#ef4444'}
+                                    color={newPassword === confirmPassword ? successColor : errorColor}
                                 />
                                 <AppText
                                     style={[
                                         styles.matchText,
-                                        { color: newPassword === confirmPassword ? '#10B981' : '#ef4444' },
+                                        { color: newPassword === confirmPassword ? successColor : errorColor },
                                     ]}
                                 >
                                     {newPassword === confirmPassword ? 'Passwords match' : 'Passwords do not match'}
@@ -647,9 +751,9 @@ export default function AccountSettings() {
 
                     {/* Danger Zone */}
                     <AnimatedCard entering={FadeInDown.delay(160).duration(350).springify()}
-                                  style={[styles.sectionCard, { backgroundColor: cardBg, borderColor: '#ff3b30' }]}>
+                                  style={[styles.sectionCard, { backgroundColor: cardBg, borderColor: errorColor }]}>
                         <View style={styles.sectionHeader}>
-                            <AppText style={[styles.sectionTitle, { color: '#ff3b30' }]}>
+                            <AppText style={[styles.sectionTitle, { color: errorColor }]}>
                                 Danger Zone
                             </AppText>
                         </View>
@@ -657,7 +761,7 @@ export default function AccountSettings() {
                         <View style={styles.field}>
                             <AppText style={[styles.label, { color: textSecondary }]}>Confirm Password to Delete Account</AppText>
                             <View style={styles.inputWrapper}>
-                                <Ionicons name="lock-closed-outline" size={20} color={colors.primary} style={styles.inputIcon} />
+                                <Ionicons name="lock-closed-outline" size={20} color={errorColor} style={styles.inputIcon} />
                                 <TextInput
                                     value={deletePassword}
                                     onChangeText={setDeletePassword}
@@ -681,6 +785,10 @@ export default function AccountSettings() {
                             fullWidth
                             disabled={!deletePassword}
                         />
+                        
+                        <AppText style={[styles.dangerNote, { color: textSecondary }]}>
+                            ⚠️ This action is permanent. All your data will be removed.
+                        </AppText>
                     </AnimatedCard>
                 </View>
 
@@ -712,7 +820,7 @@ const styles = StyleSheet.create({
         flexGrow: 1,
         paddingHorizontal: 24,
         paddingTop: 16,
-        paddingBottom: 80,
+        paddingBottom: 100,
     },
     scrollContentLarge: {
         alignItems: 'center',
@@ -767,7 +875,6 @@ const styles = StyleSheet.create({
         paddingLeft: 52,
         paddingRight: 52,
         fontSize: 16,
-        fontFamily: 'SF-Pro-Display-Regular',
     },
     readOnly: {
         height: 52,
@@ -787,7 +894,7 @@ const styles = StyleSheet.create({
         top: 16,
     },
     fieldError: {
-        color: '#ef4444',
+        color: errorColor,
         fontSize: 12,
         marginTop: 4,
         marginLeft: 4,
@@ -808,7 +915,7 @@ const styles = StyleSheet.create({
     warningTitle: {
         fontSize: 14,
         fontWeight: '600',
-        color: '#F59E0B',
+        color: warningColor,
     },
     warningRequirement: {
         flexDirection: 'row',
@@ -842,6 +949,12 @@ const styles = StyleSheet.create({
     matchText: {
         fontSize: 12,
     },
+    dangerNote: {
+        fontSize: 12,
+        textAlign: 'center',
+        marginTop: 12,
+        opacity: 0.7,
+    },
 
     footer: {
         textAlign: 'center',
@@ -849,5 +962,30 @@ const styles = StyleSheet.create({
         fontSize: 12.5,
         opacity: 0.65,
         letterSpacing: 0.3,
+    },
+});
+
+// Toast styles
+const toastStyles = StyleSheet.create({
+    toast: {
+        position: 'absolute',
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 14,
+        borderRadius: 14,
+        gap: 12,
+        zIndex: 9999,
+        elevation: 8,
+        shadowColor: '#000',
+        shadowOpacity: 0.25,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 3 },
+    },
+    toastText: {
+        flex: 1,
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: '500',
+        lineHeight: 20,
     },
 });

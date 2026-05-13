@@ -1,5 +1,5 @@
 // app/(tabs)/05_ProfileScreen.tsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { disableSystemFontScaling } from '@/src/utils/disableFontScaling';
 disableSystemFontScaling();
 import {
@@ -10,14 +10,26 @@ import {
     TouchableOpacity,
     useWindowDimensions,
     RefreshControl,
+    StatusBar,
+    Animated,
+    Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useAppNavigation } from '@/hooks/useAppNavigation';
 
 import AppText from '@/src/components/AppText';
+import Loader from '@/src/components/Loader';
 import { useThemeContext } from '@/src/context/ThemeContext';
 import { supabase } from '@/src/services/supabase';
+
+// Toast Message Interface
+interface ToastMessage {
+    id: string;
+    text: string;
+    type: 'success' | 'error' | 'info' | 'warning';
+}
 
 /* ------------------------------------------------------------------ */
 /*  TYPES                                                               */
@@ -30,27 +42,31 @@ interface MenuItem {
     route: string;
 }
 
+interface CleaningSession {
+    id: string;
+    user_id: string;
+    date: string;
+    time: string;
+    duration: string;
+    area: string;
+    status: string;
+    created_at: string;
+}
+
 /* ------------------------------------------------------------------ */
 /*  MENU ITEMS  (absolute paths — fixes back-navigation bug)           */
 /* ------------------------------------------------------------------ */
 const MENU_ITEMS: MenuItem[] = [
     { id: 1, title: 'Account Settings',  subtitle: 'Manage your personal information',  icon: 'person-outline',         route: '/settings/account'       },
     { id: 2, title: 'Robot Management',  subtitle: 'Configure your cleaning robot',      icon: 'hardware-chip-outline',  route: '/settings/robot'         },
-    { id: 3, title: 'Cleaning History',  subtitle: 'View past cleaning sessions',        icon: 'time-outline',           route: '/settings/history'       },
-    { id: 4, title: 'Notifications',     subtitle: 'Manage alerts and reminders',        icon: 'notifications-outline',  route: '/settings/notifications' },
-    { id: 5, title: 'Help & Support',    subtitle: 'Get help and contact support',       icon: 'help-circle-outline',    route: '/settings/support'       },
-    { id: 6, title: 'Connection',        subtitle: 'Connect to the robot',               icon: 'link-outline',           route: '/settings/connection'    },
-];
-
-const QUICK_LINKS = [
-    { icon: 'grid-outline'            as keyof typeof Ionicons.glyphMap, label: 'Dashboard', route: '/(tabs)/01_DashboardScreen', color: '#6366f1' },
-    { icon: 'game-controller-outline' as keyof typeof Ionicons.glyphMap, label: 'Control',   route: '/(tabs)/02_ControlScreen',   color: '#10B981' },
-    { icon: 'map-outline'             as keyof typeof Ionicons.glyphMap, label: 'Map',        route: '/(tabs)/03_MapScreen',       color: '#14b8a6' },
-    { icon: 'calendar-outline'        as keyof typeof Ionicons.glyphMap, label: 'Schedule',   route: '/(tabs)/04_ScheduleScreen',  color: '#f59e0b' },
+    { id: 3, title: 'Connection',        subtitle: 'Connect to the robot',               icon: 'link-outline',           route: '/settings/connection'    },
+    { id: 4, title: 'Cleaning History',  subtitle: 'View past cleaning sessions',        icon: 'time-outline',           route: '/settings/history'       },
+    { id: 5, title: 'Notifications',     subtitle: 'Manage alerts and reminders',        icon: 'notifications-outline',  route: '/settings/notifications' },
+    { id: 6, title: 'Help & Support',    subtitle: 'Get help and contact support',       icon: 'help-circle-outline',    route: '/settings/support'       },
 ];
 
 /* ------------------------------------------------------------------ */
-/*  ACTION BUTTON  (replaces <Button> for guaranteed text contrast)    */
+/*  ACTION BUTTON                                                      */
 /* ------------------------------------------------------------------ */
 interface ActionButtonProps {
     title: string;
@@ -139,22 +155,75 @@ export default function ProfileScreen() {
     const [loading, setLoading]                 = useState(true);
     const [refreshing, setRefreshing]           = useState(false);
     const [totalCleanings, setTotalCleanings]   = useState(0);
-    const [totalRuntimeHours, setTotalRuntime]  = useState(0);
+    const [totalRuntimeMinutes, setTotalRuntimeMinutes] = useState(0);
+    const [totalArea, setTotalArea]             = useState(0);
     const [efficiency, setEfficiency]           = useState(0);
+    const [toasts, setToasts]                   = useState<ToastMessage[]>([]);
+    const toastAnimations = useRef<{ [key: string]: Animated.Value }>({});
 
     /* ---- design tokens -------------------------------------------- */
     const cardBg        = darkMode ? 'rgba(255,255,255,0.05)' : '#ffffff';
     const cardBorder    = darkMode ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)';
-    const textPrimary   = darkMode ? '#ffffff'                : colors.text;
+    const textPrimary   = darkMode ? '#ffffff'                : '#1a1a2e';
     const textSecondary = darkMode ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.60)';
     const dividerColor  = darkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)';
+    const successColor  = '#10B981';
+    const errorColor    = '#EF4444';
+    const warningColor  = '#F59E0B';
+    const infoColor     = '#3B82F6';
+
+    // Show toast message
+    const showToast = useCallback((text: string, type: ToastMessage['type']) => {
+        const id = Date.now().toString();
+        const fadeAnim = new Animated.Value(0);
+        const slideAnim = new Animated.Value(-100);
+        
+        toastAnimations.current[id] = fadeAnim;
+        
+        setToasts(prev => [...prev, { id, text, type }]);
+        
+        Animated.parallel([
+            Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
+            Animated.spring(slideAnim, { toValue: 0, tension: 50, friction: 7, useNativeDriver: true }),
+        ]).start();
+        
+        setTimeout(() => {
+            Animated.parallel([
+                Animated.timing(fadeAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+                Animated.timing(slideAnim, { toValue: -100, duration: 300, useNativeDriver: true }),
+            ]).start(() => {
+                setToasts(prev => prev.filter(toast => toast.id !== id));
+                delete toastAnimations.current[id];
+            });
+        }, 5000);
+    }, []);
+
+    // Parse duration string to minutes
+    const parseDurationToMinutes = useCallback((duration: string): number => {
+        if (!duration) return 0;
+        let total = 0;
+        const hoursMatch = duration.match(/(\d+)\s*h/);
+        const minutesMatch = duration.match(/(\d+)\s*m/);
+        if (hoursMatch) total += parseInt(hoursMatch[1]) * 60;
+        if (minutesMatch) total += parseInt(minutesMatch[1]);
+        return total;
+    }, []);
+
+    // Parse area string to number
+    const parseAreaToNumber = useCallback((area: string): number => {
+        if (!area) return 0;
+        const match = area.match(/(\d+(?:\.\d+)?)/);
+        return match ? parseFloat(match[1]) : 0;
+    }, []);
 
     /* ---------------------------------------------------------------- */
     /*  DATA FETCHING                                                    */
     /* ---------------------------------------------------------------- */
     const fetchUser = useCallback(async () => {
         try {
-            const { data: { user } } = await supabase.auth.getUser();
+            const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+            if (userError) throw userError;
 
             if (!user) {
                 replace('/LoginScreen');
@@ -168,47 +237,72 @@ export default function ProfileScreen() {
                 'User'
             );
 
-            const { data: sessions } = await supabase
+            // Fetch cleaning sessions
+            const { data: sessions, error: sessionsError } = await supabase
                 .from('cleaning_sessions')
-                .select('status, duration')
-                .eq('user_id', user.id);
+                .select('status, duration, area, created_at')
+                .eq('user_id', user.id)
+                .order('created_at', { ascending: false });
+
+            if (sessionsError) throw sessionsError;
 
             if (sessions && sessions.length > 0) {
-                const completed  = sessions.filter(s => s.status === 'Completed').length;
-                const totalMins  = sessions.reduce((acc, s) => {
-                    if (!s.duration) return acc;
-                    const h = s.duration.match(/(\d+)\s*h/);
-                    const m = s.duration.match(/(\d+)\s*m/);
-                    return acc + (h ? parseInt(h[1]) * 60 : 0) + (m ? parseInt(m[1]) : 0);
-                }, 0);
+                const completed = sessions.filter(s => s.status === 'Completed' || s.status === 'completed').length;
+                
+                let totalMins = 0;
+                let totalAreaCleaned = 0;
+                
+                for (const session of sessions) {
+                    totalMins += parseDurationToMinutes(session.duration || '');
+                    totalAreaCleaned += parseAreaToNumber(session.area || '');
+                }
 
                 setTotalCleanings(sessions.length);
-                setTotalRuntime(Math.round(totalMins / 60));
+                setTotalRuntimeMinutes(totalMins);
+                setTotalArea(totalAreaCleaned);
                 setEfficiency(Math.round((completed / sessions.length) * 100));
+            } else {
+                setTotalCleanings(0);
+                setTotalRuntimeMinutes(0);
+                setTotalArea(0);
+                setEfficiency(0);
             }
-        } catch (err) {
+        } catch (err: any) {
             console.error('Failed to fetch user:', err);
-            Alert.alert('Error', 'Could not load profile data');
+            showToast(err.message || 'Could not load profile data', 'error');
         } finally {
             setLoading(false);
             setRefreshing(false);
         }
-    }, [replace]);
+    }, [replace, parseDurationToMinutes, parseAreaToNumber, showToast]);
+
+    // Format runtime as hours and minutes
+    const formatRuntime = useCallback(() => {
+        const hours = Math.floor(totalRuntimeMinutes / 60);
+        const minutes = totalRuntimeMinutes % 60;
+        if (hours === 0) return `${minutes} min`;
+        if (minutes === 0) return `${hours}h`;
+        return `${hours}h ${minutes}m`;
+    }, [totalRuntimeMinutes]);
 
     /* initial load */
     useEffect(() => {
         fetchUser();
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
-            if (!session) replace('/LoginScreen');
-            else fetchUser();
+            if (!session) {
+                replace('/LoginScreen');
+            } else {
+                fetchUser();
+            }
         });
 
         return () => subscription.unsubscribe();
-    }, [fetchUser]);
+    }, [fetchUser, replace]);
 
     /* pull-to-refresh */
     const onRefresh = useCallback(() => {
+        if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
         setRefreshing(true);
         fetchUser();
     }, [fetchUser]);
@@ -226,11 +320,13 @@ export default function ProfileScreen() {
                     text: 'Logout',
                     style: 'destructive',
                     onPress: async () => {
+                        if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                         try {
                             const { error } = await supabase.auth.signOut();
                             if (error) throw error;
+                            showToast('Logged out successfully', 'success');
                         } catch (err: any) {
-                            Alert.alert('Logout Failed', err.message || 'Something went wrong');
+                            showToast(err.message || 'Logout failed', 'error');
                         }
                     },
                 },
@@ -239,13 +335,63 @@ export default function ProfileScreen() {
     };
 
     /* ---------------------------------------------------------------- */
+    /*  RENDER TOASTS                                                    */
+    /* ---------------------------------------------------------------- */
+    const renderToasts = () => {
+        const statusBarHeight = StatusBar.currentHeight || (Platform.OS === 'ios' ? 47 : 0);
+        
+        return toasts.map((toast, index) => {
+            const toastColor = toast.type === 'success' ? successColor : toast.type === 'error' ? errorColor : toast.type === 'warning' ? warningColor : infoColor;
+            const fadeAnim = toastAnimations.current[toast.id] || new Animated.Value(1);
+            
+            return (
+                <Animated.View
+                    key={toast.id}
+                    style={[
+                        toastStyles.toast,
+                        {
+                            backgroundColor: toastColor,
+                            top: statusBarHeight + 10 + (index * 70),
+                            left: 16,
+                            right: 16,
+                            opacity: fadeAnim,
+                        },
+                    ]}
+                >
+                    <Ionicons
+                        name={toast.type === 'success' ? 'checkmark-circle' : toast.type === 'error' ? 'alert-circle' : toast.type === 'warning' ? 'warning' : 'information-circle'}
+                        size={22}
+                        color="#fff"
+                    />
+                    <AppText style={toastStyles.toastText}>{toast.text}</AppText>
+                    <TouchableOpacity
+                        onPress={() => {
+                            const anim = toastAnimations.current[toast.id];
+                            if (anim) {
+                                Animated.timing(anim, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => {
+                                    setToasts(prev => prev.filter(t => t.id !== toast.id));
+                                    delete toastAnimations.current[toast.id];
+                                });
+                            }
+                        }}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                        <Ionicons name="close" size={18} color="rgba(255,255,255,0.9)" />
+                    </TouchableOpacity>
+                </Animated.View>
+            );
+        });
+    };
+
+    /* ---------------------------------------------------------------- */
     /*  LOADING STATE                                                    */
     /* ---------------------------------------------------------------- */
     if (loading) {
         return (
             <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+                <StatusBar barStyle={darkMode ? 'light-content' : 'dark-content'} />
                 <View style={styles.loadingContainer}>
-                    <AppText style={{ color: textSecondary }}>Loading profile…</AppText>
+                    <Loader message="Loading profile..." />
                 </View>
             </SafeAreaView>
         );
@@ -259,6 +405,10 @@ export default function ProfileScreen() {
             style={[styles.container, { backgroundColor: colors.background }]}
             edges={['top']}
         >
+            <StatusBar barStyle={darkMode ? 'light-content' : 'dark-content'} />
+            
+            {renderToasts()}
+
             <ScrollView
                 contentContainerStyle={[
                     styles.scrollContent,
@@ -270,6 +420,7 @@ export default function ProfileScreen() {
                         refreshing={refreshing}
                         onRefresh={onRefresh}
                         tintColor={colors.primary}
+                        colors={[colors.primary]}
                     />
                 }
             >
@@ -301,12 +452,14 @@ export default function ProfileScreen() {
                         {/* Stats row */}
                         <View style={[styles.statsRow, { borderTopColor: dividerColor }]}>
                             {[
-                                { value: String(totalCleanings),  label: 'Cleanings'  },
-                                { value: `${totalRuntimeHours}h`, label: 'Runtime'    },
-                                { value: `${efficiency}%`,        label: 'Efficiency' },
+                                { value: String(totalCleanings),  label: 'Cleanings', icon: 'checkmark-circle' as const },
+                                { value: formatRuntime(),        label: 'Runtime',   icon: 'time' as const },
+                                { value: `${efficiency}%`,        label: 'Efficiency', icon: 'stats-chart' as const },
+                                { value: `${Math.round(totalArea)}m²`, label: 'Area',     icon: 'map' as const },
                             ].map((stat, i, arr) => (
                                 <React.Fragment key={stat.label}>
                                     <View style={styles.statItem}>
+                                        <Ionicons name={stat.icon} size={18} color={colors.primary} style={{ marginBottom: 4 }} />
                                         <AppText style={[styles.statValue, { color: colors.primary }]}>
                                             {stat.value}
                                         </AppText>
@@ -331,7 +484,11 @@ export default function ProfileScreen() {
 
                         <TouchableOpacity
                             style={styles.themeRow}
-                            onPress={toggleTheme}
+                            onPress={() => {
+                                if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                toggleTheme();
+                                showToast(`${darkMode ? 'Light' : 'Dark'} mode enabled`, 'success');
+                            }}
                             activeOpacity={0.7}
                         >
                             <View style={styles.themeRowLeft}>
@@ -367,7 +524,10 @@ export default function ProfileScreen() {
                                         borderBottomColor: dividerColor,
                                     },
                                 ]}
-                                onPress={() => push(item.route)}
+                                onPress={() => {
+                                    if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                    push(item.route);
+                                }}
                                 activeOpacity={0.7}
                             >
                                 <View style={[styles.menuIcon, { backgroundColor: `${colors.primary}15` }]}>
@@ -397,37 +557,6 @@ export default function ProfileScreen() {
                             primaryColor={colors.primary}
                         />
                     </View>
-
-                    {/* ─── Quick Links ─────────────────────────────────── */}
-                    <View style={[styles.card, { backgroundColor: cardBg, borderColor: cardBorder }]}>
-                        <View style={styles.cardHeader}>
-                            <Ionicons name="flash-outline" size={20} color={colors.primary} />
-                            <AppText style={[styles.cardTitle, { color: textPrimary }]}>Quick Links</AppText>
-                        </View>
-
-                        <View style={styles.quickGrid}>
-                            {QUICK_LINKS.map(item => (
-                                <TouchableOpacity
-                                    key={item.label}
-                                    style={[
-                                        styles.quickTile,
-                                        {
-                                            backgroundColor: `${item.color}${darkMode ? '1a' : '12'}`,
-                                            borderColor:     `${item.color}30`,
-                                        },
-                                    ]}
-                                    onPress={() => push(item.route)}
-                                    activeOpacity={0.7}
-                                >
-                                    <Ionicons name={item.icon} size={24} color={item.color} />
-                                    <AppText style={[styles.quickLabel, { color: textPrimary }]}>
-                                        {item.label}
-                                    </AppText>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
-                    </View>
-
                 </View>
 
                 {/* Footer */}
@@ -455,7 +584,7 @@ const styles = StyleSheet.create({
         flexGrow: 1,
         paddingHorizontal: 24,
         paddingTop: 16,
-        paddingBottom: 80,
+        paddingBottom: 100,
     },
     scrollContentLarge: {
         alignItems: 'center',
@@ -517,17 +646,18 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     statValue: {
-        fontSize: 20,
+        fontSize: 18,
         fontWeight: '800',
         marginBottom: 4,
     },
     statLabel: {
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: '600',
     },
     statDivider: {
         width: 1,
-        height: '100%',
+        height: '80%',
+        alignSelf: 'center',
     },
 
     /* Generic card */
@@ -613,10 +743,12 @@ const styles = StyleSheet.create({
     /* Quick links */
     quickGrid: {
         flexDirection: 'row',
+        flexWrap: 'wrap',
         gap: 12,
     },
     quickTile: {
         flex: 1,
+        minWidth: '45%',
         borderRadius: 14,
         borderWidth: 1,
         paddingVertical: 20,
@@ -637,3 +769,36 @@ const styles = StyleSheet.create({
         letterSpacing: 0.3,
     },
 });
+
+// Toast styles
+const toastStyles = StyleSheet.create({
+    toast: {
+        position: 'absolute',
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 14,
+        borderRadius: 14,
+        gap: 12,
+        zIndex: 9999,
+        elevation: 8,
+        shadowColor: '#000',
+        shadowOpacity: 0.25,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 3 },
+    },
+    toastText: {
+        flex: 1,
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: '500',
+        lineHeight: 20,
+    },
+});
+
+// Quick Links constant
+const QUICK_LINKS = [
+    { icon: 'grid-outline' as const, label: 'Dashboard', route: '/(tabs)/01_DashboardScreen', color: '#6366f1' },
+    { icon: 'game-controller-outline' as const, label: 'Control', route: '/(tabs)/02_ControlScreen', color: '#10B981' },
+    { icon: 'map-outline' as const, label: 'Map', route: '/(tabs)/03_MapScreen', color: '#14b8a6' },
+    { icon: 'calendar-outline' as const, label: 'Schedule', route: '/(tabs)/04_ScheduleScreen', color: '#f59e0b' },
+];
