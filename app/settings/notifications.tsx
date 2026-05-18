@@ -20,6 +20,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import AppText from '../../src/components/AppText';
 import { useThemeContext } from '@/src/context/ThemeContext';
+import { EmailService } from '@/src/services/EmailService';
+import { supabase } from '@/src/services/supabase';
 
 const STORAGE_KEY = 'notificationPreferences';
 
@@ -33,7 +35,6 @@ interface ToastMessage {
 type NotifPrefs = {
     cleaningComplete: boolean;
     scheduleReminders: boolean;
-    batteryAlerts: boolean;
     robotOffline: boolean;
     errorAlerts: boolean;
     weeklyReport: boolean;
@@ -42,7 +43,6 @@ type NotifPrefs = {
 const DEFAULT_PREFS: NotifPrefs = {
     cleaningComplete: true,
     scheduleReminders: true,
-    batteryAlerts: true,
     robotOffline: true,
     errorAlerts: true,
     weeklyReport: false,
@@ -70,13 +70,6 @@ const NOTIF_ITEMS: NotifItem[] = [
         subtitle: 'Remind before a scheduled cleaning starts',
         icon: 'calendar-outline',
         color: '#3B82F6',
-    },
-    {
-        key: 'batteryAlerts',
-        title: 'Battery Alerts',
-        subtitle: 'Alert when battery drops below 20%',
-        icon: 'battery-half-outline',
-        color: '#F59E0B',
     },
     {
         key: 'robotOffline',
@@ -110,6 +103,7 @@ export default function NotificationsScreen() {
     const [prefs, setPrefs] = useState<NotifPrefs>(DEFAULT_PREFS);
     const [loaded, setLoaded] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [testingEmail, setTestingEmail] = useState(false);
     const [toasts, setToasts] = useState<ToastMessage[]>([]);
     const toastAnimations = useRef<{ [key: string]: Animated.Value }>({});
 
@@ -206,6 +200,31 @@ export default function NotificationsScreen() {
         }
     }, [prefs, savePreferences, showToast]);
 
+    // Send a test email to the logged-in user
+    const sendTestEmail = useCallback(async () => {
+        if (testingEmail) return;
+        if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        setTestingEmail(true);
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user?.email) {
+                showToast('No email found – please log in', 'error');
+                return;
+            }
+            const name = user.user_metadata?.full_name ?? user.email.split('@')[0];
+            const result = await EmailService.sendWelcomeEmail(user.email, name);
+            if (result.success) {
+                showToast(`Test email sent to ${user.email}`, 'success');
+            } else {
+                showToast(result.error ?? 'Failed to send test email', 'error');
+            }
+        } catch (err: any) {
+            showToast(err.message ?? 'Unexpected error', 'error');
+        } finally {
+            setTestingEmail(false);
+        }
+    }, [testingEmail, showToast]);
+
     // Reset all preferences to default
     const resetToDefaults = useCallback(() => {
         if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -241,7 +260,6 @@ export default function NotificationsScreen() {
         const allEnabled: NotifPrefs = {
             cleaningComplete: true,
             scheduleReminders: true,
-            batteryAlerts: true,
             robotOffline: true,
             errorAlerts: true,
             weeklyReport: true,
@@ -274,7 +292,6 @@ export default function NotificationsScreen() {
                         const allDisabled: NotifPrefs = {
                             cleaningComplete: false,
                             scheduleReminders: false,
-                            batteryAlerts: false,
                             robotOffline: false,
                             errorAlerts: false,
                             weeklyReport: false,
@@ -463,6 +480,19 @@ export default function NotificationsScreen() {
                         ))}
                     </View>
 
+                    {/* Test Email Button */}
+                    <TouchableOpacity
+                        style={[styles.testBtn, { borderColor: infoColor, opacity: testingEmail ? 0.6 : 1 }]}
+                        onPress={sendTestEmail}
+                        disabled={testingEmail || saving}
+                        activeOpacity={0.7}
+                    >
+                        <Ionicons name="mail-outline" size={20} color={infoColor} />
+                        <AppText style={[styles.resetBtnText, { color: infoColor }]}>
+                            {testingEmail ? 'Sending…' : 'Send Test Email'}
+                        </AppText>
+                    </TouchableOpacity>
+
                     {/* Reset Button */}
                     <TouchableOpacity
                         style={[styles.resetBtn, { borderColor: errorColor }]}
@@ -641,6 +671,18 @@ const styles = StyleSheet.create({
     divider: {
         height: 1,
         marginHorizontal: 16,
+    },
+
+    // Test Email Button
+    testBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        paddingVertical: 14,
+        borderRadius: 14,
+        borderWidth: 1.5,
+        marginBottom: 12,
     },
 
     // Reset Button

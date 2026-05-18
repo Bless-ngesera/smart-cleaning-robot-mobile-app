@@ -12,6 +12,7 @@
 // ============================================================
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
     View,
     TouchableOpacity,
@@ -32,6 +33,7 @@ import Loader from '../../src/components/Loader';
 import AppText from '../../src/components/AppText';
 import { useThemeContext } from '@/src/context/ThemeContext';
 import { supabase } from '@/src/services/supabase';
+import { checkAndSendWeeklyReport } from '@/src/utils/emailScheduler';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,7 +43,6 @@ type ConnectionType = 'wifi' | 'ble' | 'none';
 type RobotStatusCode = 'Online' | 'Offline' | 'Charging' | 'Error';
 
 interface RobotStatus {
-    batteryLevel: number;
     isCleaning: boolean;
     lastCleaned: string;
     errors: string[];
@@ -72,53 +73,9 @@ function formatLastCleaned(raw: string | null): string {
     }
 }
 
-function batteryColor(level: number): string {
-    if (level >= 60) return '#22c55e';
-    if (level >= 30) return '#f59e0b';
-    return '#ef4444';
-}
-
-function batteryIcon(level: number): keyof typeof Ionicons.glyphMap {
-    if (level >= 75) return 'battery-full';
-    if (level >= 50) return 'battery-half';
-    if (level >= 25) return 'battery-charging';
-    return 'battery-dead';
-}
-
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
-
-function BatteryBar({ level, color, darkMode }: { level: number; color: string; darkMode: boolean }) {
-    const anim = useRef(new Animated.Value(0)).current;
-
-    useEffect(() => {
-        Animated.timing(anim, {
-            toValue: level / 100,
-            duration: 800,
-            useNativeDriver: false,
-        }).start();
-    }, [level, anim]);
-
-    const animatedWidth = anim.interpolate({
-        inputRange: [0, 1],
-        outputRange: ['0%', '100%'],
-    });
-
-    return (
-        <View style={[
-            batteryBarStyles.track,
-            { backgroundColor: darkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' },
-        ]}>
-            <Animated.View style={[batteryBarStyles.fill, { width: animatedWidth, backgroundColor: color }]} />
-        </View>
-    );
-}
-
-const batteryBarStyles = StyleSheet.create({
-    track: { height: 8, borderRadius: 4, overflow: 'hidden', marginTop: 12 },
-    fill:  { height: '100%', borderRadius: 4 },
-});
 
 function PulsingDot({ active }: { active: boolean }) {
     const scale   = useRef(new Animated.Value(1)).current;
@@ -230,14 +187,13 @@ export default function DashboardScreen() {
 
             if (!data) {
                 setStatus({
-                    batteryLevel: 0, isCleaning: false, lastCleaned: 'Never',
+                    isCleaning: false, lastCleaned: 'Never',
                     errors: ['No robot data available'], status: 'Offline', connectionType: 'none',
                 });
                 return;
             }
 
             setStatus({
-                batteryLevel:   data.battery ?? 0,
                 isCleaning:     data.status === 'Online',
                 lastCleaned:    data.updated_at ?? 'Never',
                 errors:         [],
@@ -248,7 +204,7 @@ export default function DashboardScreen() {
             console.error('[DashboardScreen] fetchStatus error:', err);
             Alert.alert('Connection Error', 'Unable to load robot status. Please try again.');
             setStatus({
-                batteryLevel: 0, isCleaning: false, lastCleaned: 'Never',
+                isCleaning: false, lastCleaned: 'Never',
                 errors: ['Failed to load status'], status: 'Offline', connectionType: 'none',
             });
         } finally {
@@ -257,7 +213,15 @@ export default function DashboardScreen() {
         }
     }, [fetchWeeklyStats]);
 
-    useEffect(() => { fetchStatus(); }, [fetchStatus]);
+    useEffect(() => {
+        fetchStatus();
+        // Fire-and-forget: sends weekly report email if 7 days have elapsed
+        // and the user has that preference on.
+        AsyncStorage.getItem('notificationPreferences').then(raw => {
+            const prefs = raw ? JSON.parse(raw) : {};
+            checkAndSendWeeklyReport(prefs.weeklyReport === true).catch(() => {});
+        }).catch(() => {});
+    }, [fetchStatus]);
 
     const onRefresh = useCallback(() => {
         if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -265,10 +229,8 @@ export default function DashboardScreen() {
         fetchStatus();
     }, [fetchStatus]);
 
-    const batteryLevel = status?.batteryLevel ?? 0;
     const isCleaning   = status?.isCleaning ?? false;
     const isConnected  = status?.connectionType !== 'none';
-    const bColor       = batteryColor(batteryLevel);
 
     if (loading && !status) return <Loader message="Loading dashboard..." />;
 
@@ -328,20 +290,6 @@ export default function DashboardScreen() {
                             >
                                 <Ionicons name="refresh-outline" size={20} color={colors.primary} />
                             </TouchableOpacity>
-                        </View>
-
-                        <View style={[styles.divider, { backgroundColor: dividerColor }]} />
-
-                        {/* Battery */}
-                        <View style={styles.batterySection}>
-                            <View style={styles.batteryHeader}>
-                                <View style={styles.batteryLabelRow}>
-                                    <Ionicons name={batteryIcon(batteryLevel)} size={20} color={bColor} />
-                                    <AppText style={[styles.fieldLabel, { color: textSecondary }]}>Battery Level</AppText>
-                                </View>
-                                <AppText style={[styles.batteryPercent, { color: bColor }]}>{batteryLevel}%</AppText>
-                            </View>
-                            <BatteryBar level={batteryLevel} color={bColor} darkMode={darkMode} />
                         </View>
 
                         <View style={[styles.divider, { backgroundColor: dividerColor }]} />
@@ -469,12 +417,6 @@ const styles = StyleSheet.create({
     refreshButton: { width: 40, height: 40, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
 
     divider: { height: 1, marginVertical: 20 },
-
-    batterySection: {},
-    batteryHeader:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    batteryLabelRow:{ flexDirection: 'row', alignItems: 'center', gap: 8 },
-    fieldLabel:     { fontSize: 14, fontWeight: '500' },
-    batteryPercent: { fontSize: 17, fontWeight: '700', letterSpacing: -0.2 },
 
     connectionSection:    {},
     connectionRow:        { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },

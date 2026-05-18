@@ -27,7 +27,6 @@ type RobotRow = {
   id: string;
   name: string;
   status: string;
-  battery: number;
   mode: string;
   is_online: boolean;
   last_seen: string;
@@ -38,7 +37,6 @@ type RobotStatusRow = {
   id: string;
   robot_id: string;
   status: string;
-  battery: number;
   left_sensor: number;
   right_sensor: number;
   movement: string;
@@ -281,7 +279,7 @@ export default function MapScreen() {
       const { data: robotData, error: robotError } = await supabase
         .from("robots")
         .select(
-          "id, name, status, battery, mode, is_online, last_seen, updated_at",
+          "id, name, status, mode, is_online, last_seen, updated_at",
         )
         .eq("owner_id", user.id)
         .order("created_at", { ascending: false })
@@ -578,7 +576,6 @@ export default function MapScreen() {
   const movement = robotStatus?.movement ?? "STOP";
   const robotRotation = movementAngle[movement] ?? 0;
   const isOnline = robot?.is_online ?? false;
-  const battery = robotStatus?.battery ?? robot?.battery ?? 0;
   const leftSensor = robotStatus?.left_sensor ?? 0;
   const rightSensor = robotStatus?.right_sensor ?? 0;
   const currentMode = robotStatus?.mode ?? robot?.mode ?? "IDLE";
@@ -679,33 +676,12 @@ export default function MapScreen() {
                   </AppText>
                 </View>
               </View>
-              <View style={styles.batteryBadge}>
-                <Ionicons
-                  name={battery > 20 ? "battery-half" : "battery-dead"}
-                  size={16}
-                  color={battery > 20 ? successColor : errorColor}
-                />
-                <AppText
-                  style={[
-                    styles.batteryText,
-                    { color: battery > 20 ? successColor : errorColor },
-                  ]}
-                >
-                  {battery}%
-                </AppText>
-              </View>
             </View>
           </View>
 
           {/* Live Stats Row */}
           <View style={styles.statsRow}>
             {[
-              {
-                icon: "battery-charging" as const,
-                color: battery > 20 ? successColor : errorColor,
-                value: `${battery}%`,
-                label: "Battery",
-              },
               {
                 icon: "arrow-back-circle" as const,
                 color: sensorColor(leftSensor),
@@ -1065,12 +1041,6 @@ export default function MapScreen() {
                     color: sensorColor(rightSensor),
                   },
                   {
-                    label: "Battery",
-                    value: `${battery}%`,
-                    icon: "battery-half" as const,
-                    color: battery > 20 ? successColor : errorColor,
-                  },
-                  {
                     label: "Last Seen",
                     value: robot.last_seen
                       ? formatTimeAgo(robot.last_seen)
@@ -1422,17 +1392,6 @@ const styles = StyleSheet.create({
   statusName: { fontSize: 16, fontWeight: "700", marginBottom: 4 },
   statusMeta: { flexDirection: "row", alignItems: "center", gap: 6 },
   statusSub: { fontSize: 13, fontWeight: "500" },
-  batteryBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    backgroundColor: "rgba(0,0,0,0.05)",
-  },
-  batteryText: { fontSize: 13, fontWeight: "700" },
-
   statsRow: { flexDirection: "row", gap: 10, marginBottom: 16 },
   statCard: {
     flex: 1,

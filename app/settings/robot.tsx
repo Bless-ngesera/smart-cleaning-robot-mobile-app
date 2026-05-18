@@ -47,7 +47,6 @@ type RobotInfo = {
     wifi_ip?: string | null;
     ble_id?: string | null;
     status: string;
-    battery: number;
     last_cleaned_at: string | null;
     firmware_version: string | null;
     is_online: boolean;
@@ -694,24 +693,6 @@ export default function RobotManagement() {
                                             />
                                             <AppText style={[styles.infoText, { color: textPrimary }]}>
                                                 Connection: Cloud (Supabase)
-                                            </AppText>
-                                        </View>
-
-                                        <View style={styles.infoRow}>
-                                            <Ionicons
-                                                name="battery-half"
-                                                size={20}
-                                                color={r.battery > 20 ? successColor : warningColor}
-                                            />
-                                            <AppText
-                                                style={[
-                                                    styles.infoText,
-                                                    {
-                                                        color: r.battery > 20 ? successColor : warningColor,
-                                                    },
-                                                ]}
-                                            >
-                                                Battery: {r.battery}%
                                             </AppText>
                                         </View>
 

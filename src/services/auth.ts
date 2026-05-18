@@ -284,17 +284,38 @@ class AuthService {
 
             console.log('📧 [AuthService] Reset password redirect URL:', redirectUrl);
 
-            const { error } = await supabase.auth.resetPasswordForEmail(
-                email.trim().toLowerCase(),
-                {
-                    redirectTo: redirectUrl,
-                }
-            );
+            // Call Edge Function so the email is sent via Resend (custom domain),
+            // not Supabase's built-in mailer.
+            const { error } = await supabase.functions.invoke('send-reset-email', {
+                body: { email: email.trim().toLowerCase(), redirectTo: redirectUrl },
+            });
 
             if (error) {
-                // Handle rate limit errors
-                if (error.status === 429 ||
-                    error.message?.toLowerCase().includes('rate limit')) {
+                // Extract the actual JSON body from the Edge Function response
+                let fnBody: Record<string, any> = {};
+                try {
+                    if (error.context?.json) {
+                        fnBody = await error.context.json();
+                    }
+                } catch { /* body not JSON */ }
+
+                const msg: string = fnBody.error ?? fnBody.message ?? error.message ?? '';
+                const code: string = fnBody.code ?? '';
+                console.error('❌ [AuthService] Edge Function error body:', fnBody);
+
+                // Edge Function not deployed yet — fall back to Supabase's built-in mailer
+                if (code === 'NOT_FOUND') {
+                    console.warn('⚠️ [AuthService] send-reset-email function not deployed, falling back to Supabase mailer');
+                    const { error: sbError } = await supabase.auth.resetPasswordForEmail(
+                        email.trim().toLowerCase(),
+                        { redirectTo: redirectUrl }
+                    );
+                    if (sbError) throw sbError;
+                    console.log('✅ [AuthService] Reset email sent (via Supabase fallback) to:', email);
+                    return { success: true, data: { message: 'Password reset email sent! Check your inbox.' } };
+                }
+
+                if (error.status === 429 || msg.toLowerCase().includes('rate limit')) {
                     return {
                         success: false,
                         error: {
@@ -305,7 +326,7 @@ class AuthService {
                     };
                 }
 
-                if (error.message.includes('User not found')) {
+                if (code === 'USER_NOT_FOUND' || msg.toLowerCase().includes('user not found')) {
                     return {
                         success: false,
                         error: {
@@ -314,7 +335,8 @@ class AuthService {
                         },
                     };
                 }
-                throw error;
+
+                throw new Error(msg || 'Failed to send reset email');
             }
 
             console.log('✅ [AuthService] Reset email sent to:', email);

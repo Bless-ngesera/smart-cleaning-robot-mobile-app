@@ -29,7 +29,6 @@ import {
 } from "@/src/context/AuthContext";
 import { ThemeProvider, useThemeContext } from "@/src/context/ThemeContext";
 import { ToastProvider } from "@/src/context/ToastContext";
-import { robotService } from "@/src/services/ProductionRobotService";
 import { supabase } from "@/src/services/supabase";
 
 SplashScreen.preventAutoHideAsync();
@@ -76,21 +75,10 @@ export default function RootLayout() {
     return () => sub.remove();
   }, []);
 
-  // ── Initialize robot service + allow providers to settle ────────────────
+  // ── Allow providers to settle before rendering ───────────────────────────
   useEffect(() => {
-    const run = async () => {
-      try {
-        await Promise.all([
-          robotService.initialize(),
-          new Promise((r) => setTimeout(r, 80)),
-        ]);
-      } catch (e) {
-        console.warn("[RootLayout] prepare:", e);
-      } finally {
-        setAppReady(true);
-      }
-    };
-    run();
+    const t = setTimeout(() => setAppReady(true), 80);
+    return () => clearTimeout(t);
   }, []);
 
   // ── Hide splash only after fonts AND app are ready ───────────────────────

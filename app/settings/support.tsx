@@ -71,12 +71,6 @@ const FAQ_ITEMS: FAQItem[] = [
         answer: 'If your robot appears offline:\n\n1. Check that the robot is powered on\n2. Verify Wi-Fi connection on the robot\n3. Go to Settings → Connection and ensure the robot is connected\n4. Try disconnecting and reconnecting\n5. Check if the robot\'s serial number is correctly entered\n6. Pull down to refresh the robot list\n\nIf issues persist, restart the robot and try again.',
     },
     {
-        id: '5',
-        icon: 'battery-half-outline',
-        question: 'How do I improve battery life?',
-        answer: '• Keep the robot charged between 20-80%\n• Clean the charging contacts regularly\n• Reduce suction power for lighter cleaning\n• Schedule cleaning during off-peak hours\n• Avoid exposing the robot to extreme temperatures\n• The app shows real-time battery percentage',
-    },
-    {
         id: '6',
         icon: 'alert-circle-outline',
         question: 'What do the error messages mean?',

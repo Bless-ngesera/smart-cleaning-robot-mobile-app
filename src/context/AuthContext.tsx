@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { router } from 'expo-router';
 import { onAuthStateChange, getCurrentSession } from '@/src/services/supabase';
+import { EmailService } from '@/src/services/EmailService';
 
 type AuthContextType = {
     isLoading: boolean;
@@ -106,16 +107,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             switch (event) {
                 case 'SIGNED_IN':
-                    // Consumed by deep-link handler when user arrives from a
-                    // reset-password link (PASSWORD_RECOVERY should have fired
-                    // but may not in all Supabase versions).
                     if (suppressNextSignedIn) {
                         suppressNextSignedIn = false;
                         console.log('🔕 SIGNED_IN redirect suppressed (password recovery flow)');
                         break;
                     }
-                    // Delay so the originating screen can show its success card
-                    // before the user is navigated away.
+                    // Send welcome email for brand-new accounts (created < 2 min ago)
+                    if (session?.user) {
+                        const createdAt = new Date(session.user.created_at).getTime();
+                        const isNewUser = Date.now() - createdAt < 2 * 60 * 1000;
+                        if (isNewUser && session.user.email) {
+                            const name = session.user.user_metadata?.full_name
+                                ?? session.user.email.split('@')[0];
+                            EmailService.sendWelcomeEmail(session.user.email, name).catch(() => {});
+                        }
+                    }
                     setTimeout(() => {
                         if (!mountedRef.current) return;
                         if (session?.user?.email_confirmed_at) {

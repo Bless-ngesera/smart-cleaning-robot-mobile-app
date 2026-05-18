@@ -359,11 +359,6 @@ export default function ConnectionScreen() {
                       <AppText style={[styles.robotSerial, { color: textSec }]}>SN: {robot.serial_number}</AppText>
                       <View style={styles.robotStats}>
                         <View style={styles.statItem}>
-                          <Ionicons name="battery-half" size={14} color={textSec} />
-                          <AppText style={[styles.statText, { color: textSec }]}>{robot.battery}%</AppText>
-                        </View>
-                        <View style={styles.statDivider} />
-                        <View style={styles.statItem}>
                           <Ionicons name="options" size={14} color={textSec} />
                           <AppText style={[styles.statText, { color: textSec }]}>{robot.mode}</AppText>
                         </View>
@@ -380,7 +375,7 @@ export default function ConnectionScreen() {
                           onPress={async () => {
                             const status = await ProductionRobotService.fetchLatestStatus();
                             if (status) {
-                              showToast(`Battery: ${status.battery}% | Mode: ${status.mode}`, 'info');
+                              showToast(`Mode: ${status.mode}`, 'info');
                             } else {
                               showToast('Robot is responding', 'success');
                             }
@@ -447,12 +442,6 @@ export default function ConnectionScreen() {
               </View>
 
               <View style={styles.statusGrid}>
-                <View style={styles.statusItem}>
-                  <Ionicons name="battery-full" size={26} color={robotStatus.battery > 20 ? successColor : errorColor} />
-                  <AppText style={[styles.statusLabel, { color: textSec }]}>Battery</AppText>
-                  <AppText style={[styles.statusValue, { color: textPrimary }]}>{robotStatus.battery}%</AppText>
-                </View>
-                
                 <View style={styles.statusItem}>
                   <Ionicons name="analytics" size={26} color={infoColor} />
                   <AppText style={[styles.statusLabel, { color: textSec }]}>Status</AppText>

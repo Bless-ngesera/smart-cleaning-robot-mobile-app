@@ -16,11 +16,14 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 import Loader from "../../src/components/Loader";
 import AppText from "../../src/components/AppText";
 import { useThemeContext } from "@/src/context/ThemeContext";
 import { supabase } from "@/src/services/supabase";
 import { ProductionRobotService as robotService } from "@/src/services/ProductionRobotService";
+import { EmailService } from "@/src/services/EmailService";
 import { useAppNavigation } from "@/hooks/useAppNavigation";
 
 // Toast Message Interface
@@ -47,7 +50,6 @@ export default function ControlScreen() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [robotId, setRobotId] = useState<string | null>(null);
   const [isRobotConnected, setIsRobotConnected] = useState(false);
-  const [batteryLevel, setBatteryLevel] = useState<number | null>(null);
 
   // Animation for robot status
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -117,7 +119,7 @@ export default function ControlScreen() {
 
       const { data: robot, error: robotError } = await supabase
         .from("robots")
-        .select("id, status, mode, battery, is_online")
+        .select("id, status, mode, is_online")
         .eq("owner_id", user.id)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -128,7 +130,6 @@ export default function ControlScreen() {
       if (robot) {
         setRobotId(robot.id);
         setIsRobotConnected(robot.is_online || false);
-        setBatteryLevel(robot.battery || 0);
         setIsRunning(robot.mode === "cleaning" || robot.status === "cleaning");
       } else {
         showToast("No robot found. Please register a robot first.", "warning");
@@ -146,7 +147,7 @@ export default function ControlScreen() {
     try {
       const { data, error } = await supabase
         .from("robot_status")
-        .select("status, mode, battery, movement")
+        .select("status, mode, movement")
         .eq("robot_id", robotId)
         .order("last_updated", { ascending: false })
         .limit(1)
@@ -156,7 +157,6 @@ export default function ControlScreen() {
 
       if (data) {
         setIsRunning(data.status === "cleaning" || data.mode === "cleaning");
-        if (data.battery) setBatteryLevel(data.battery);
       }
     } catch (err) {
       console.error("[ControlScreen] fetchRobotStatus error:", err);
@@ -198,7 +198,6 @@ export default function ControlScreen() {
         status: status,
         movement: movement,
         mode: manualMode ? "MANUAL" : cleaningMode.toUpperCase(),
-        battery: batteryLevel || 85,
         left_sensor: 45,
         right_sensor: 42,
         last_updated: new Date().toISOString(),
@@ -206,7 +205,7 @@ export default function ControlScreen() {
     } catch (err) {
       console.error("[ControlScreen] insertRobotStatus error:", err);
     }
-  }, [robotId, manualMode, cleaningMode, batteryLevel]);
+  }, [robotId, manualMode, cleaningMode]);
 
   // Start cleaning action
   const handleStartCleaning = useCallback(async () => {
@@ -262,13 +261,38 @@ export default function ControlScreen() {
       if (commandResult.success) {
         await updateRobotInDB(false);
         await insertRobotStatus("idle", "STOP");
-        
+
         setIsRunning(false);
         showToast("✓ Cleaning stopped", "success");
-        
+
         if (Platform.OS !== "web") {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
+
+        // Send cleaning-complete email if the user has that preference on
+        (async () => {
+          try {
+            const saved = await AsyncStorage.getItem('notificationPreferences');
+            const prefs = saved ? JSON.parse(saved) : {};
+            if (!prefs.cleaningComplete) return;
+
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user?.email) return;
+
+            const { data: robot } = await supabase
+              .from('robots')
+              .select('name')
+              .eq('id', robotId)
+              .maybeSingle();
+
+            await EmailService.sendCleaningComplete(
+              user.email,
+              robot?.name ?? 'Smart Cleaner Pro',
+              0,
+              'just now',
+            );
+          } catch { /* non-blocking */ }
+        })();
       } else {
         throw new Error(commandResult.message || "Failed to stop cleaning");
       }
@@ -535,14 +559,6 @@ export default function ControlScreen() {
                         ? "Standby"
                         : "Disconnected"}
                 </AppText>
-                {batteryLevel !== null && (
-                  <View style={styles.batteryRow}>
-                    <Ionicons name="battery-half" size={14} color={batteryLevel > 20 ? successColor : warningColor} />
-                    <AppText style={[styles.batteryText, { color: batteryLevel > 20 ? successColor : warningColor }]}>
-                      Battery: {batteryLevel}%
-                    </AppText>
-                  </View>
-                )}
               </View>
             </View>
 
@@ -857,8 +873,6 @@ const styles = StyleSheet.create({
   statusInfo: { flex: 1 },
   statusTitle: { fontSize: 14, fontWeight: "500", marginBottom: 2 },
   statusValue: { fontSize: 18, fontWeight: "700", marginBottom: 4 },
-  batteryRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  batteryText: { fontSize: 12, fontWeight: "600" },
   statusBadge: { position: "absolute", top: 16, right: 16 },
   pulsingDot: { width: 10, height: 10, borderRadius: 5 },
 

@@ -1,6 +1,7 @@
 // src/services/ProductionRobotService.ts
 import { supabase } from './supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { EmailService } from './EmailService';
 
 export interface Robot {
   id: string;
@@ -8,7 +9,6 @@ export interface Robot {
   serial_number: string;
   connection_type: string;
   status: string;
-  battery: number;
   mode: string;
   is_online: boolean;
   last_seen: string;
@@ -19,7 +19,6 @@ export interface RobotStatus {
   id: string;
   robot_id: string;
   status: string;
-  battery: number;
   left_sensor: number;
   right_sensor: number;
   movement: string;
@@ -96,7 +95,6 @@ class ProductionRobotServiceClass {
           owner_id: finalOwnerId,
           connection_type: 'cloud',
           status: 'offline',
-          battery: 100,
           mode: 'MANUAL',
           is_online: false,
           created_at: new Date().toISOString(),
@@ -402,6 +400,22 @@ class ProductionRobotServiceClass {
   // Check if connected
   isConnected(): boolean {
     return this.currentRobot !== null;
+  }
+
+  // Send an error-alert email to the signed-in user (non-blocking)
+  async notifyError(errorMessage: string): Promise<void> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.email || !this.currentRobot) return;
+
+      const prefs = await import('@react-native-async-storage/async-storage')
+        .then(m => m.default.getItem('notificationPreferences'))
+        .then(raw => (raw ? JSON.parse(raw) : {}));
+
+      if (!prefs.errorAlerts) return;
+
+      await EmailService.sendErrorAlert(user.email, this.currentRobot.name, errorMessage);
+    } catch { /* non-blocking */ }
   }
 
   // Get robot status summary
