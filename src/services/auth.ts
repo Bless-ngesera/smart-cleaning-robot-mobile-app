@@ -17,175 +17,68 @@ export type AuthResponse = {
 
 class AuthService {
     // ============================================================
-    // SIGNUP FLOW - CLEAN VERSION (Trigger handles profile)
+    // SIGNUP FLOW — owned by the handle-signup Edge Function
+    // The Edge Function creates the user via admin API (no Supabase
+    // email triggered) then sends the branded confirmation email via
+    // Resend. This completely avoids Supabase's rate-limited mailer.
     // ============================================================
     async signUp(email: string, password: string, fullName: string, phone?: string): Promise<AuthResponse> {
         try {
-            console.log('🚀 [AuthService] Starting signup process for:', email);
+            console.log('🚀 [AuthService] Starting signup for:', email);
 
-            // Validate inputs first
             if (!this.validateEmail(email)) {
-                return {
-                    success: false,
-                    error: {
-                        message: 'Please enter a valid email address',
-                        code: 'INVALID_EMAIL',
-                    },
-                };
+                return { success: false, error: { message: 'Please enter a valid email address', code: 'INVALID_EMAIL' } };
             }
 
             const passwordValidation = this.validatePassword(password);
             if (!passwordValidation.isValid) {
-                return {
-                    success: false,
-                    error: {
-                        message: passwordValidation.errors[0],
-                        code: 'INVALID_PASSWORD',
-                    },
-                };
+                return { success: false, error: { message: passwordValidation.errors[0], code: 'INVALID_PASSWORD' } };
             }
 
-            // Create redirect URL for email confirmation
-            const redirectUrl = Linking.createURL('/verified-account', {
-                scheme: 'smartcleaner',
-            });
+            const redirectUrl = Linking.createURL('/verified-account', { scheme: 'smartcleanerpro' });
 
-            console.log('📧 [AuthService] SignUp redirect URL:', redirectUrl);
-
-            // Pre-check: verify the email is not already in use
-            const emailTaken = await this.checkUserExists(email.trim().toLowerCase());
-            if (emailTaken) {
-                return {
-                    success: false,
-                    error: {
-                        message: 'Email already used by another user',
-                        code: 'USER_EXISTS',
-                    },
-                };
-            }
-
-            // Attempt to create the user in Supabase Auth
-            console.log('📡 [AuthService] Calling supabase.auth.signUp...');
-            const { data: authData, error: authError } = await supabase.auth.signUp({
-                email: email.trim().toLowerCase(),
-                password,
-                options: {
-                    data: {
-                        full_name: fullName.trim(),
-                        ...(phone ? { phone: phone.trim() } : {}),
-                    },
-                    emailRedirectTo: redirectUrl,
+            const { error: fnError } = await supabase.functions.invoke('handle-signup', {
+                body: {
+                    email: email.trim().toLowerCase(),
+                    password,
+                    fullName: fullName.trim(),
+                    redirectTo: redirectUrl,
                 },
             });
 
-            // Handle specific auth errors
-            if (authError) {
-                console.error('❌ [AuthService] Supabase auth error:', {
-                    message: authError.message,
-                    status: authError.status,
-                    name: authError.name,
-                    code: authError.code,
-                });
+            if (fnError) {
+                let fnBody: Record<string, any> = {};
+                try {
+                    if ((fnError as any).context?.json) {
+                        fnBody = await (fnError as any).context.json();
+                    }
+                } catch { /* not JSON */ }
 
-                // Check for rate limit errors first
-                if (authError.status === 429 ||
-                    authError.message?.toLowerCase().includes('rate limit') ||
-                    authError.message?.toLowerCase().includes('too many requests') ||
-                    authError.code === 'over_email_send_rate_limit') {
+                const code: string = fnBody.code ?? '';
+                const msg: string  = fnBody.error ?? fnError.message ?? '';
+                console.error('❌ [AuthService] handle-signup error:', JSON.stringify(fnBody));
 
-                    return {
-                        success: false,
-                        error: {
-                            message: 'Too many signup attempts. Please wait about 1 hour before trying again. This is a security measure to prevent abuse.',
-                            code: 'RATE_LIMIT_EXCEEDED',
-                            status: 429,
-                        },
-                    };
+                if (code === 'USER_EXISTS' || msg.toLowerCase().includes('already in use')) {
+                    return { success: false, error: { message: 'Email already used by another user', code: 'USER_EXISTS' } };
                 }
-
-                // Check for specific error types
-                if (authError.message.includes('User already registered') ||
-                    authError.message.includes('already registered') ||
-                    authError.message.includes('already been registered')) {
-                    return {
-                        success: false,
-                        error: {
-                            message: 'Email already used by another user',
-                            code: 'USER_EXISTS',
-                            status: authError.status,
-                        },
-                    };
+                if (code === 'EMAIL_FAILED') {
+                    return { success: false, error: { message: 'Account creation failed — could not send confirmation email. Please try again.', code: 'EMAIL_FAILED' } };
                 }
-
-                if (authError.message.includes('weak password')) {
-                    return {
-                        success: false,
-                        error: {
-                            message: 'Password is too weak. Please use a stronger password.',
-                            code: 'WEAK_PASSWORD',
-                            status: authError.status,
-                        },
-                    };
-                }
-
-                throw authError;
+                return { success: false, error: { message: msg || 'Signup failed. Please try again.', code: code || 'SIGNUP_ERROR' } };
             }
 
-            // Check if user was created successfully
-            if (!authData?.user) {
-                throw new Error('No user data returned from signup');
-            }
-
-            // Supabase silently returns a fake user with empty identities when email
-            // confirmation is enabled and the address is already registered.
-            if (authData.user.identities && authData.user.identities.length === 0) {
-                return {
-                    success: false,
-                    error: {
-                        message: 'Email already used by another user',
-                        code: 'USER_EXISTS',
-                    },
-                };
-            }
-
-            console.log('✅ [AuthService] User created successfully:', {
-                id: authData.user.id,
-                email: authData.user.email,
-                confirmed: authData.user.email_confirmed_at ? 'Yes' : 'No',
-                hasSession: !!authData.session,
-            });
-
-            // Determine if email confirmation is needed
-            const needsEmailConfirmation = !authData.user?.email_confirmed_at;
-
+            console.log('✅ [AuthService] Signup complete, confirmation email sent to:', email);
             return {
                 success: true,
                 data: {
-                    user: authData.user,
-                    session: authData.session,
-                    needsEmailConfirmation,
-                    message: needsEmailConfirmation
-                        ? 'Please check your email to confirm your account.'
-                        : 'Account created successfully!',
+                    needsEmailConfirmation: true,
+                    message: 'Please check your email to confirm your account.',
                 },
             };
 
         } catch (error: any) {
-            console.error('❌ [AuthService] SignUp error:', {
-                message: error.message,
-                status: error.status,
-                name: error.name,
-                code: error.code,
-            });
-
-            return {
-                success: false,
-                error: {
-                    message: this.getFriendlyErrorMessage(error),
-                    status: error.status,
-                    code: error.code,
-                },
-            };
+            console.error('❌ [AuthService] SignUp error:', error);
+            return { success: false, error: { message: this.getFriendlyErrorMessage(error), status: error.status, code: error.code } };
         }
     }
 
@@ -279,7 +172,7 @@ class AuthService {
     async forgotPassword(email: string): Promise<AuthResponse> {
         try {
             const redirectUrl = Linking.createURL('/reset-password', {
-                scheme: 'smartcleaner',
+                scheme: 'smartcleanerpro',
             });
 
             console.log('📧 [AuthService] Reset password redirect URL:', redirectUrl);
@@ -310,7 +203,27 @@ class AuthService {
                         email.trim().toLowerCase(),
                         { redirectTo: redirectUrl }
                     );
-                    if (sbError) throw sbError;
+
+                    if (sbError) {
+                        const sbMsg = sbError.message?.toLowerCase() ?? '';
+                        // Supabase free-tier rate limit / email service temporarily unavailable
+                        if (
+                            sbMsg.includes('error sending recovery email') ||
+                            sbMsg.includes('rate limit') ||
+                            sbMsg.includes('email rate limit') ||
+                            sbError.status === 429
+                        ) {
+                            return {
+                                success: false,
+                                error: {
+                                    message: 'Email service is temporarily unavailable. Please try again in a few minutes.',
+                                    code: 'EMAIL_SERVICE_ERROR',
+                                },
+                            };
+                        }
+                        throw sbError;
+                    }
+
                     console.log('✅ [AuthService] Reset email sent (via Supabase fallback) to:', email);
                     return { success: true, data: { message: 'Password reset email sent! Check your inbox.' } };
                 }
@@ -416,63 +329,40 @@ class AuthService {
     }
 
     // ============================================================
-    // RESEND CONFIRMATION EMAIL
+    // RESEND CONFIRMATION EMAIL — via send-confirmation-email Edge Function
     // ============================================================
     async resendConfirmationEmail(email: string): Promise<AuthResponse> {
         try {
-            const redirectUrl = Linking.createURL('/verified-account', {
-                scheme: 'smartcleaner',
+            const redirectUrl = Linking.createURL('/verified-account', { scheme: 'smartcleanerpro' });
+
+            const { error: fnError } = await supabase.functions.invoke('send-confirmation-email', {
+                body: { email: email.trim().toLowerCase(), redirectTo: redirectUrl },
             });
 
-            const { error } = await supabase.auth.resend({
-                type: 'signup',
-                email: email.trim().toLowerCase(),
-                options: {
-                    emailRedirectTo: redirectUrl,
-                },
-            });
+            if (fnError) {
+                let fnBody: Record<string, any> = {};
+                try {
+                    if ((fnError as any).context?.json) {
+                        fnBody = await (fnError as any).context.json();
+                    }
+                } catch { /* not JSON */ }
 
-            if (error) {
-                // Handle rate limit errors
-                if (error.status === 429 ||
-                    error.message?.toLowerCase().includes('rate limit')) {
-                    return {
-                        success: false,
-                        error: {
-                            message: 'Too many confirmation requests. Please wait a few minutes before trying again.',
-                            code: 'RATE_LIMIT_EXCEEDED',
-                            status: 429,
-                        },
-                    };
-                }
+                const msg: string = fnBody.error ?? fnError.message ?? '';
+                console.error('❌ [AuthService] send-confirmation-email error:', JSON.stringify(fnBody));
 
-                if (error.message.includes('Email not found')) {
-                    return {
-                        success: false,
-                        error: {
-                            message: 'No account found with this email address.',
-                            code: 'USER_NOT_FOUND',
-                        },
-                    };
+                if (msg.toLowerCase().includes('rate limit')) {
+                    return { success: false, error: { message: 'Too many requests. Please wait a few minutes before trying again.', code: 'RATE_LIMIT_EXCEEDED' } };
                 }
-                throw error;
+                if (msg.toLowerCase().includes('user not found') || msg.toLowerCase().includes('not found')) {
+                    return { success: false, error: { message: 'No account found with this email address.', code: 'USER_NOT_FOUND' } };
+                }
+                return { success: false, error: { message: 'Failed to send confirmation email. Please try again.', code: 'EMAIL_SERVICE_ERROR' } };
             }
 
-            return {
-                success: true,
-                data: {
-                    message: 'Confirmation email sent! Check your inbox.',
-                },
-            };
+            return { success: true, data: { message: 'Confirmation email sent! Check your inbox.' } };
         } catch (error: any) {
             console.error('❌ [AuthService] Resend confirmation error:', error);
-            return {
-                success: false,
-                error: {
-                    message: this.getFriendlyErrorMessage(error),
-                    status: error.status,
-                },
-            };
+            return { success: false, error: { message: this.getFriendlyErrorMessage(error), status: error.status } };
         }
     }
 
@@ -683,6 +573,9 @@ class AuthService {
         }
         if (message.includes('password should be at least 6 characters')) {
             return 'Password must be at least 6 characters long.';
+        }
+        if (message.includes('error sending recovery email') || message.includes('email rate limit')) {
+            return 'Email service is temporarily unavailable. Please try again in a few minutes.';
         }
         if (message.includes('network')) {
             return 'Network error. Please check your internet connection.';

@@ -66,17 +66,23 @@ export default function ResetPasswordScreen() {
     }, [password, confirmPassword]);
 
     const checkSession = async () => {
-        try {
-            const { session } = await authService.getSession();
-            if (!session) {
-                setIsValidSession(false);
-            }
-        } catch (error) {
-            console.error('Session check error:', error);
-            setIsValidSession(false);
-        } finally {
-            setCheckingSession(false);
+        // The deep link handler in _layout.tsx calls supabase.auth.setSession
+        // asynchronously after the app opens. This screen may mount before that
+        // resolves, so we retry up to 8 times (≈1.6 s) to let the session land.
+        const MAX = 8;
+        for (let i = 0; i < MAX; i++) {
+            try {
+                const { session } = await authService.getSession();
+                if (session) {
+                    setIsValidSession(true);
+                    setCheckingSession(false);
+                    return;
+                }
+            } catch { /* ignore transient errors */ }
+            if (i < MAX - 1) await new Promise(r => setTimeout(r, 200));
         }
+        setIsValidSession(false);
+        setCheckingSession(false);
     };
 
     const shakeField = (anim: Animated.Value) => {
@@ -186,7 +192,7 @@ export default function ResetPasswordScreen() {
             /[a-z]/.test(password),
             /\d/.test(password),
             /[!@#$%^&*(),.?":{}|<>]/.test(password),
-            password.length >= 8,
+            password.length >= 6,
         ];
         const strength = checks.filter(Boolean).length;
 

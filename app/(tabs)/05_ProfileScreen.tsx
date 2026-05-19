@@ -1,6 +1,5 @@
 // app/(tabs)/05_ProfileScreen.tsx
 import { useAppNavigation } from "@/hooks/useAppNavigation";
-import { disableSystemFontScaling } from "@/src/utils/disableFontScaling";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -17,7 +16,6 @@ import {
     View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-disableSystemFontScaling();
 
 import AppText from "@/src/components/AppText";
 import Loader from "@/src/components/Loader";

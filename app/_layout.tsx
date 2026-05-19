@@ -52,17 +52,90 @@ export default function RootLayout() {
   useEffect(() => {
     const handleDeepLink = async (url: string) => {
       try {
-        const { data, error } = await supabase.auth.exchangeCodeForSession(url);
-        if (error || !data?.session) return;
         const lower = url.toLowerCase();
-        if (lower.includes("reset-password") || lower.includes("recovery")) {
-          setSuppressNextSignedIn(true);
-          setTimeout(() => router.replace("/reset-password"), 100);
-        } else if (lower.includes("verified-account")) {
-          setTimeout(() => router.replace("/verified-account"), 100);
+        const isReset = lower.includes("reset-password") || lower.includes("type=recovery");
+
+        // Suppress SIGNED_IN redirect BEFORE any async session work so the
+        // AuthContext listener never fires a dashboard redirect for this flow.
+        if (isReset) setSuppressNextSignedIn(true);
+
+        // ── Path A: implicit grant — tokens arrive in the URL hash fragment.
+        //    Produced by supabase.auth.admin.generateLink (used in Edge Function).
+        //    Format: smartcleanerpro:///reset-password#access_token=xxx&refresh_token=xxx&type=recovery
+        const hashIdx = url.indexOf("#");
+        if (hashIdx !== -1) {
+          const fragment = url.slice(hashIdx + 1);
+          const params = new URLSearchParams(fragment);
+          const accessToken = params.get("access_token");
+          const refreshToken = params.get("refresh_token");
+          const type = params.get("type") ?? "";
+
+          if (accessToken && refreshToken) {
+            const { data, error } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+            if (error || !data?.session) return;
+
+            if (type === "recovery" || isReset) {
+              setTimeout(() => router.replace("/reset-password"), 150);
+            } else {
+              setTimeout(() => router.replace("/verified-account"), 150);
+            }
+            return;
+          }
+        }
+
+        // ── Path B: PKCE — code arrives as a query parameter.
+        //    Produced by Supabase magic-link / email confirmation flows.
+        //    Format: smartcleanerpro:///verified-account?code=xxx
+        const qIdx = url.indexOf("?");
+        const queryStr = qIdx !== -1 ? url.slice(qIdx + 1).split("#")[0] : "";
+        const qp = new URLSearchParams(queryStr);
+
+        if (qp.get("code")) {
+          const { data, error } = await supabase.auth.exchangeCodeForSession(url);
+          if (error || !data?.session) return;
+
+          if (isReset) {
+            setTimeout(() => router.replace("/reset-password"), 150);
+          } else if (lower.includes("verified-account")) {
+            setTimeout(() => router.replace("/verified-account"), 150);
+          }
+          return;
+        }
+
+        // ── Path C: App navigation deep links from email buttons ─────────────
+        //    Format: smartcleanerpro://<route>?param=value
+        //    These don't carry auth tokens — just navigate to the right screen.
+        const pathPart = url.replace(/^[a-z]+:\/\//, "").split("?")[0].replace(/^\/+/, "");
+
+        if (pathPart === "dashboard") {
+          setTimeout(() => router.replace("/(tabs)"), 100);
+        } else if (pathPart === "accept-invite") {
+          const token    = qp.get("token") ?? "";
+          const robotId  = qp.get("robot_id") ?? "";
+          if (token) setTimeout(() => router.push(`/accept-invite?token=${token}&robot_id=${robotId}`), 100);
+        } else if (pathPart === "robot-details") {
+          const id = qp.get("id") ?? "";
+          if (id) setTimeout(() => router.push(`/settings/robot?id=${id}`), 100);
+        } else if (pathPart === "robot-control") {
+          const id = qp.get("id") ?? "";
+          if (id) setTimeout(() => router.push(`/(tabs)?robotId=${id}`), 100);
+        } else if (pathPart === "session-details" || pathPart === "incidents") {
+          setTimeout(() => router.push("/settings/history"), 100);
+        } else if (pathPart === "schedule") {
+          setTimeout(() => router.push("/(tabs)"), 100);
+        } else if (pathPart === "robot-members" || pathPart === "robot-settings") {
+          const id  = qp.get("id") ?? "";
+          const tab = qp.get("tab") ?? "";
+          setTimeout(() => router.push(`/settings/robot${id ? `?id=${id}` : ""}${tab ? `&tab=${tab}` : ""}`), 100);
+        } else if (pathPart === "maintenance") {
+          const robotId = qp.get("robot_id") ?? "";
+          setTimeout(() => router.push(`/settings/robot${robotId ? `?id=${robotId}&tab=maintenance` : ""}`), 100);
         }
       } catch {
-        // URL carries no auth code — ignore silently
+        // Not a navigable URL — ignore silently
       }
     };
 
@@ -188,6 +261,10 @@ function RootContent() {
         <Stack.Screen
           name="settings/connection"
           options={{ animation: "slide_from_right" }}
+        />
+        <Stack.Screen
+          name="accept-invite"
+          options={{ animation: "slide_from_bottom" }}
         />
       </Stack>
 

@@ -91,7 +91,19 @@ export default function ForgotPasswordScreen() {
                 showToast('Password reset link sent to your email!', 'success', 4500);
                 setSent(true);
             } else {
-                throw new Error(response.error?.message);
+                const code = response.error?.code ?? '';
+                const msg  = response.error?.message ?? 'Failed to send reset link. Please try again.';
+
+                if (code === 'EMAIL_SERVICE_ERROR') {
+                    setErrorBanner('Our email service is busy right now. Please try again in a few minutes.');
+                } else if (code === 'USER_NOT_FOUND' || msg.toLowerCase().includes('not found')) {
+                    setEmailError('No account found with this email');
+                    shakeField();
+                } else if (code === 'RATE_LIMIT_EXCEEDED') {
+                    setErrorBanner('Too many requests. Please wait a few minutes before trying again.');
+                } else {
+                    setErrorBanner(msg);
+                }
             }
         } catch (err: any) {
             console.error('Forgot password error:', err);
@@ -100,14 +112,7 @@ export default function ForgotPasswordScreen() {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             }
 
-            const errorMessage = err.message || 'Failed to send reset link. Please try again.';
-
-            if (errorMessage.includes('not found')) {
-                setEmailError('No account found with this email');
-                shakeField();
-            }
-
-            setErrorBanner(errorMessage);
+            setErrorBanner('Failed to send reset link. Please try again.');
         } finally {
             setLoading(false);
         }
@@ -133,13 +138,25 @@ export default function ForgotPasswordScreen() {
                 showToast('Reset link resent! Check your inbox and spam folder.', 'success', 4000);
                 setResendStatus({ type: 'success', message: 'Reset link resent! Check your inbox and spam folder.' });
             } else {
-                throw new Error(response.error?.message);
+                const code = response.error?.code ?? '';
+                let msg = response.error?.message ?? 'Failed to resend email. Please try again.';
+
+                if (code === 'EMAIL_SERVICE_ERROR') {
+                    msg = 'Email service is busy. Please try again in a few minutes.';
+                } else if (code === 'RATE_LIMIT_EXCEEDED') {
+                    msg = 'Too many requests. Please wait a few minutes.';
+                }
+
+                if (Platform.OS === 'ios') {
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                }
+                setResendStatus({ type: 'error', message: msg });
             }
         } catch (err: any) {
             if (Platform.OS === 'ios') {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
             }
-            setResendStatus({ type: 'error', message: err.message || 'Failed to resend email. Please try again.' });
+            setResendStatus({ type: 'error', message: 'Failed to resend email. Please try again.' });
         } finally {
             setLoading(false);
         }

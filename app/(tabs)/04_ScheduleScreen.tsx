@@ -1,7 +1,5 @@
 // app/(tabs)/04_ScheduleScreen.tsx
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { disableSystemFontScaling } from '@/src/utils/disableFontScaling';
-disableSystemFontScaling();
 import {
     View,
     FlatList,

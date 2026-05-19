@@ -193,12 +193,18 @@ export default function DashboardScreen() {
                 return;
             }
 
+            const normalizedStatus = data.status?.toLowerCase() ?? '';
+            const displayStatus = normalizedStatus
+                ? ((normalizedStatus.charAt(0).toUpperCase() + normalizedStatus.slice(1)) as RobotStatusCode)
+                : 'Offline';
             setStatus({
-                isCleaning:     data.status === 'Online',
+                isCleaning:     normalizedStatus === 'cleaning',
                 lastCleaned:    data.updated_at ?? 'Never',
                 errors:         [],
-                status:         (data.status as RobotStatusCode) ?? 'Offline',
-                connectionType: 'none',
+                status:         displayStatus,
+                connectionType: data.is_online
+                    ? ((data.connection_type as ConnectionType) || 'wifi')
+                    : 'none',
             });
         } catch (err: any) {
             console.error('[DashboardScreen] fetchStatus error:', err);

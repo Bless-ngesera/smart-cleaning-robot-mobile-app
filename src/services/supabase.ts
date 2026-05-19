@@ -3,7 +3,6 @@ import 'react-native-url-polyfill/auto';
 import { createClient, SupabaseClient, Session, User, AuthError } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform, AppState } from 'react-native';
-import * as Crypto from 'expo-crypto';
 
 // Singleton instance
 let supabaseInstance: SupabaseClient | null = null;

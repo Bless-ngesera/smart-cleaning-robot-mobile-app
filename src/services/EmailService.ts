@@ -1,6 +1,6 @@
 // src/services/EmailService.ts
 const API_KEY   = process.env.EXPO_PUBLIC_RESEND_API_KEY ?? '';
-const FROM      = `${process.env.EXPO_PUBLIC_RESEND_FROM_NAME ?? 'Smart Cleaner Pro'} <${process.env.EXPO_PUBLIC_RESEND_FROM_EMAIL ?? 'hello@smartcleanerpro.me'}>`;
+const FROM      = `${process.env.EXPO_PUBLIC_RESEND_FROM_NAME ?? 'Smart Cleaner Pro'} <${process.env.EXPO_PUBLIC_RESEND_FROM_EMAIL ?? 'hello@smartcleanerpro.online'}>`;
 const API_URL   = 'https://api.resend.com/emails';
 const MAX_RETRY = 3;
 
@@ -161,7 +161,7 @@ class EmailServiceClass {
                 </div>
               </div>
               <div class="ftr">
-                <p>Smart Cleaner Pro &bull; <a href="mailto:hello@smartcleanerpro.me">hello@smartcleanerpro.me</a></p>
+                <p>Smart Cleaner Pro &bull; <a href="mailto:hello@smartcleanerpro.online">hello@smartcleanerpro.online</a></p>
                 <p style="margin-top:6px">&copy; 2026 Smart Cleaner Pro. All rights reserved.</p>
               </div>`),
         });
@@ -196,7 +196,7 @@ class EmailServiceClass {
                 <p style="font-size:14px;color:#6b7280">Your floors are sparkling clean ✨</p>
               </div>
               <div class="ftr">
-                <p>Smart Cleaner Pro &bull; <a href="mailto:hello@smartcleanerpro.me">hello@smartcleanerpro.me</a></p>
+                <p>Smart Cleaner Pro &bull; <a href="mailto:hello@smartcleanerpro.online">hello@smartcleanerpro.online</a></p>
                 <p style="margin-top:6px">&copy; 2026 Smart Cleaner Pro. All rights reserved.</p>
               </div>`),
         });
@@ -224,7 +224,7 @@ class EmailServiceClass {
                 </p>
               </div>
               <div class="ftr">
-                <p>Smart Cleaner Pro &bull; <a href="mailto:hello@smartcleanerpro.me">hello@smartcleanerpro.me</a></p>
+                <p>Smart Cleaner Pro &bull; <a href="mailto:hello@smartcleanerpro.online">hello@smartcleanerpro.online</a></p>
                 <p style="margin-top:6px">&copy; 2026 Smart Cleaner Pro. All rights reserved.</p>
               </div>`),
         });
@@ -268,7 +268,7 @@ class EmailServiceClass {
                 </div>
               </div>
               <div class="ftr">
-                <p>Smart Cleaner Pro &bull; <a href="mailto:hello@smartcleanerpro.me">hello@smartcleanerpro.me</a></p>
+                <p>Smart Cleaner Pro &bull; <a href="mailto:hello@smartcleanerpro.online">hello@smartcleanerpro.online</a></p>
                 <p style="margin-top:6px">&copy; 2026 Smart Cleaner Pro. All rights reserved.</p>
               </div>`),
         });

@@ -8,7 +8,7 @@ export async function POST(request: Request) {
 
     try {
         const { data, error } = await resend.emails.send({
-            from: 'Smart Cleaner Pro <noreply@smartcleanerpro.me>',
+            from: 'Smart Cleaner Pro <noreply@smartcleanerpro.online>',
             to: [to],
             subject: subject,
             html: html,

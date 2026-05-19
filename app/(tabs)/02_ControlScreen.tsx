@@ -72,7 +72,8 @@ export default function ControlScreen() {
     const slideAnim = new Animated.Value(-100);
     
     toastAnimations.current[id] = fadeAnim;
-    
+    toastAnimations.current[`slide_${id}`] = slideAnim;
+
     setToasts(prev => [...prev, { id, text, type }]);
     
     // Animate in
@@ -90,6 +91,7 @@ export default function ControlScreen() {
       ]).start(() => {
         setToasts(prev => prev.filter(toast => toast.id !== id));
         delete toastAnimations.current[id];
+        delete toastAnimations.current[`slide_${id}`];
       });
     }, 5000);
   }, []);
@@ -307,7 +309,7 @@ export default function ControlScreen() {
       setLoadingMessage("");
       await fetchRobotStatus();
     }
-  }, [busy, isRunning, updateRobotInDB, insertRobotStatus, fetchRobotStatus, showToast]);
+  }, [busy, isRunning, robotId, updateRobotInDB, insertRobotStatus, fetchRobotStatus, showToast]);
 
   // Manual move command
   const handleManualMove = useCallback(async (direction: "forward" | "backward" | "left" | "right" | "stop") => {
@@ -470,6 +472,7 @@ export default function ControlScreen() {
                 Animated.timing(anim, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => {
                   setToasts(prev => prev.filter(t => t.id !== toast.id));
                   delete toastAnimations.current[toast.id];
+                  delete toastAnimations.current[`slide_${toast.id}`];
                 });
               }
             }}

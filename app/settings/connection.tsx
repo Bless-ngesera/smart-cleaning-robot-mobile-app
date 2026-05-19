@@ -65,16 +65,17 @@ export default function ConnectionScreen() {
     const id = Date.now().toString();
     const fadeAnim = new Animated.Value(0);
     const slideAnim = new Animated.Value(-100);
-    
+
     toastAnimations.current[id] = fadeAnim;
-    
+    toastAnimations.current[`slide_${id}`] = slideAnim;
+
     setToasts(prev => [...prev, { id, text, type }]);
-    
+
     Animated.parallel([
       Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
       Animated.spring(slideAnim, { toValue: 0, tension: 50, friction: 7, useNativeDriver: true }),
     ]).start();
-    
+
     setTimeout(() => {
       Animated.parallel([
         Animated.timing(fadeAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
@@ -82,6 +83,7 @@ export default function ConnectionScreen() {
       ]).start(() => {
         setToasts(prev => prev.filter(t => t.id !== id));
         delete toastAnimations.current[id];
+        delete toastAnimations.current[`slide_${id}`];
       });
     }, 5000);
   }, []);
@@ -246,7 +248,8 @@ export default function ConnectionScreen() {
     return toasts.map((toast, index) => {
       const toastColor = toast.type === 'success' ? successColor : toast.type === 'error' ? errorColor : toast.type === 'warning' ? warningColor : infoColor;
       const fadeAnim = toastAnimations.current[toast.id] || new Animated.Value(1);
-      
+      const slideAnim = toastAnimations.current[`slide_${toast.id}`] || new Animated.Value(0);
+
       return (
         <Animated.View
           key={toast.id}
@@ -258,6 +261,7 @@ export default function ConnectionScreen() {
               left: 16,
               right: 16,
               opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }],
             },
           ]}
         >
@@ -274,6 +278,7 @@ export default function ConnectionScreen() {
                 Animated.timing(anim, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => {
                   setToasts(prev => prev.filter(t => t.id !== toast.id));
                   delete toastAnimations.current[toast.id];
+                  delete toastAnimations.current[`slide_${toast.id}`];
                 });
               }
             }}
