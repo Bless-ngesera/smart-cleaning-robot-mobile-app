@@ -155,7 +155,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                     break;
 
                 case 'PASSWORD_RECOVERY':
-                    // Email reset link opened — go straight to the reset screen.
+                    // verifyOtp({ type:'recovery' }) fires PASSWORD_RECOVERY not SIGNED_IN,
+                    // so clear the suppress flag here to avoid blocking the next real login.
+                    suppressNextSignedIn = false;
                     console.log('🔑 PASSWORD_RECOVERY event — navigating to reset-password');
                     router.replace('/reset-password');
                     break;

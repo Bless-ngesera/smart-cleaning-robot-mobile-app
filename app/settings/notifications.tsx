@@ -82,6 +82,7 @@ export default function NotificationsScreen() {
     const [loaded, setLoaded]           = useState(false);
     const [saving, setSaving]           = useState(false);
     const [testingEmail, setTestingEmail] = useState(false);
+    const [testingTypes, setTestingTypes] = useState<Record<string, boolean>>({});
     const [toasts, setToasts]           = useState<ToastMessage[]>([]);
     const toastAnimations               = useRef<{ [key: string]: Animated.Value }>({});
 
@@ -248,7 +249,7 @@ export default function NotificationsScreen() {
         ]);
     }, [savePreferences, showToast]);
 
-    // ── Test email ───────────────────────────────────────────────────────────
+    // ── Test email (welcome / general) ───────────────────────────────────────
 
     const sendTestEmail = useCallback(async () => {
         if (testingEmail) return;
@@ -267,6 +268,78 @@ export default function NotificationsScreen() {
             setTestingEmail(false);
         }
     }, [testingEmail, showToast]);
+
+    // ── Per-type test email ───────────────────────────────────────────────────
+
+    const sendTestForType = useCallback(async (key: string) => {
+        if (testingTypes[key]) return;
+        if (Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        setTestingTypes(prev => ({ ...prev, [key]: true }));
+
+        try {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user?.email) { showToast('Not logged in', 'error'); return; }
+
+            // Fetch first robot for robot-based notifications
+            const { data: robots } = await supabase
+                .from('robots')
+                .select('id, name')
+                .limit(1);
+            const robotId = robots?.[0]?.id;
+
+            let invokeError: string | null = null;
+
+            if (key === 'robot_offline' || key === 'error_alerts') {
+                if (!robotId) { showToast('Add a robot first to test this alert', 'warning'); return; }
+                const { error } = await supabase.functions.invoke('send-robot-alert', {
+                    body: { robotId, alertType: key === 'robot_offline' ? 'offline' : 'critical' },
+                });
+                invokeError = error?.message ?? null;
+
+            } else if (key === 'maintenance_reminder') {
+                if (!robotId) { showToast('Add a robot first to test this alert', 'warning'); return; }
+                const { error } = await supabase.functions.invoke('send-maintenance-reminder', {
+                    body: { robotId, triggerReason: 'test' },
+                });
+                invokeError = error?.message ?? null;
+
+            } else if (key === 'cleaning_complete') {
+                // Try the most recent completed session; fall back to general test
+                const { data: sessions } = await supabase
+                    .from('cleaning_sessions')
+                    .select('id')
+                    .eq('status', 'completed')
+                    .order('ended_at', { ascending: false })
+                    .limit(1);
+
+                if (sessions?.length) {
+                    const { error } = await supabase.functions.invoke('send-session-notification', {
+                        body: { sessionId: sessions[0].id, notifType: 'completed' },
+                    });
+                    invokeError = error?.message ?? null;
+                } else {
+                    // No completed session yet — send welcome email as stand-in
+                    const name = user.user_metadata?.full_name ?? user.email.split('@')[0];
+                    const res  = await EmailService.sendWelcomeEmail(user.email, name);
+                    invokeError = res.success ? null : (res.error ?? 'Failed');
+                }
+
+            } else {
+                // schedule_reminders, invite_received, weekly_report — send welcome test
+                const name = user.user_metadata?.full_name ?? user.email.split('@')[0];
+                const res  = await EmailService.sendWelcomeEmail(user.email, name);
+                invokeError = res.success ? null : (res.error ?? 'Failed');
+            }
+
+            if (invokeError) showToast(invokeError, 'error');
+            else showToast(`Test email sent to ${user.email}`, 'success');
+
+        } catch (err: any) {
+            showToast(err?.message ?? 'Unexpected error', 'error');
+        } finally {
+            setTestingTypes(prev => ({ ...prev, [key]: false }));
+        }
+    }, [testingTypes, showToast]);
 
     // ── Derived ──────────────────────────────────────────────────────────────
 
@@ -422,6 +495,20 @@ export default function NotificationsScreen() {
                                         <AppText style={[styles.rowTitle, { color: textPrimary }]}>{item.title}</AppText>
                                         <AppText style={[styles.rowSubtitle, { color: textSecondary }]}>{item.subtitle}</AppText>
                                     </View>
+                                    <TouchableOpacity
+                                        onPress={() => sendTestForType(item.key)}
+                                        disabled={testingTypes[item.key] || saving || prefs.unsubscribed_all || !prefs[item.key]}
+                                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 4 }}
+                                        style={[styles.testTypeBtn, {
+                                            opacity: (!prefs[item.key] || prefs.unsubscribed_all) ? 0.3 : testingTypes[item.key] ? 0.5 : 1,
+                                        }]}
+                                    >
+                                        <Ionicons
+                                            name={testingTypes[item.key] ? 'hourglass-outline' : 'mail-outline'}
+                                            size={18}
+                                            color={infoColor}
+                                        />
+                                    </TouchableOpacity>
                                     <Switch
                                         value={prefs[item.key]}
                                         onValueChange={() => toggle(item.key)}
@@ -509,6 +596,7 @@ const styles = StyleSheet.create({
     rowTitle:             { fontSize: 15, fontWeight: '600', marginBottom: 2 },
     rowSubtitle:          { fontSize: 12, fontWeight: '400', lineHeight: 17 },
     divider:              { height: 1, marginHorizontal: 16 },
+    testTypeBtn:          { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 8 },
     testBtn:              { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 14, borderWidth: 1.5, marginBottom: 12 },
     resetBtn:             { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 14, borderWidth: 1.5, marginBottom: 20 },
     actionBtnText:        { fontSize: 15, fontWeight: '600' },

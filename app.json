@@ -81,6 +81,11 @@
               "pathPrefix": "/accept-invite"
             },
             {
+              "scheme": "https",
+              "host": "smartcleanerpro.online",
+              "pathPrefix": "/verify-email"
+            },
+            {
               "scheme": "smartcleanerpro"
             }
           ],

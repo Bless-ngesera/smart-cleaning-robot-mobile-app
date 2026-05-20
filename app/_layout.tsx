@@ -51,6 +51,8 @@ export default function RootLayout() {
   // ── Deep-link / email-link handler ───────────────────────────────────────
   useEffect(() => {
     const handleDeepLink = async (url: string) => {
+      const ts = new Date().toISOString();
+      console.log(`🔗 [DeepLink] Received at ${ts}: ${url}`);
       try {
         const lower = url.toLowerCase();
         const isReset = lower.includes("reset-password") || lower.includes("type=recovery");
@@ -71,12 +73,17 @@ export default function RootLayout() {
           const type = params.get("type") ?? "";
 
           if (accessToken && refreshToken) {
+            console.log(`🔐 [DeepLink] Path A (implicit grant): type=${type}`);
             const { data, error } = await supabase.auth.setSession({
               access_token: accessToken,
               refresh_token: refreshToken,
             });
-            if (error || !data?.session) return;
-
+            if (error || !data?.session) {
+              console.error(`❌ [DeepLink] Path A: setSession failed:`, error?.message);
+              return;
+            }
+            const dest = (type === "recovery" || isReset) ? "/reset-password" : "/verified-account";
+            console.log(`✅ [DeepLink] Path A: session set → navigating to ${dest}`);
             if (type === "recovery" || isReset) {
               setTimeout(() => router.replace("/reset-password"), 150);
             } else {
@@ -94,9 +101,14 @@ export default function RootLayout() {
         const qp = new URLSearchParams(queryStr);
 
         if (qp.get("code")) {
+          console.log(`🔑 [DeepLink] Path B (PKCE): code=${qp.get("code")?.substring(0, 8)}...`);
           const { data, error } = await supabase.auth.exchangeCodeForSession(url);
-          if (error || !data?.session) return;
-
+          if (error || !data?.session) {
+            console.error(`❌ [DeepLink] Path B: code exchange failed:`, error?.message);
+            return;
+          }
+          const dest = isReset ? "/reset-password" : "/verified-account";
+          console.log(`✅ [DeepLink] Path B: code exchanged → navigating to ${dest}`);
           if (isReset) {
             setTimeout(() => router.replace("/reset-password"), 150);
           } else if (lower.includes("verified-account")) {
@@ -105,37 +117,87 @@ export default function RootLayout() {
           return;
         }
 
+        // ── Path D: token_hash direct deep link (bypasses Supabase redirect allowlist)
+        //    Format: smartcleanerpro:///reset-password?token_hash=XXX&type=recovery
+        //    The Edge Function embeds hashed_token directly; we exchange it here
+        //    with verifyOtp so no browser redirect through Supabase /auth/v1/verify.
+        if (qp.get("token_hash") && qp.get("type") === "recovery") {
+          setSuppressNextSignedIn(true);
+          const tokenHash = qp.get("token_hash")!;
+          console.log(`🔑 [DeepLink] Path D (token_hash recovery): hash=${tokenHash.substring(0, 12)}...`);
+          const { data, error } = await supabase.auth.verifyOtp({
+            token_hash: tokenHash,
+            type: "recovery",
+          });
+          if (error || !data?.session) {
+            console.error(`❌ [DeepLink] Path D: verifyOtp failed:`, error?.message);
+            return;
+          }
+          console.log(`✅ [DeepLink] Path D: OTP verified → navigating to /reset-password`);
+          setTimeout(() => router.replace("/reset-password"), 150);
+          return;
+        }
+
+        // ── Path E: token_hash email verification
+        //    Format: smartcleanerpro://verify-email?token_hash=XXX&type=email
+        if (qp.get("token_hash") && qp.get("type") === "email") {
+          const tokenHash = qp.get("token_hash")!;
+          console.log(`🔑 [DeepLink] Path E (token_hash email): hash=${tokenHash.substring(0, 12)}...`);
+          setTimeout(() => router.push(`/verify-email?token=${encodeURIComponent(tokenHash)}`), 100);
+          return;
+        }
+
         // ── Path C: App navigation deep links from email buttons ─────────────
         //    Format: smartcleanerpro://<route>?param=value
         //    These don't carry auth tokens — just navigate to the right screen.
         const pathPart = url.replace(/^[a-z]+:\/\//, "").split("?")[0].replace(/^\/+/, "");
+        console.log(`🗺️ [DeepLink] Path C: pathPart="${pathPart}"`);
 
         if (pathPart === "dashboard") {
+          console.log(`🗺️ [DeepLink] → navigating to /(tabs)`);
           setTimeout(() => router.replace("/(tabs)"), 100);
         } else if (pathPart === "accept-invite") {
           const token    = qp.get("token") ?? "";
           const robotId  = qp.get("robot_id") ?? "";
+          console.log(`🗺️ [DeepLink] → accept-invite: token=${token ? "present" : "missing"}, robot_id=${robotId}`);
           if (token) setTimeout(() => router.push(`/accept-invite?token=${token}&robot_id=${robotId}`), 100);
+        } else if (pathPart === "verify-email") {
+          const token = qp.get("token") || qp.get("token_hash") || "";
+          console.log(`🔐 [DeepLink] → verify-email: token ${token ? `found (${token.substring(0, 8)}...)` : "MISSING"}`);
+          if (token) {
+            setTimeout(() => router.push(`/verify-email?token=${encodeURIComponent(token)}`), 100);
+          } else {
+            setTimeout(() => router.replace("/verified-account"), 100);
+          }
         } else if (pathPart === "robot-details") {
           const id = qp.get("id") ?? "";
+          console.log(`🗺️ [DeepLink] → robot-details: id=${id}`);
           if (id) setTimeout(() => router.push(`/settings/robot?id=${id}`), 100);
         } else if (pathPart === "robot-control") {
           const id = qp.get("id") ?? "";
+          console.log(`🗺️ [DeepLink] → robot-control: id=${id}`);
           if (id) setTimeout(() => router.push(`/(tabs)?robotId=${id}`), 100);
         } else if (pathPart === "session-details" || pathPart === "incidents") {
+          const id = qp.get("id") ?? "";
+          console.log(`🗺️ [DeepLink] → session-details/incidents: id=${id}`);
           setTimeout(() => router.push("/settings/history"), 100);
         } else if (pathPart === "schedule") {
+          console.log(`🗺️ [DeepLink] → schedule`);
           setTimeout(() => router.push("/(tabs)"), 100);
         } else if (pathPart === "robot-members" || pathPart === "robot-settings") {
           const id  = qp.get("id") ?? "";
           const tab = qp.get("tab") ?? "";
+          console.log(`🗺️ [DeepLink] → ${pathPart}: id=${id}, tab=${tab}`);
           setTimeout(() => router.push(`/settings/robot${id ? `?id=${id}` : ""}${tab ? `&tab=${tab}` : ""}`), 100);
         } else if (pathPart === "maintenance") {
           const robotId = qp.get("robot_id") ?? "";
+          console.log(`🗺️ [DeepLink] → maintenance: robot_id=${robotId}`);
           setTimeout(() => router.push(`/settings/robot${robotId ? `?id=${robotId}&tab=maintenance` : ""}`), 100);
+        } else {
+          console.log(`[DeepLink] Path C: unrecognized pathPart="${pathPart}", ignoring`);
         }
-      } catch {
-        // Not a navigable URL — ignore silently
+      } catch (err: any) {
+        console.warn(`[DeepLink] Error handling URL "${url}":`, err?.message);
       }
     };
 
@@ -233,6 +295,7 @@ function RootContent() {
         />
         <Stack.Screen name="reset-password" options={{ animation: "fade" }} />
         <Stack.Screen name="verified-account" options={{ animation: "fade" }} />
+        <Stack.Screen name="verify-email" options={{ animation: "fade" }} />
 
         {/* Tab navigator — single stack entry */}
         <Stack.Screen name="(tabs)" options={{ animation: "fade" }} />

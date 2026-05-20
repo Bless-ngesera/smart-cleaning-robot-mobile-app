@@ -41,7 +41,14 @@ serve(async (req) => {
         const { data, error: genError } = await supabaseAdmin.auth.admin.generateLink({
             type: 'recovery',
             email,
-            options: { redirectTo: redirectTo ?? '' },
+            options: {
+                // Supabase embeds this in action_link. When the user taps the email button
+                // the browser opens Supabase's /auth/v1/verify, validates the token, then
+                // redirects here with tokens in the URL hash → app opens via Path A.
+                // REQUIRED: smartcleanerpro://** must be in Supabase Dashboard →
+                // Authentication → URL Configuration → Redirect URLs.
+                redirectTo: 'smartcleanerpro:///reset-password',
+            },
         });
 
         if (genError) {
@@ -53,8 +60,8 @@ serve(async (req) => {
             }, 400);
         }
 
-        const resetLink = data.properties?.action_link;
-        if (!resetLink) {
+        const actionLink = data.properties?.action_link;
+        if (!actionLink) {
             console.error('[send-reset-email] No action_link in generateLink response');
             return json({ error: 'Failed to generate reset link' }, 500);
         }
@@ -71,7 +78,7 @@ serve(async (req) => {
                 from: 'Smart Cleaner Pro <hello@smartcleanerpro.online>',
                 to: [email],
                 subject: 'Reset your Smart Cleaner Pro password',
-                html: buildHtml(resetLink),
+                html: buildHtml(actionLink),
             }),
         });
 
@@ -112,7 +119,7 @@ function json(body: unknown, status = 200) {
     });
 }
 
-function buildHtml(resetLink: string): string {
+function buildHtml(actionLink: string): string {
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -130,7 +137,6 @@ function buildHtml(resetLink: string): string {
   .icon-wrap{width:80px;height:80px;border-radius:50%;background:rgba(16,185,129,.12);display:flex;align-items:center;justify-content:center;margin:0 auto 24px}
   .btn{display:inline-block;background:#10B981;color:#fff!important;text-decoration:none;padding:14px 36px;border-radius:10px;font-weight:700;font-size:15px;margin:24px 0;letter-spacing:.3px}
   .note{font-size:13px;color:#6b7280;line-height:1.65;margin-top:16px}
-  .link-box{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px 16px;margin-top:14px;word-break:break-all;font-size:11.5px;color:#374151;font-family:monospace}
   .divider{border:none;border-top:1px solid #f3f4f6;margin:24px 0}
   .ftr{background:#f3f4f6;padding:20px 28px;text-align:center;font-size:12px;color:#9ca3af}
   .ftr a{color:#10B981;text-decoration:none}
@@ -154,16 +160,17 @@ function buildHtml(resetLink: string): string {
     <p style="font-size:15px;line-height:1.65;color:#374151;text-align:center;margin-top:8px">
       We received a request to reset the password for your<br/>Smart Cleaner Pro account.
     </p>
+    <p style="font-size:13px;color:#6b7280;text-align:center;margin-top:8px">
+      Tap the button below on your phone to open the Smart Cleaner Pro app.
+    </p>
     <div style="text-align:center">
-      <a href="${resetLink}" class="btn">Reset Password</a>
+      <a href="${actionLink}" class="btn">Reset Password</a>
     </div>
     <hr class="divider"/>
     <p class="note">
       ⏱ This link expires in <strong>1 hour</strong>. If you didn't request a password reset,
       you can safely ignore this email — your password won't change.
     </p>
-    <p class="note" style="margin-top:18px">If the button doesn't work, paste this link into your browser:</p>
-    <div class="link-box">${resetLink}</div>
   </div>
   <div class="ftr">
     <p>Smart Cleaner Pro &bull; <a href="mailto:hello@smartcleanerpro.online">hello@smartcleanerpro.online</a></p>

@@ -20,6 +20,17 @@ export function formatDate(iso: string): string {
     }
 }
 
+export function formatDateTime(iso: string): string {
+    try {
+        return new Date(iso).toLocaleDateString('en-US', {
+            month: 'short', day: 'numeric', year: 'numeric',
+            hour: 'numeric', minute: '2-digit', hour12: true,
+        });
+    } catch {
+        return iso;
+    }
+}
+
 export function formatRelativeTime(iso: string): string {
     try {
         const diff = Date.now() - new Date(iso).getTime();
