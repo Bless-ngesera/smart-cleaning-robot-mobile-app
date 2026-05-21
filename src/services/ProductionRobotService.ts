@@ -13,6 +13,8 @@ export interface Robot {
   is_online: boolean;
   last_seen: string;
   owner_id: string;
+  battery_level?: number;
+  firmware_version?: string;
 }
 
 export interface RobotStatus {
@@ -24,6 +26,13 @@ export interface RobotStatus {
   movement: string;
   mode: string;
   last_updated: string;
+  camera_status?: string;
+  camera_fps?: number;
+  frames_captured?: number;
+  dirt_detected?: boolean;
+  dirt_confidence?: number;
+  camera_brightness?: number;
+  battery_level?: number;
 }
 
 export interface CommandResult {
@@ -33,16 +42,23 @@ export interface CommandResult {
 
 class ProductionRobotServiceClass {
   private currentRobot: Robot | null = null;
+  private activeSessionId: string | null = null;
+  private cleaningStartedAt: Date | null = null;
+
   private statusChannel: RealtimeChannel | null = null;
+  private robotChannel: RealtimeChannel | null = null;
+
   private statusCallbacks: ((status: RobotStatus) => void)[] = [];
+  private robotChangeCallbacks: ((robot: Robot) => void)[] = [];
+
   private pollInterval: NodeJS.Timeout | null = null;
+  private heartbeatInterval: NodeJS.Timeout | null = null;
   private isPolling = false;
 
   // ============================================
   // ROBOT MANAGEMENT
   // ============================================
 
-  // Get all robots for current user
   async getUserRobots(): Promise<Robot[]> {
     try {
       const { data: user } = await supabase.auth.getUser();
@@ -62,48 +78,39 @@ class ProductionRobotServiceClass {
     }
   }
 
-  // Register a new robot (Admin/ESP32 use)
   async registerRobot(
     serialNumber: string,
     name: string,
     ownerId?: string
   ): Promise<{ success: boolean; robot?: Robot; error?: string }> {
     try {
-      // Check if robot already exists
       const { data: existing } = await supabase
         .from('robots')
         .select('id')
         .eq('serial_number', serialNumber)
         .maybeSingle();
 
-      if (existing) {
-        return { success: false, error: 'Robot already registered' };
-      }
+      if (existing) return { success: false, error: 'Robot already registered' };
 
       const { data: user } = await supabase.auth.getUser();
       const finalOwnerId = ownerId || user.user?.id;
-
-      if (!finalOwnerId) {
-        return { success: false, error: 'No user ID provided' };
-      }
+      if (!finalOwnerId) return { success: false, error: 'No user ID provided' };
 
       const { data, error } = await supabase
         .from('robots')
         .insert({
           serial_number: serialNumber,
-          name: name,
+          name,
           owner_id: finalOwnerId,
           connection_type: 'cloud',
           status: 'offline',
           mode: 'MANUAL',
           is_online: false,
-          created_at: new Date().toISOString(),
         })
         .select()
         .single();
 
       if (error) throw error;
-
       return { success: true, robot: data };
     } catch (error: any) {
       console.error('Register robot error:', error);
@@ -111,15 +118,11 @@ class ProductionRobotServiceClass {
     }
   }
 
-  // Add existing robot to user account (claim by serial number)
   async claimRobot(serialNumber: string): Promise<{ success: boolean; robot?: Robot; error?: string }> {
     try {
       const { data: user } = await supabase.auth.getUser();
-      if (!user.user) {
-        return { success: false, error: 'Not logged in' };
-      }
+      if (!user.user) return { success: false, error: 'Not logged in' };
 
-      // Find robot by serial number
       const { data: robot, error: findError } = await supabase
         .from('robots')
         .select('*')
@@ -127,28 +130,17 @@ class ProductionRobotServiceClass {
         .maybeSingle();
 
       if (findError) throw findError;
+      if (!robot) return { success: false, error: 'Robot not found. Check serial number.' };
+      if (robot.owner_id) return { success: false, error: 'Robot already claimed by another user' };
 
-      if (!robot) {
-        return { success: false, error: 'Robot not found. Check serial number.' };
-      }
-
-      if (robot.owner_id) {
-        return { success: false, error: 'Robot already claimed by another user' };
-      }
-
-      // Claim the robot
       const { data: updated, error: updateError } = await supabase
         .from('robots')
-        .update({
-          owner_id: user.user.id,
-          name: robot.name || `Robot ${serialNumber}`,
-        })
+        .update({ owner_id: user.user.id, name: robot.name || `Robot ${serialNumber}` })
         .eq('id', robot.id)
         .select()
         .single();
 
       if (updateError) throw updateError;
-
       return { success: true, robot: updated };
     } catch (error: any) {
       console.error('Claim robot error:', error);
@@ -156,14 +148,9 @@ class ProductionRobotServiceClass {
     }
   }
 
-  // Update robot name
   async updateRobotName(robotId: string, newName: string): Promise<boolean> {
     try {
-      const { error } = await supabase
-        .from('robots')
-        .update({ name: newName })
-        .eq('id', robotId);
-
+      const { error } = await supabase.from('robots').update({ name: newName }).eq('id', robotId);
       if (error) throw error;
       return true;
     } catch (error) {
@@ -172,7 +159,6 @@ class ProductionRobotServiceClass {
     }
   }
 
-  // Delete robot
   async deleteRobot(robotId: string): Promise<boolean> {
     try {
       const { error } = await supabase.from('robots').delete().eq('id', robotId);
@@ -184,19 +170,30 @@ class ProductionRobotServiceClass {
     }
   }
 
+  async getLatestRobotData(robotId: string): Promise<Robot | null> {
+    try {
+      const { data, error } = await supabase
+        .from('robots')
+        .select('*')
+        .eq('id', robotId)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.error('Get latest robot data error:', error);
+      return null;
+    }
+  }
+
   // ============================================
   // CONNECTION & REAL-TIME
   // ============================================
 
-  // Connect to a robot by serial number
   async connectToRobot(serialNumber: string): Promise<{ success: boolean; robot?: Robot; error?: string }> {
     try {
       const { data: user } = await supabase.auth.getUser();
-      if (!user.user) {
-        return { success: false, error: 'Not logged in' };
-      }
+      if (!user.user) return { success: false, error: 'Not logged in' };
 
-      // Find the robot
       const { data: robot, error: findError } = await supabase
         .from('robots')
         .select('*')
@@ -205,55 +202,71 @@ class ProductionRobotServiceClass {
         .maybeSingle();
 
       if (findError) throw findError;
+      if (!robot) return { success: false, error: 'Robot not found. Check serial number.' };
 
-      if (!robot) {
-        return { success: false, error: 'Robot not found. Check serial number.' };
-      }
-
-      // Update online status
-      await supabase
+      const { data: updatedRobot, error: updateError } = await supabase
         .from('robots')
         .update({
           is_online: true,
           status: 'online',
           last_seen: new Date().toISOString(),
         })
-        .eq('id', robot.id);
+        .eq('id', robot.id)
+        .select()
+        .single();
 
-      this.currentRobot = robot;
+      if (updateError) throw updateError;
 
-      // Start real-time subscription
+      this.currentRobot = updatedRobot || robot;
+
       await this.startRealtimeSubscription(robot.id);
-
-      // Start polling for status
+      this.startHeartbeat();
       this.startPolling();
 
-      return { success: true, robot };
+      return { success: true, robot: this.currentRobot };
     } catch (error: any) {
       console.error('Connect to robot error:', error);
       return { success: false, error: error.message };
     }
   }
 
-  // Disconnect from current robot
+  // Soft-connect: restore service state for a robot that's already online in DB,
+  // without marking it online again. Called when the app resumes mid-session.
+  async softConnect(robotId: string): Promise<boolean> {
+    try {
+      const robot = await this.getLatestRobotData(robotId);
+      if (!robot) return false;
+
+      this.currentRobot = robot;
+      await this.startRealtimeSubscription(robot.id);
+      this.startHeartbeat();
+      this.startPolling();
+      return true;
+    } catch (error) {
+      console.error('Soft-connect error:', error);
+      return false;
+    }
+  }
+
   async disconnect(): Promise<void> {
     if (this.currentRobot) {
       await supabase
         .from('robots')
-        .update({
-          is_online: false,
-          status: 'offline',
-        })
+        .update({ is_online: false, status: 'offline' })
         .eq('id', this.currentRobot.id);
     }
 
     this.stopPolling();
+    this.stopHeartbeat();
     this.stopRealtimeSubscription();
     this.currentRobot = null;
+    this.activeSessionId = null;
+    this.cleaningStartedAt = null;
     this.statusCallbacks = [];
+    this.robotChangeCallbacks = [];
   }
 
-  // Start real-time subscription for status updates
+  // Robot_status: listen for both INSERT and UPDATE so ESP32-style row-updates work too
   private async startRealtimeSubscription(robotId: string): Promise<void> {
     this.stopRealtimeSubscription();
 
@@ -261,15 +274,34 @@ class ProductionRobotServiceClass {
       .channel(`robot-status-${robotId}`)
       .on(
         'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'robot_status',
-          filter: `robot_id=eq.${robotId}`,
-        },
+        { event: 'INSERT', schema: 'public', table: 'robot_status', filter: `robot_id=eq.${robotId}` },
         (payload) => {
           const status = payload.new as RobotStatus;
           this.statusCallbacks.forEach(cb => cb(status));
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'robot_status', filter: `robot_id=eq.${robotId}` },
+        (payload) => {
+          const status = payload.new as RobotStatus;
+          this.statusCallbacks.forEach(cb => cb(status));
+        }
+      )
+      .subscribe();
+
+    // Also watch the robots row itself for is_online / status / mode changes
+    this.robotChannel = supabase
+      .channel(`robot-record-${robotId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'robots', filter: `id=eq.${robotId}` },
+        (payload) => {
+          const updated = payload.new as Robot;
+          if (this.currentRobot) {
+            this.currentRobot = { ...this.currentRobot, ...updated };
+          }
+          this.robotChangeCallbacks.forEach(cb => cb(updated));
         }
       )
       .subscribe();
@@ -280,21 +312,51 @@ class ProductionRobotServiceClass {
       this.statusChannel.unsubscribe();
       this.statusChannel = null;
     }
+    if (this.robotChannel) {
+      this.robotChannel.unsubscribe();
+      this.robotChannel = null;
+    }
   }
 
-  // Poll for latest status (fallback for real-time)
+  // Heartbeat: keep last_seen current every 30 s while app is connected
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    this.heartbeatInterval = setInterval(async () => {
+      if (this.currentRobot) {
+        await supabase
+          .from('robots')
+          .update({ last_seen: new Date().toISOString() })
+          .eq('id', this.currentRobot.id);
+      }
+    }, 30_000);
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+  }
+
+  // Polling at 5 s: fallback for environments where realtime isn't reliable
   private startPolling(): void {
     this.stopPolling();
     this.isPolling = true;
-    
+
     this.pollInterval = setInterval(async () => {
-      if (this.currentRobot && this.isPolling) {
-        const status = await this.fetchLatestStatus();
-        if (status) {
-          this.statusCallbacks.forEach(cb => cb(status));
-        }
+      if (!this.currentRobot || !this.isPolling) return;
+
+      const [status, robot] = await Promise.all([
+        this.fetchLatestStatus(),
+        this.getLatestRobotData(this.currentRobot.id),
+      ]);
+
+      if (status) this.statusCallbacks.forEach(cb => cb(status));
+      if (robot) {
+        this.currentRobot = robot;
+        this.robotChangeCallbacks.forEach(cb => cb(robot));
       }
-    }, 3000);
+    }, 5_000);
   }
 
   private stopPolling(): void {
@@ -305,27 +367,29 @@ class ProductionRobotServiceClass {
     }
   }
 
-  // Fetch latest robot status from database
   async fetchLatestStatus(): Promise<RobotStatus | null> {
     if (!this.currentRobot) return null;
-
     try {
       const { data, error } = await supabase
         .from('robot_status')
         .select('*')
         .eq('robot_id', this.currentRobot.id)
         .order('last_updated', { ascending: false })
-        .limit(1);
+        .limit(1)
+        .maybeSingle();
 
       if (error) throw error;
-      return data && data.length > 0 ? data[0] : null;
+      return data;
     } catch (error) {
       console.error('Fetch latest status error:', error);
       return null;
     }
   }
 
-  // Send command to robot
+  // ============================================
+  // COMMANDS
+  // ============================================
+
   async sendCommand(command: string): Promise<CommandResult> {
     if (!this.currentRobot) {
       return { success: false, message: 'No robot connected' };
@@ -334,23 +398,19 @@ class ProductionRobotServiceClass {
     try {
       const { data: user } = await supabase.auth.getUser();
 
-      // Insert command into queue
       const { error: queueError } = await supabase.from('command_queue').insert({
         robot_id: this.currentRobot.id,
         command: command.toUpperCase(),
         status: 'pending',
         user_id: user.user?.id,
-        created_at: new Date().toISOString(),
       });
 
       if (queueError) throw queueError;
 
-      // Log the command
       await supabase.from('robot_logs').insert({
         robot_id: this.currentRobot.id,
         event_type: 'command',
         message: command,
-        created_at: new Date().toISOString(),
       });
 
       return { success: true, message: `Command "${command}" sent successfully` };
@@ -360,10 +420,8 @@ class ProductionRobotServiceClass {
     }
   }
 
-  // Get command history for robot
   async getCommandHistory(limit: number = 50): Promise<any[]> {
     if (!this.currentRobot) return [];
-
     try {
       const { data, error } = await supabase
         .from('command_queue')
@@ -381,10 +439,83 @@ class ProductionRobotServiceClass {
   }
 
   // ============================================
+  // CLEANING SESSIONS
+  // ============================================
+
+  async startCleaningSession(mode: string): Promise<string | null> {
+    try {
+      const { data: user } = await supabase.auth.getUser();
+      if (!user.user) return null;
+
+      const now = new Date();
+      this.cleaningStartedAt = now;
+
+      const { data, error } = await supabase
+        .from('cleaning_sessions')
+        .insert({
+          user_id: user.user.id,
+          status: 'active',
+          date: now.toISOString().split('T')[0],
+          time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        })
+        .select('id')
+        .single();
+
+      if (error) throw error;
+      this.activeSessionId = data.id;
+      return data.id;
+    } catch (error: any) {
+      console.error('Start cleaning session error:', error);
+      return null;
+    }
+  }
+
+  async endCleaningSession(
+    status: 'completed' | 'failed' | 'cancelled',
+    areaSqm?: number
+  ): Promise<boolean> {
+    const sessionId = this.activeSessionId;
+    if (!sessionId) return false;
+
+    try {
+      const updates: Record<string, any> = { status };
+
+      if (this.cleaningStartedAt) {
+        const durationMs = Date.now() - this.cleaningStartedAt.getTime();
+        const totalMins = Math.round(durationMs / 60_000);
+        const h = Math.floor(totalMins / 60);
+        const m = totalMins % 60;
+        updates.duration = h > 0 ? `${h}h ${m}m` : `${m}m`;
+      }
+
+      if (areaSqm != null) {
+        updates.area = `${areaSqm.toFixed(1)} m²`;
+      }
+
+      const { error } = await supabase
+        .from('cleaning_sessions')
+        .update(updates)
+        .eq('id', sessionId);
+
+      if (error) throw error;
+
+      this.activeSessionId = null;
+      this.cleaningStartedAt = null;
+      return true;
+    } catch (error: any) {
+      console.error('End cleaning session error:', error);
+      return false;
+    }
+  }
+
+  getActiveSessionId(): string | null {
+    return this.activeSessionId;
+  }
+
+  // ============================================
   // UTILITY METHODS
   // ============================================
 
-  // Subscribe to status changes
   onStatusChange(callback: (status: RobotStatus) => void): () => void {
     this.statusCallbacks.push(callback);
     return () => {
@@ -392,17 +523,21 @@ class ProductionRobotServiceClass {
     };
   }
 
-  // Get current connected robot
+  onRobotChange(callback: (robot: Robot) => void): () => void {
+    this.robotChangeCallbacks.push(callback);
+    return () => {
+      this.robotChangeCallbacks = this.robotChangeCallbacks.filter(cb => cb !== callback);
+    };
+  }
+
   getCurrentRobot(): Robot | null {
     return this.currentRobot;
   }
 
-  // Check if connected
   isConnected(): boolean {
     return this.currentRobot !== null;
   }
 
-  // Send an error-alert email to the signed-in user (non-blocking)
   async notifyError(errorMessage: string): Promise<void> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -413,17 +548,14 @@ class ProductionRobotServiceClass {
         .then(raw => (raw ? JSON.parse(raw) : {}));
 
       if (!prefs.errorAlerts) return;
-
       await EmailService.sendErrorAlert(user.email, this.currentRobot.name, errorMessage);
     } catch { /* non-blocking */ }
   }
 
-  // Get robot status summary
   getStatusSummary(): string {
     if (!this.currentRobot) return 'Disconnected';
-    return `${this.currentRobot.name} - ${this.currentRobot.is_online ? 'Online' : 'Offline'}`;
+    return `${this.currentRobot.name} — ${this.currentRobot.is_online ? 'Online' : 'Offline'}`;
   }
 }
 
-// Singleton export
 export const ProductionRobotService = new ProductionRobotServiceClass();

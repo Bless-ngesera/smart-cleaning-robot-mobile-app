@@ -30,7 +30,8 @@
       "Bash(exist supabase\\\\migrations dir supabase\\\\migrations /b)",
       "PowerShell(Get-ChildItem \"C:\\\\Apps\\\\smart-cleaning-robot\\\\supabase\" -Recurse -Name | Where-Object { $_ -notmatch \"node_modules\" } | Sort-Object)",
       "Bash(New-Item -ItemType Directory -Force \"C:\\\\Apps\\\\smart-cleaning-robot\\\\supabase\\\\functions\\\\send-low-battery\")",
-      "Bash(Write-Output \"done\")"
+      "Bash(Write-Output \"done\")",
+      "Bash(dir *)"
     ]
   }
 }

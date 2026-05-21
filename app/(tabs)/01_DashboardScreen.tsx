@@ -31,6 +31,7 @@ import { useAppNavigation } from '@/hooks/useAppNavigation';
 
 import Loader from '../../src/components/Loader';
 import AppText from '../../src/components/AppText';
+import CameraMonitor from '../../src/components/CameraMonitor';
 import { useThemeContext } from '@/src/context/ThemeContext';
 import { supabase } from '@/src/services/supabase';
 import { checkAndSendWeeklyReport } from '@/src/utils/emailScheduler';
@@ -122,6 +123,7 @@ export default function DashboardScreen() {
     const isLargeScreen = width >= 768;
 
     const [status, setStatus]           = useState<RobotStatus | null>(null);
+    const [robotId, setRobotId]         = useState<string | null>(null);
     const [loading, setLoading]         = useState(true);
     const [refreshing, setRefreshing]   = useState(false);
     const [weeklyRuntime, setWeeklyRuntime] = useState<string>('—');
@@ -186,12 +188,15 @@ export default function DashboardScreen() {
             if (error && error.code !== 'PGRST116') throw error;
 
             if (!data) {
+                setRobotId(null);
                 setStatus({
                     isCleaning: false, lastCleaned: 'Never',
                     errors: ['No robot data available'], status: 'Offline', connectionType: 'none',
                 });
                 return;
             }
+
+            setRobotId(data.id);
 
             const normalizedStatus = data.status?.toLowerCase() ?? '';
             const displayStatus = normalizedStatus
@@ -346,6 +351,9 @@ export default function DashboardScreen() {
                             {formatLastCleaned(status?.lastCleaned ?? 'Never')}
                         </AppText>
                     </View>
+
+                    {/* Camera Monitor */}
+                    <CameraMonitor robotId={robotId} />
 
                     {/* Error Banner */}
                     {status?.errors && status.errors.length > 0 && (

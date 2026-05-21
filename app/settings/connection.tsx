@@ -233,12 +233,9 @@ export default function ConnectionScreen() {
     setRefreshing(false);
   };
 
-  // Initial load
+  // Initial load — do NOT disconnect on unmount; connection must persist across screens
   useEffect(() => {
     loadRobots();
-    return () => {
-      ProductionRobotService.disconnect();
-    };
   }, []);
 
   // Render toast messages at TOP
